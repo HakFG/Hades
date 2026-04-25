@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MediaStatus {
+  WATCHING
+  COMPLETED
+  PAUSED
+  DROPPED
+  PLANNING
+  REWATCHING
+  UPCOMING
+}
+
+enum MediaType {
+  MOVIE
+  TV_SEASON
+}
+
+model Entry {
+  id            String      @id @default(cuid())
+  tmdbId        Int         @unique 
+  parentTmdbId  Int?        // ID da série original (para agrupar Seasons)
+  seasonNumber  Int?        // Número da temporada (para TV_SEASON)
+  title         String
+  type          MediaType
+  status        MediaStatus @default(PLANNING)
+  score         Int         @default(0) 
+  progress      Int         @default(0) 
+  totalEpisodes Int?
+  
+  // Datas de acompanhamento
+  startDate     DateTime?
+  finishDate    DateTime?
+  rewatchCount  Int         @default(0)
+  
+  // Dados Precisos do TMDB
+  synopsis      String?     @db.Text
+  releaseDate   String?
+  rating        Float?      // Nota média do TMDB
+  imagePath     String?     // Poster
+  bannerPath    String?     // Backdrop
+  customImage   String?     // Imagem customizada (URL)
+  genres        String?     // Ex: "Action, Drama"
+  studio        String?     // Produtora principal
+  staff         Json?       // Aqui guardaremos Diretores, Roteiristas, etc.
+  
+  // Configurações de Privacidade
+  notes         String?     @db.Text
+  private       Boolean     @default(false)
+  hidden        Boolean     @default(false)
+  
+  // Favoritos
+  isFavorite    Boolean     @default(false)
+  favoriteRank  Int?        // Posição nos favoritos
+  
+  updatedAt     DateTime    @updatedAt
+  createdAt     DateTime    @default(now())
+
+  @@index([status])
+  @@index([type])
+  @@index([tmdbId])
+  @@index([isFavorite])
+}
+
+model Profile {
+  id          String   @id @default("main")
+  username    String   @default("My Profile")
+  bio         String?
+  avatarUrl   String?
+  bannerUrl   String?
+  avatarColor String   @default("#3db4f2")
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
