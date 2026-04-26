@@ -795,9 +795,10 @@ function FavoritesTab({ entries, onEdit, onToggleFav }: {
   );
 }
 
-// ─── Stats Tab (sem estrela nas notas) ────────────────────────────────────────
+// ─── Stats Tab (com botão de sincronização manual) ───────────────────────────
 
 function StatsTab({ entries }: { entries: Entry[] }) {
+  const [syncing, setSyncing] = useState(false);
   const series = entries.filter(e => e.type === 'TV_SEASON');
   const films = entries.filter(e => e.type === 'MOVIE');
   const scored = entries.filter(e => e.score > 0);
@@ -835,6 +836,22 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   const yearsSorted = Object.entries(yearDist).sort((a, b) => Number(a[0]) - Number(b[0]));
   const maxYearCount = Math.max(...Object.values(yearDist), 1);
 
+  const syncAll = async () => {
+    if (!confirm('Isso vai atualizar capas, número de episódios e datas de todos os títulos do TMDB. Seus status, notas, progresso e favoritos permanecerão intactos. Continuar?')) return;
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/refresh-all', { method: 'POST' });
+      const data = await res.json();
+      alert(`✅ Sincronização concluída!\nAtualizados: ${data.updated} títulos\nFalhas: ${data.failed}`);
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert('❌ Erro na sincronização. Tente novamente mais tarde.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const StatBox = ({ label, value, accent, sub }: { label: string; value: string | number; accent?: string; sub?: string }) => (
     <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '16px', textAlign: 'center', borderLeft: `3px solid ${accent || '#3db4f2'}` }}>
       <div style={{ fontSize: '10px', color: '#647380', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px' }}>{label}</div>
@@ -844,7 +861,61 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', position: 'relative' }}>
+      {/* Botão de sincronização global */}
+      <div style={{ position: 'absolute', top: 0, right: 0 }}>
+        <button
+          onClick={syncAll}
+          disabled={syncing}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: syncing ? '#4a4a5a' : 'linear-gradient(135deg, #3db4f2, #2c8bc0)',
+            border: 'none',
+            borderRadius: '30px',
+            padding: '8px 20px',
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: '600',
+            cursor: syncing ? 'wait' : 'pointer',
+            transition: 'all 0.2s ease',
+            boxShadow: syncing ? 'none' : '0 2px 8px rgba(61,180,242,0.3)',
+          }}
+          onMouseEnter={e => {
+            if (!syncing) {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(61,180,242,0.4)';
+            }
+          }}
+          onMouseLeave={e => {
+            if (!syncing) {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(61,180,242,0.3)';
+            }
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-block',
+              animation: syncing ? 'spin 0.8s linear infinite' : 'none',
+              fontSize: '14px',
+            }}
+          >
+            ↻
+          </span>
+          {syncing ? 'Sincronizando...' : 'Sincronizar todos os títulos'}
+        </button>
+      </div>
+
+      {/* Animações */}
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+
+      {/* Grid de estatísticas (restante inalterado) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
         <StatBox label="Total Series" value={series.length} accent="#3db4f2" sub={`${seriesCompleted.length} completed`} />
         <StatBox label="Episodes" value={totalEpisodes.toLocaleString()} accent="#3db4f2" />
@@ -853,6 +924,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
         <StatBox label="Films Watched" value={filmsCompleted.length} accent="#f39c12" />
         <StatBox label="Films Score" value={filmsMean} accent={filmsMean !== '—' ? scoreColor(Number(filmsMean)) : '#647380'} />
       </div>
+
       {scored.length > 0 && (
         <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px' }}>
           <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '18px' }}>Score Distribution</div>
@@ -871,6 +943,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
           </div>
         </div>
       )}
+
       <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px' }}>
         <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '18px' }}>Episode Count</div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -883,6 +956,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
           ))}
         </div>
       </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
         {[{ label: 'Series Status', data: series }, { label: 'Films Status', data: films }].map(({ label, data }) => (
           <div key={label} style={{ background: '#1e1e35', borderRadius: '4px', padding: '18px' }}>
@@ -905,6 +979,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
           </div>
         ))}
       </div>
+
       {yearsSorted.length > 0 && (
         <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px', overflowX: 'auto' }}>
           <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '18px' }}>Release Year</div>
@@ -919,6 +994,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
           </div>
         </div>
       )}
+
       {genres.length > 0 && (
         <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '18px' }}>
           <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '14px' }}>Top Genres</div>
@@ -1055,6 +1131,28 @@ export default function ProfilePage() {
     setEntries(prev => prev.map(e => e.id === editingEntry?.id ? { ...e, ...updated } : e));
   }
 
+  // Dentro do ProfilePage, antes do return ou no cabeçalho
+const [syncing, setSyncing] = useState(false);
+
+const syncAll = async () => {
+  if (!confirm('Isso pode levar alguns segundos. Deseja sincronizar TODOS os títulos com o TMDB?')) return;
+  setSyncing(true);
+  try {
+    const res = await fetch('/api/refresh-all', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`Sincronização concluída!\nAtualizados: ${data.updated}\nFalhas: ${data.failed}\nTotal: ${data.total}`);
+      window.location.reload();
+    } else {
+      alert('Erro na sincronização.');
+    }
+  } catch (err) {
+    alert('Erro de rede.');
+  } finally {
+    setSyncing(false);
+  }
+};
+
   async function toggleFav(entry: Entry) {
     const next = !entry.isFavorite;
     setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, isFavorite: next } : e));
@@ -1090,6 +1188,8 @@ export default function ProfilePage() {
         </div>
         <button onClick={() => setEditingProf(true)} style={{ position: 'absolute', top: '14px', right: '16px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', color: 'white', padding: '7px 13px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', backdropFilter: 'blur(4px)' }}>✎ Edit Profile</button>
       </div>
+
+      
 
       <div style={{ background: '#1e1e1e', paddingTop: '50px', marginBottom: '30px' }}>
         <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '0 20px' }}>

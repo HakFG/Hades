@@ -42,6 +42,8 @@ model Entry {
   // Dados Precisos do TMDB
   synopsis      String?     @db.Text
   releaseDate   String?
+  endDate       String?
+  format        String? 
   rating        Float?      // Nota média do TMDB
   popularity    Float?      // Popularidade do TMDB (atualizada diariamente)
   imagePath     String?     // Poster
