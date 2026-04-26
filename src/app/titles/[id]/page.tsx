@@ -263,14 +263,12 @@ function LoadingScreen(){
   );
 }
 
-// ─── Modal: Editar Capa ────────────────────────────────────────────────────────
-// Salva via PATCH /api/entries/[id] → imagePath é persistido no banco
-// e portanto reflete em TODA a aplicação (profile, home, search).
+// ─── Modal: Editar Capa (CORRIGIDO: aceita qualquer URL, inclusive do TMDB) ───
 function CoverModal({entryId,current,onSaved,onClose}:{
   entryId:string; current:string|null;
   onSaved:(p:string)=>void; onClose:()=>void;
 }){
-  const[url,setUrl]=useState(current&&current.startsWith('http')?current:'');
+  const[url,setUrl]=useState(current && (current.startsWith('http') || current.startsWith('https')) ? current : '');
   const[saving,setSaving]=useState(false);
   const[preview,setPreview]=useState(url);
   const inp:React.CSSProperties={
@@ -306,15 +304,16 @@ function CoverModal({entryId,current,onSaved,onClose}:{
               :<div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:11,textAlign:'center',padding:6}}>Preview</div>}
           </div>
           <div style={{flex:1}}>
-            <label style={{display:'block',fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>URL da imagem</label>
-            <input value={url} onChange={e=>{setUrl(e.target.value);setPreview(e.target.value);}} placeholder="https://..." style={inp}/>
+            <label style={{display:'block',fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>URL da imagem (qualquer domínio)</label>
+            <input value={url} onChange={e=>{setUrl(e.target.value);setPreview(e.target.value);}} placeholder="https://image.tmdb.org/t/p/original/..." style={inp}/>
             <p style={{fontSize:11,color:MUTED,lineHeight:1.5,marginTop:8}}>
-              A capa é salva no banco de dados e reflete em <strong style={{color:TEXT}}>todo o site</strong> — profile, home, search e relations.
+              Cole a URL completa da imagem (ex: do TMDB ou qualquer outro host). 
+              A capa será salva no banco e refletirá em <strong style={{color:TEXT}}>todo o site</strong>.
             </p>
           </div>
         </div>
         <div style={{display:'flex',gap:10}}>
-          <button onClick={save} disabled={saving||!url.trim()} style={{flex:1,padding:11,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:14,fontWeight:700,cursor:'pointer',opacity:(!url.trim()||saving)?.5:1,fontFamily:'Overpass,sans-serif'}}>
+          <button onClick={save} disabled={saving||!url.trim()} style={{flex:1,padding:11,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:14,fontWeight:700,cursor:'pointer',opacity:(!url.trim()||saving)?0.5:1,fontFamily:'Overpass,sans-serif'}}>
             {saving?'Salvando...':'✓ Salvar no site'}
           </button>
           <button onClick={onClose} style={{flex:1,padding:11,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:4,color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
@@ -491,7 +490,7 @@ function ListEditorModal({entry,isTV,showId,seasonNumber,displayTitle,posterPath
         res=await fetch('/api/add-media',{
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({
-            tmdbId: entry?.tmdbId ?? tmdbId ?? null,
+            tmdbId: (entry as EntryData | null)?.tmdbId ?? tmdbId ?? null,
             parentTmdbId: isTV ? showId : null,
             seasonNumber: isTV ? seasonNumber : null,
             type: isTV ? 'TV_SEASON' : 'MOVIE',
@@ -1104,7 +1103,6 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
               {sidebarRows.map(([label,value],i)=>(
                 <div key={String(label)} style={{marginBottom:13,padding:'3px 0',animation:mounted?`fadeInUp .4s ease ${.1+i*.04}s both`:'none'}}>
                   <div style={{fontWeight:700,color:MUTED,fontSize:11,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>{label}</div>
-                  {/* Avg Score: cor dinâmica */}
                   <div style={{color:String(label)==='Avg Score'?scoreColor(Number(scoreDisplay??0)):TEXT,lineHeight:1.4,fontWeight:String(label)==='Avg Score'?800:400,fontSize:String(label)==='Avg Score'?16:13}}>
                     {value}
                   </div>
