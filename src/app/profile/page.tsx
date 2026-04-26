@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { formatScore, scoreColor } from '@/lib/utils';
+import { Suspense } from 'react';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -1081,9 +1082,9 @@ function OverviewTab({ entries, onEdit, onToggleFav }: {
   );
 }
 
-// ─── Componente Principal ─────────────────────────────────────────────────────
+// ─── Componente Principal (corrigido com Suspense) ─────────────────────────────
 
-export default function ProfilePage() {
+function ProfileContent() {
   const searchParams = useSearchParams();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -1181,5 +1182,14 @@ export default function ProfilePage() {
       {editingEntry && <ListEditor entry={editingEntry} onClose={() => setEditingEntry(null)} onSaved={handleSaved} />}
       {editingProf && profile && <ProfileEditor profile={profile} onClose={() => setEditingProf(false)} onSaved={p => setProfile(p)} />}
     </div>
+  );
+}
+
+// ─── Exportação principal com Suspense ────────────────────────────────────────
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#121212', color: '#647380' }}>Carregando...</div>}>
+      <ProfileContent />
+    </Suspense>
   );
 }
