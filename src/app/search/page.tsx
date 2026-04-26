@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import ListEditor from '@/components/ListEditor';
+import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
 
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const TMDB = 'https://api.themoviedb.org/3';
@@ -35,18 +36,7 @@ interface MediaCard {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getOrdinal(n: number): string {
-  if (n === 1) return '1st';
-  if (n === 2) return '2nd';
-  if (n === 3) return '3rd';
-  return `${n}th`;
-}
 
-function buildSeasonTitle(showName: string, seasonNumber: number): string {
-  if (seasonNumber === 0) return `${showName} Specials`;
-  if (seasonNumber === 1) return showName;
-  return `${showName} ${getOrdinal(seasonNumber)} Season`;
-}
 
 // ─── FIX FORMATO: Mapeamento correto de with_type do TMDB ─────────────────────
 // TMDB with_type values:

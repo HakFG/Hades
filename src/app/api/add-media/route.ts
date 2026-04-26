@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
 
 const TMDB    = 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
@@ -7,18 +8,7 @@ const TODAY   = () => new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getOrdinal(n: number): string {
-  if (n === 1) return '1st';
-  if (n === 2) return '2nd';
-  if (n === 3) return '3rd';
-  return `${n}th`;
-}
 
-function buildSeasonTitle(showName: string, seasonNumber: number): string {
-  if (seasonNumber === 0) return `${showName} Specials`;
-  if (seasonNumber === 1) return showName;
-  return `${showName} ${getOrdinal(seasonNumber)} Season`;
-}
 
 /**
  * Valida se uma string é uma data real no formato YYYY-MM-DD.

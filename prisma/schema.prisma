@@ -24,44 +24,44 @@ enum MediaType {
 
 model Entry {
   id            String      @id @default(cuid())
-  tmdbId        Int         @unique 
+  tmdbId        Int         @unique
   parentTmdbId  Int?        // ID da série original (para agrupar Seasons)
   seasonNumber  Int?        // Número da temporada (para TV_SEASON)
   title         String
   type          MediaType
   status        MediaStatus @default(PLANNING)
-  score         Int         @default(0) 
-  progress      Int         @default(0) 
+  score         Float       @default(0)  // ← agora suporta decimais (0.0 - 10.0)
+  progress      Int         @default(0)
   totalEpisodes Int?
-  
+
   // Datas de acompanhamento
   startDate     DateTime?
   finishDate    DateTime?
   rewatchCount  Int         @default(0)
-  
-  // Dados Precisos do TMDB
+
+  // Dados do TMDB (alguns podem ser órfãos, mas mantidos para compatibilidade)
   synopsis      String?     @db.Text
   releaseDate   String?
   endDate       String?
-  format        String? 
+  format        String?
   rating        Float?      // Nota média do TMDB
-  popularity    Float?      // Popularidade do TMDB (atualizada diariamente)
+  popularity    Float?      // Popularidade do TMDB
   imagePath     String?     // Poster
   bannerPath    String?     // Backdrop
   customImage   String?     // Imagem customizada (URL)
   genres        String?     // Ex: "Action, Drama"
   studio        String?     // Produtora principal
-  staff         Json?       // Aqui guardaremos Diretores, Roteiristas, etc.
-  
-  // Configurações de Privacidade
+  staff         Json?       // Diretores, roteiristas, etc.
+
+  // Configurações
   notes         String?     @db.Text
   private       Boolean     @default(false)
   hidden        Boolean     @default(false)
-  
+
   // Favoritos
   isFavorite    Boolean     @default(false)
-  favoriteRank  Int?        // Posição nos favoritos
-  
+  favoriteRank  Int?
+
   updatedAt     DateTime    @updatedAt
   createdAt     DateTime    @default(now())
 

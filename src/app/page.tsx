@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { getOrdinal } from '@/lib/utils';
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -64,12 +65,8 @@ function HomePageSkeleton() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getOrdinal(n: number): string {
-  if (n === 1) return '1st';
-  if (n === 2) return '2nd';
-  if (n === 3) return '3rd';
-  return `${n}th`;
-}
+// getOrdinal removido daqui – importado de @/lib/utils
+
 function buildSeasonSlug(showId: number, seasonNumber: number): string {
   return `tv-${showId}-s${seasonNumber}`;
 }

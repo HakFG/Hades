@@ -1,521 +1,1111 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
-import ListEditor from '@/components/ListEditor';
+import { useState, useEffect, use, useRef, useCallback } from 'react';
+import Link from 'next/link';
+import { getOrdinal, buildSeasonTitle, formatScore, scoreColor } from '@/lib/utils';
 
-// ─── SISTEMA DE SLUGS ─────────────────────────────────────────────────────────
+// ─── CSS global ────────────────────────────────────────────────────────────────
+const GLOBAL_CSS = `
+  @keyframes fadeInUp {
+    from { opacity:0; transform:translateY(20px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  @keyframes slideLeft {
+    from { opacity:0; transform:translateX(-16px); }
+    to   { opacity:1; transform:translateX(0); }
+  }
+  @keyframes scaleIn {
+    from { opacity:0; transform:scale(0.94); }
+    to   { opacity:1; transform:scale(1); }
+  }
+  @keyframes shimmer {
+    0%   { background-position:-600px 0; }
+    100% { background-position: 600px 0; }
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes pulse {
+    0%,100% { opacity:1; } 50% { opacity:.5; }
+  }
 
-function parseSlug(slug: string):
-  | { kind: 'movie'; movieId: number }
-  | { kind: 'tv'; showId: number; seasonNumber: number }
-  | { kind: 'unknown' } {
+  /* Poster overlay */
+  .tp-poster-wrap:hover .tp-poster-overlay { opacity:1 !important; }
 
-  const tvMatch = slug.match(/^tv-(\d+)-s(\d+)$/);
-  if (tvMatch) return { kind: 'tv', showId: parseInt(tvMatch[1]), seasonNumber: parseInt(tvMatch[2]) };
+  /* Relation card */
+  .tp-rel-card { transition:transform .18s,box-shadow .18s; }
+  .tp-rel-card:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,.45); }
+  .tp-rel-card:hover .tp-rel-title { color:rgb(230,125,153) !important; }
 
-  const movieMatch = slug.match(/^movie-(\d+)$/);
-  if (movieMatch) return { kind: 'movie', movieId: parseInt(movieMatch[1]) };
+  /* Rec card */
+  .tp-rec-card img { transition:transform .28s ease; }
+  .tp-rec-card:hover img { transform:scale(1.06); }
 
-  const numMatch = slug.match(/^(\d+)$/);
-  if (numMatch) return { kind: 'movie', movieId: parseInt(numMatch[1]) };
+  /* Char / staff */
+  .tp-char-card { transition:background .15s; }
+  .tp-char-card:hover { background:#322f2f !important; }
+  .tp-staff-card { transition:background .15s; }
+  .tp-staff-card:hover { background:#322f2f !important; }
 
-  return { kind: 'unknown' };
+  /* Tabs */
+  .tp-tab { transition:color .15s,border-color .15s; }
+  .tp-tab:hover { color:rgb(230,125,153) !important; }
+
+  /* Status btn */
+  .tp-status-btn { transition:transform .12s,box-shadow .18s,opacity .15s; }
+  .tp-status-btn:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,.4); }
+  .tp-status-btn:active { transform:translateY(0); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-track{background:#2a2727;}
+  ::-webkit-scrollbar-thumb{background:rgba(230,125,153,.4);border-radius:3px;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(230,125,153,.7);}
+
+  /* Anim helpers */
+  .anim-fade-up { animation:fadeInUp .4s ease both; }
+  .anim-fade-in { animation:fadeIn .3s ease both; }
+  .anim-scale-in { animation:scaleIn .28s ease both; }
+`;
+
+// ─── Cores ─────────────────────────────────────────────────────────────────────
+const BG     = '#3a3737';
+const CARD   = '#2a2727';
+const ACCENT = 'rgb(230,125,153)';
+const MUTED  = '#92a0ad';
+const TEXT   = '#e0e4e8';
+
+// Mapa de labels para relation types
+const REL_LABEL: Record<string,string> = {
+  PREQUEL:'PREQUEL', SEQUEL:'SEQUEL', SPIN_OFF:'SPIN OFF',
+  SIDE_STORY:'SIDE STORY', ADAPTATION:'ADAPTATION',
+  ALTERNATIVE:'ALTERNATIVE', SUMMARY:'SUMMARY', OTHER:'OTHER',
+};
+
+// ─── Tipos ─────────────────────────────────────────────────────────────────────
+interface CastMember {
+  id:number; name:string; character:string;
+  profile_path:string|null; order:number;
 }
-
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
-interface CastMember { id: number; name: string; character: string; profile_path: string | null; }
-interface CrewMember { id: number; name: string; job: string; profile_path: string | null; }
-interface VideoItem { id: string; key: string; name: string; type: string; site: string; }
-interface Episode { id: number; name: string; episode_number: number; still_path: string | null; air_date: string; vote_average: number; }
+interface CrewMember {
+  id:number; name:string; job:string;
+  department:string; profile_path:string|null;
+}
+interface VideoItem {
+  id:string; key:string; name:string;
+  type:string; site:string; official:boolean;
+}
+interface Episode {
+  id:number; name:string; episode_number:number;
+  still_path:string|null; air_date:string; vote_average:number;
+}
+interface ProductionCo { id:number; name:string; logo_path:string|null; origin_country:string; }
 
 interface RelationItem {
-  slug: string;
-  relationType: string;
-  title: string;
-  poster_path: string | null;
-  kind: 'movie' | 'tv';
-  year?: string;
-  seasonNumber?: number;
+  slug:string; relationType:string; title:string;
+  poster_path:string|null; kind:'movie'|'tv';
+  year?:string; seasonNumber?:number;
 }
 
 interface TmdbSeasonStub {
-  id: number; name: string; season_number: number;
-  poster_path: string | null; air_date: string; episode_count: number;
+  id:number; name:string; season_number:number;
+  poster_path:string|null; air_date:string; episode_count:number;
 }
 
 interface TmdbShow {
-  id: number; name: string; original_name: string; overview: string;
-  backdrop_path: string | null; poster_path: string | null;
-  vote_average: number; popularity: number; status: string;
-  genres: { id: number; name: string }[];
-  seasons: TmdbSeasonStub[];
-  number_of_seasons: number; number_of_episodes: number; first_air_date: string;
-  last_air_date: string | null;
-  in_production: boolean;
-  production_companies: { id: number; name: string }[];
-  networks: { id: number; name: string }[];
-  credits: { cast: CastMember[]; crew: CrewMember[] };
-  videos: { results: VideoItem[] };
-  recommendations: { results: TmdbRecommendation[] };
+  id:number; name:string; original_name:string; overview:string;
+  backdrop_path:string|null; poster_path:string|null;
+  vote_average:number; popularity:number; status:string;
+  genres:{id:number;name:string}[];
+  seasons:TmdbSeasonStub[];
+  number_of_seasons:number; number_of_episodes:number;
+  first_air_date:string; last_air_date:string|null; in_production:boolean;
+  production_companies:ProductionCo[];
+  networks:{id:number;name:string;logo_path:string|null}[];
+  credits:{cast:CastMember[];crew:CrewMember[]};
+  videos:{results:VideoItem[]};
+  recommendations:{results:TmdbRec[]};
 }
 
 interface TmdbSeasonDetail {
-  id: number; name: string; overview: string; poster_path: string | null;
-  air_date: string; season_number: number; vote_average: number;
-  episodes: Episode[];
-  credits?: { cast: CastMember[]; crew: CrewMember[] };
-  videos?: { results: VideoItem[] };
+  id:number; name:string; overview:string; poster_path:string|null;
+  air_date:string; season_number:number; vote_average:number;
+  episodes:Episode[];
+  credits?:{cast:CastMember[];crew:CrewMember[]};
+  videos?:{results:VideoItem[]};
 }
 
 interface TmdbMovie {
-  id: number; title: string; original_title: string; overview: string;
-  backdrop_path: string | null; poster_path: string | null;
-  vote_average: number; popularity: number; status: string;
-  genres: { id: number; name: string }[];
-  runtime: number; release_date: string;
-  production_companies: { id: number; name: string }[];
-  credits: { cast: CastMember[]; crew: CrewMember[] };
-  videos: { results: VideoItem[] };
-  recommendations: { results: TmdbRecommendation[] };
+  id:number; title:string; original_title:string; overview:string;
+  backdrop_path:string|null; poster_path:string|null;
+  vote_average:number; popularity:number; status:string;
+  genres:{id:number;name:string}[];
+  runtime:number; release_date:string;
+  production_companies:ProductionCo[];
+  // Coleção: é aqui que o TMDB registra franquias (Mario → Mario Galaxy)
+  belongs_to_collection:{id:number;name:string;poster_path:string|null}|null;
+  credits:{cast:CastMember[];crew:CrewMember[]};
+  videos:{results:VideoItem[]};
+  recommendations:{results:TmdbRec[]};
 }
 
-interface TmdbRecommendation {
-  id: number; title?: string; name?: string; poster_path: string | null;
-  vote_average: number; media_type?: string; release_date?: string; first_air_date?: string;
+interface TmdbRec {
+  id:number; title?:string; name?:string; poster_path:string|null;
+  vote_average:number; media_type?:string;
+  release_date?:string; first_air_date?:string;
+}
+
+interface TmdbCollection {
+  id:number; name:string;
+  parts:{id:number;title:string;poster_path:string|null;release_date:string}[];
 }
 
 interface EntryData {
-  id: string; tmdbId: number; parentTmdbId?: number | null; seasonNumber?: number | null;
-  title: string; type: 'MOVIE' | 'TV_SEASON'; status: string;
-  score: number; progress: number; totalEpisodes?: number | null; imagePath?: string | null;
-  startDate?: string | null; finishDate?: string | null; rewatchCount?: number;
-  notes?: string | null; hidden?: boolean;
-  releaseDate?: string | null;
-  endDate?: string | null;
+  id:string; tmdbId:number; parentTmdbId?:number|null; seasonNumber?:number|null;
+  title:string; type:'MOVIE'|'TV_SEASON'; status:string;
+  score:number; progress:number; totalEpisodes?:number|null;
+  imagePath?:string|null; startDate?:string|null; finishDate?:string|null;
+  rewatchCount?:number; notes?:string|null; hidden?:boolean;
+  releaseDate?:string|null; endDate?:string|null;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
-const TMDB = 'https://api.themoviedb.org/3';
+const TMDB    = 'https://api.themoviedb.org/3';
 
-const getYear = (d?: string) => d?.split('-')[0] ?? '';
+const getYear = (d?:string|null) => d?.split('-')[0] ?? '';
+const tmdbImg = (p:string|null|undefined, size='w342') =>
+  p ? `https://image.tmdb.org/t/p/${size}${p}` : null;
 
-function getOrdinal(n: number) {
-  if (n === 1) return '1st'; if (n === 2) return '2nd'; if (n === 3) return '3rd'; return `${n}th`;
+
+function getFormat(networks:any[],companies:any[]){
+  const s=['Netflix','Amazon','Prime Video','Hulu','Disney+','Apple TV+','Max','Paramount+','Crunchyroll','Peacock'];
+  return[...networks,...companies].some(c=>s.some(k=>c.name?.toLowerCase().includes(k.toLowerCase())))
+    ?'Streaming':'TV';
+}
+function getSeasonStatus(eps:Episode[]):string{
+  const today=new Date().toISOString().split('T')[0];
+  const aired=eps.filter(e=>e.air_date&&e.air_date<=today);
+  if(!aired.length)return'Not Yet Aired';
+  if(aired.length===eps.length)return'Finished';
+  return'Airing';
+}
+// Score: TMDB usa 0-10, não %, converte para decimal com 1 casa
+
+function statusColor(st?:string){
+  const m:Record<string,string>={
+    WATCHING:'#3db4f2',COMPLETED:'#2ecc71',PAUSED:'#f1c40f',
+    DROPPED:'#e74c3c',REWATCHING:'#9b59b6',UPCOMING:'#e67e22',PLANNING:ACCENT,
+  };
+  return m[st??'']??ACCENT;
+}
+function parseSlug(slug:string):
+  |{kind:'movie';movieId:number}
+  |{kind:'tv';showId:number;seasonNumber:number}
+  |{kind:'unknown'}{
+  const tv=slug.match(/^tv-(\d+)-s(\d+)$/);
+  if(tv)return{kind:'tv',showId:+tv[1],seasonNumber:+tv[2]};
+  const mo=slug.match(/^movie-(\d+)$/);
+  if(mo)return{kind:'movie',movieId:+mo[1]};
+  const nu=slug.match(/^(\d+)$/);
+  if(nu)return{kind:'movie',movieId:+nu[1]};
+  return{kind:'unknown'};
 }
 
-function buildSeasonTitle(showName: string, sn: number) {
-  if (sn === 0) return `${showName} Specials`;
-  if (sn === 1) return showName;
-  return `${showName} ${getOrdinal(sn)} Season`;
+// ─── Skeleton shimmer ──────────────────────────────────────────────────────────
+function Sk({w='100%',h='16px',r='4px'}:{w?:string;h?:string;r?:string}){
+  return<div style={{
+    width:w,height:h,borderRadius:r,
+    background:`linear-gradient(90deg,#2a2727 25%,#333030 50%,#2a2727 75%)`,
+    backgroundSize:'600px 100%',
+    animation:'shimmer 1.4s infinite linear',
+  }}/>;
 }
 
-function getFormat(networks: any[], productionCompanies: any[]): string {
-  const streamingKeywords = ['Netflix', 'Amazon', 'Prime Video', 'Hulu', 'Disney+', 'Apple TV+', 'Max', 'Paramount+', 'Crunchyroll', 'Peacock'];
-  const all = [...networks, ...productionCompanies];
-  const isStreaming = all.some(c => streamingKeywords.some(kw => c.name?.toLowerCase().includes(kw.toLowerCase())));
-  return isStreaming ? 'Streaming' : 'TV';
+// ─── Loading screen cinematográfico ───────────────────────────────────────────
+function LoadingScreen(){
+  return(
+    <div style={{
+      position:'fixed',inset:0,background:BG,
+      display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+      gap:32,fontFamily:'Overpass,sans-serif',zIndex:9999,
+      animation:'fadeIn .3s ease',
+    }}>
+      {/* Spinner rosa */}
+      <div style={{
+        width:54,height:54,borderRadius:'50%',
+        border:'3px solid rgba(230,125,153,.18)',
+        borderTopColor:ACCENT,
+        animation:'spin .85s linear infinite',
+      }}/>
+
+      {/* Esqueleto da página */}
+      <div style={{width:900,maxWidth:'92vw',display:'flex',gap:28}}>
+        {/* Sidebar */}
+        <div style={{width:200,flexShrink:0,display:'flex',flexDirection:'column',gap:10}}>
+          <Sk w="200px" h="295px" r="6px"/>
+          <Sk w="200px" h="38px" r="4px"/>
+          <div style={{background:CARD,borderRadius:4,padding:16,display:'flex',flexDirection:'column',gap:10}}>
+            {[...Array(8)].map((_,i)=><div key={i} style={{display:'flex',flexDirection:'column',gap:4}}>
+              <Sk w="55%" h="10px"/><Sk w="80%" h="13px"/>
+            </div>)}
+          </div>
+        </div>
+        {/* Main */}
+        <div style={{flex:1,paddingTop:90,display:'flex',flexDirection:'column',gap:14}}>
+          <Sk w="60%" h="30px"/><Sk w="18%" h="13px"/>
+          <Sk h="130px" r="4px"/><Sk h="100px" r="4px"/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            {[...Array(4)].map((_,i)=><Sk key={i} h="80px" r="4px"/>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function getSeasonAiringStatus(episodes: Episode[]): string {
-  const today = new Date().toISOString().split('T')[0];
-  const airedEpisodes = episodes.filter(ep => ep.air_date && ep.air_date <= today);
-  
-  if (airedEpisodes.length === 0) return 'Not Yet Aired';
-  if (airedEpisodes.length === episodes.length) return 'Finished';
-  return 'Airing';
+// ─── Modal: Editar Capa ────────────────────────────────────────────────────────
+// Salva via PATCH /api/entries/[id] → imagePath é persistido no banco
+// e portanto reflete em TODA a aplicação (profile, home, search).
+function CoverModal({entryId,current,onSaved,onClose}:{
+  entryId:string; current:string|null;
+  onSaved:(p:string)=>void; onClose:()=>void;
+}){
+  const[url,setUrl]=useState(current&&current.startsWith('http')?current:'');
+  const[saving,setSaving]=useState(false);
+  const[preview,setPreview]=useState(url);
+  const inp:React.CSSProperties={
+    width:'100%',padding:'9px 12px',background:'#1e1c1c',
+    border:'1px solid rgba(255,255,255,.08)',borderRadius:4,
+    color:TEXT,fontSize:12,boxSizing:'border-box',fontFamily:'Overpass,sans-serif',
+  };
+  useEffect(()=>{
+    const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
+    document.addEventListener('keydown',h);
+    document.body.style.overflow='hidden';
+    return()=>{document.removeEventListener('keydown',h);document.body.style.overflow='';};
+  },[]);
+  async function save(){
+    if(!url.trim())return;
+    setSaving(true);
+    const res=await fetch(`/api/entries/${entryId}`,{
+      method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({imagePath:url.trim()}),
+    });
+    setSaving(false);
+    if(res.ok){onSaved(url.trim());}
+    else alert('Erro ao salvar capa. Verifique /api/entries/[id].');
+  }
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:CARD,borderRadius:8,padding:28,width:'100%',maxWidth:440,boxShadow:'0 20px 60px rgba(0,0,0,.65)',animation:'scaleIn .25s ease'}}>
+        <div style={{fontSize:16,fontWeight:700,color:TEXT,marginBottom:20}}>🖼 Alterar Capa</div>
+        <div style={{display:'flex',gap:16,marginBottom:20}}>
+          <div style={{width:88,height:132,borderRadius:4,overflow:'hidden',background:'#1a1a1a',flexShrink:0,border:'1px solid rgba(255,255,255,.06)'}}>
+            {preview
+              ?<img src={preview} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="preview" onError={()=>setPreview('')}/>
+              :<div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:11,textAlign:'center',padding:6}}>Preview</div>}
+          </div>
+          <div style={{flex:1}}>
+            <label style={{display:'block',fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>URL da imagem</label>
+            <input value={url} onChange={e=>{setUrl(e.target.value);setPreview(e.target.value);}} placeholder="https://..." style={inp}/>
+            <p style={{fontSize:11,color:MUTED,lineHeight:1.5,marginTop:8}}>
+              A capa é salva no banco de dados e reflete em <strong style={{color:TEXT}}>todo o site</strong> — profile, home, search e relations.
+            </p>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={save} disabled={saving||!url.trim()} style={{flex:1,padding:11,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:14,fontWeight:700,cursor:'pointer',opacity:(!url.trim()||saving)?.5:1,fontFamily:'Overpass,sans-serif'}}>
+            {saving?'Salvando...':'✓ Salvar no site'}
+          </button>
+          <button onClick={onClose} style={{flex:1,padding:11,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:4,color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-// ─── Componente Principal ─────────────────────────────────────────────────────
+// ─── Modal: Adicionar Relation ─────────────────────────────────────────────────
+function AddRelModal({onAdd,onClose}:{
+  onAdd:(r:RelationItem)=>void; onClose:()=>void;
+}){
+  const[kind,setKind]=useState<'movie'|'tv'>('tv');
+  const[tmdbId,setTmdbId]=useState('');
+  const[sn,setSn]=useState('1');
+  const[relType,setRelType]=useState('SEQUEL');
+  const[loading,setLoading]=useState(false);
+  const[preview,setPreview]=useState<any>(null);
+  const[err,setErr]=useState('');
 
-export default function TitlePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const parsed = parseSlug(id);
+  useEffect(()=>{
+    const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
+    document.addEventListener('keydown',h);
+    document.body.style.overflow='hidden';
+    return()=>{document.removeEventListener('keydown',h);document.body.style.overflow='';};
+  },[]);
 
-  const [entry, setEntry] = useState<EntryData | null>(null);
-  const [show, setShow] = useState<TmdbShow | null>(null);
-  const [seasonDetail, setSeasonDetail] = useState<TmdbSeasonDetail | null>(null);
-  const [movie, setMovie] = useState<TmdbMovie | null>(null);
-  const [relations, setRelations] = useState<RelationItem[]>([]);
-  const [editingRelations, setEditingRelations] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'characters' | 'staff' | 'videos'>('overview');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [source, setSource] = useState<string | null>(null);
+  async function search(){
+    const id=parseInt(tmdbId);if(isNaN(id)){setErr('TMDB ID inválido');return;}
+    setLoading(true);setErr('');setPreview(null);
+    try{
+      if(kind==='movie'){
+        const r=await fetch(`${TMDB}/movie/${id}?api_key=${API_KEY}&language=pt-BR`);
+        const d=await r.json();if(d.status_code)throw new Error('Não encontrado');
+        setPreview({title:d.title,poster:d.poster_path,year:getYear(d.release_date)});
+      }else{
+        const snN=parseInt(sn)||1;
+        const[sr,pr]=await Promise.all([
+          fetch(`${TMDB}/tv/${id}/season/${snN}?api_key=${API_KEY}&language=pt-BR`),
+          fetch(`${TMDB}/tv/${id}?api_key=${API_KEY}&language=pt-BR`),
+        ]);
+        const[sd,pd]=await Promise.all([sr.json(),pr.json()]);
+        setPreview({title:buildSeasonTitle(pd.name,snN),poster:sd.poster_path??pd.poster_path,year:getYear(sd.air_date),snN});
+      }
+    }catch(e:any){setErr(e.message??'Erro ao buscar.');}
+    finally{setLoading(false);}
+  }
 
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true); setError(null);
-      try {
-        if (parsed.kind === 'movie') {
-          const [entryRes, tmdbRes] = await Promise.all([
+  function confirm(){
+    if(!preview)return;
+    const id=parseInt(tmdbId);const snN=parseInt(sn)||1;
+    onAdd(kind==='movie'
+      ?{slug:`movie-${id}`,relationType:relType,title:preview.title,poster_path:preview.poster,kind:'movie',year:preview.year}
+      :{slug:`tv-${id}-s${snN}`,relationType:relType,title:preview.title,poster_path:preview.poster,kind:'tv',year:preview.year,seasonNumber:snN}
+    );
+    onClose();
+  }
+
+  const inp:React.CSSProperties={width:'100%',padding:'9px 12px',background:'#1e1c1c',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:TEXT,fontSize:13,boxSizing:'border-box',fontFamily:'Overpass,sans-serif'};
+  const lbl:React.CSSProperties={display:'block',fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:7};
+  const ALL_RELS=['SEQUEL','PREQUEL','SPIN_OFF','SIDE_STORY','ADAPTATION','ALTERNATIVE','SUMMARY','OTHER'];
+
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:CARD,borderRadius:8,padding:26,width:'100%',maxWidth:420,boxShadow:'0 20px 60px rgba(0,0,0,.65)',animation:'scaleIn .25s ease',display:'flex',flexDirection:'column',gap:16}}>
+        <div style={{fontSize:16,fontWeight:700,color:TEXT}}>➕ Adicionar Relation</div>
+        {/* Tipo de mídia */}
+        <div>
+          <label style={lbl}>Tipo de mídia</label>
+          <div style={{display:'flex',gap:8}}>
+            {(['tv','movie']as const).map(k=>(
+              <button key={k} onClick={()=>setKind(k)} style={{flex:1,padding:8,background:kind===k?ACCENT:'#1e1c1c',border:'none',borderRadius:4,color:kind===k?'white':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
+                {k==='tv'?'📺 Série':'🎬 Filme'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Tipo de relação */}
+        <div>
+          <label style={lbl}>Tipo de relação</label>
+          <select value={relType} onChange={e=>setRelType(e.target.value)} style={inp}>
+            {ALL_RELS.map(r=><option key={r} value={r}>{REL_LABEL[r]??r}</option>)}
+          </select>
+        </div>
+        {/* ID */}
+        <div>
+          <label style={lbl}>TMDB ID {kind==='tv'?'(da série pai, ex: 95557)':'(do filme)'}</label>
+          <input value={tmdbId} onChange={e=>setTmdbId(e.target.value)} onKeyDown={e=>e.key==='Enter'&&search()} placeholder="ex: 95557" style={inp}/>
+        </div>
+        {kind==='tv'&&<div>
+          <label style={lbl}>Número da temporada</label>
+          <input value={sn} onChange={e=>setSn(e.target.value)} type="number" min="1" style={inp}/>
+        </div>}
+        {err&&<div style={{fontSize:12,color:'#e74c3c',padding:'6px 10px',background:'rgba(231,76,60,.12)',borderRadius:4}}>{err}</div>}
+        {preview&&(
+          <div style={{display:'flex',gap:12,background:'#1e1c1c',borderRadius:4,padding:12,animation:'fadeIn .2s ease'}}>
+            {preview.poster&&<img src={tmdbImg(preview.poster,'w92')!} style={{width:46,height:69,objectFit:'cover',borderRadius:3}} alt="prev"/>}
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{preview.title}</div>
+              <div style={{fontSize:11,color:MUTED,marginTop:3}}>{preview.year}</div>
+              <div style={{fontSize:11,color:ACCENT,marginTop:4,fontWeight:700}}>{REL_LABEL[relType]??relType}</div>
+            </div>
+          </div>
+        )}
+        <div style={{display:'flex',gap:8}}>
+          <button onClick={search} disabled={loading} style={{flex:1,padding:10,background:'#1e1c1c',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:TEXT,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif',fontWeight:600}}>
+            {loading?'⏳ Buscando...':'🔍 Buscar'}
+          </button>
+          {preview&&<button onClick={confirm} style={{flex:1,padding:10,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif',fontWeight:700}}>✓ Confirmar</button>}
+          <button onClick={onClose} style={{padding:'10px 14px',background:'transparent',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:MUTED,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>✕</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal: List Editor ────────────────────────────────────────────────────────
+function ListEditorModal({entry,isTV,showId,seasonNumber,displayTitle,posterPath,episodeCount,tmdbId,onClose,onSaved}:{
+  entry:EntryData|null; isTV:boolean; showId:number|null;
+  seasonNumber:number|null; displayTitle:string;
+  posterPath:string|null; episodeCount:number|null|undefined;
+  tmdbId?:number|null;
+  onClose:()=>void; onSaved:(u:Partial<EntryData>)=>void;
+}){
+  const[status,setStatus]=useState(entry?.status??'PLANNING');
+  const[score,setScore]=useState<number>(entry?.score??0);
+  const[scoreInput,setScoreInput]=useState(entry?.score?entry.score.toFixed(1):'0.0');
+  const[progress,setProgress]=useState(entry?.progress??0);
+  const[startDate,setStartDate]=useState(entry?.startDate??'');
+  const[finishDate,setFinishDate]=useState(entry?.finishDate??'');
+  const[rewatchCount,setRewatchCount]=useState(entry?.rewatchCount??0);
+  const[notes,setNotes]=useState(entry?.notes??'');
+  const[hidden,setHidden]=useState(entry?.hidden??false);
+  const[saving,setSaving]=useState(false);
+
+  useEffect(()=>{
+    const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
+    document.addEventListener('keydown',h);
+    document.body.style.overflow='hidden';
+    return()=>{document.removeEventListener('keydown',h);document.body.style.overflow='';};
+  },[]);
+
+  // Auto-fill dates
+  useEffect(()=>{
+    const today=new Date().toISOString().split('T')[0];
+    if(status==='COMPLETED'&&!finishDate)setFinishDate(today);
+    if((status==='WATCHING'||status==='REWATCHING')&&!startDate)setStartDate(today);
+  },[status]);
+
+  // Sync score input → number
+  function handleScoreInput(v:string){
+    setScoreInput(v);
+    const n=parseFloat(v);
+    if(!isNaN(n)&&n>=0&&n<=10)setScore(n);
+  }
+
+  const STATUS_OPTS=['WATCHING','PLANNING','COMPLETED','REWATCHING','PAUSED','DROPPED','UPCOMING'];
+  const maxEp=episodeCount??9999;
+
+  async function save(){
+    setSaving(true);
+    try{
+      const payload={score,status,progress,startDate:startDate||null,finishDate:finishDate||null,rewatchCount,notes:notes||null,hidden};
+      let res:Response;
+      if(entry){
+        res=await fetch(`/api/entries/${entry.id}`,{
+          method:'PATCH',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify(payload),
+        });
+      }else{
+        res=await fetch('/api/add-media',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            tmdbId: entry?.tmdbId ?? tmdbId ?? null,
+            parentTmdbId: isTV ? showId : null,
+            seasonNumber: isTV ? seasonNumber : null,
+            type: isTV ? 'TV_SEASON' : 'MOVIE',
+            title: displayTitle,
+            poster_path: posterPath,
+            totalEpisodes: episodeCount ?? null,
+            ...payload,
+          }),
+        });
+      }
+      if(res.ok){onSaved(payload);onClose();}
+      else alert('Erro ao salvar.');
+    }finally{setSaving(false);}
+  }
+
+  const inp:React.CSSProperties={width:'100%',padding:'9px 12px',background:'#1e1c1c',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:TEXT,fontSize:13,boxSizing:'border-box',fontFamily:'Overpass,sans-serif'};
+  const lbl:React.CSSProperties={display:'block',fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:7};
+  const stepBtn:React.CSSProperties={width:38,height:38,background:'#1e1c1c',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:TEXT,fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0};
+  const posterImg=posterPath?(posterPath.startsWith('http')?posterPath:`https://image.tmdb.org/t/p/w200${posterPath}`):null;
+
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(11,22,34,.88)',backdropFilter:'blur(5px)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:16,animation:'fadeIn .2s ease'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#1a1a2e',borderRadius:8,width:'100%',maxWidth:480,maxHeight:'94vh',overflow:'auto',boxShadow:'0 16px 60px rgba(0,0,0,.7)',animation:'scaleIn .28s ease'}}>
+        {/* Header */}
+        <div style={{position:'relative',minHeight:110,background:'linear-gradient(135deg,rgba(61,187,238,.22),rgba(43,45,66,.95))',borderRadius:'8px 8px 0 0',overflow:'hidden',display:'flex',alignItems:'center',gap:14,padding:'16px 20px'}}>
+          {posterImg&&<img src={posterImg} style={{width:55,height:80,objectFit:'cover',borderRadius:3,boxShadow:'0 2px 10px rgba(0,0,0,.4)',flexShrink:0}} alt={displayTitle}/>}
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,color:'white',lineHeight:1.3,marginBottom:5,overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{displayTitle}</div>
+            <div style={{fontSize:11,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px'}}>{isTV?`Season ${seasonNumber}`:'Film'}</div>
+          </div>
+          <button onClick={onClose} style={{position:'absolute',top:10,right:14,background:'none',border:'none',color:'rgba(255,255,255,.5)',fontSize:24,cursor:'pointer',lineHeight:1}}>×</button>
+        </div>
+
+        <div style={{padding:'22px 20px',display:'flex',flexDirection:'column',gap:18}}>
+          {/* Status */}
+          <div>
+            <label style={lbl}>Status</label>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+              {STATUS_OPTS.map(s=>(
+                <button key={s} onClick={()=>setStatus(s)} style={{
+                  padding:'8px 4px',fontSize:11,fontWeight:700,cursor:'pointer',
+                  border:status===s?`2px solid ${statusColor(s)}`:'1px solid rgba(255,255,255,.07)',
+                  borderRadius:4,background:status===s?`${statusColor(s)}22`:'#151f2e',
+                  color:status===s?statusColor(s):MUTED,
+                  fontFamily:'Overpass,sans-serif',transition:'all .15s',
+                }}>
+                  {s.charAt(0)+s.slice(1).toLowerCase().replace(/_/g,' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Score — nota quebrada 0.0 ~ 10.0 */}
+          <div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:8,alignItems:'center'}}>
+              <label style={{...lbl,marginBottom:0}}>Score (0.0 – 10.0)</label>
+              <span style={{fontSize:22,fontWeight:800,color:score>0?scoreColor(score):MUTED,letterSpacing:'-.5px'}}>
+                {score>0?score.toFixed(1):'—'}
+              </span>
+            </div>
+            {/* Slider para arrastar */}
+            <input type="range" min={0} max={10} step={0.1} value={score}
+              onChange={e=>{const v=Number(e.target.value);setScore(v);setScoreInput(v.toFixed(1));}}
+              style={{width:'100%',accentColor:ACCENT,cursor:'pointer',marginBottom:8}}/>
+            {/* Input manual para nota quebrada exata */}
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <input
+                type="number" min="0" max="10" step="0.1"
+                value={scoreInput}
+                onChange={e=>handleScoreInput(e.target.value)}
+                style={{...inp,width:90,textAlign:'center'}}
+                placeholder="0.0"
+              />
+              <span style={{fontSize:12,color:MUTED}}>Digite a nota exata (ex: 7.3, 9.5)</span>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#3d4f60',marginTop:4}}>
+              {[0,1,2,3,4,5,6,7,8,9,10].map(n=><span key={n}>{n}</span>)}
+            </div>
+          </div>
+
+          {/* Progress */}
+          {isTV&&(
+            <div>
+              <label style={lbl}>Episodes {episodeCount?`/ ${episodeCount}`:''}</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <button onClick={()=>setProgress(p=>Math.max(0,p-1))} style={stepBtn}>−</button>
+                <input type="number" min={0} max={maxEp} value={progress}
+                  onChange={e=>setProgress(Math.min(maxEp,Math.max(0,Number(e.target.value))))}
+                  style={{...inp,textAlign:'center',flex:1}}/>
+                <button onClick={()=>setProgress(p=>Math.min(maxEp,p+1))} style={stepBtn}>+</button>
+              </div>
+            </div>
+          )}
+
+          {/* Datas */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <div><label style={lbl}>Start Date</label><input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={inp}/></div>
+            <div><label style={lbl}>Finish Date</label><input type="date" value={finishDate} onChange={e=>setFinishDate(e.target.value)} style={inp}/></div>
+          </div>
+
+          {/* Rewatches */}
+          <div>
+            <label style={lbl}>Rewatches</label>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <button onClick={()=>setRewatchCount(r=>Math.max(0,r-1))} style={stepBtn}>−</button>
+              <div style={{...inp,flex:1,textAlign:'center',display:'flex',alignItems:'center',justifyContent:'center'}}>{rewatchCount}</div>
+              <button onClick={()=>setRewatchCount(r=>r+1)} style={stepBtn}>+</button>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label style={lbl}>Notes</label>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} placeholder="Anotações pessoais..." style={{...inp,resize:'vertical'}}/>
+          </div>
+
+          {/* Hidden */}
+          <label style={{display:'flex',gap:10,alignItems:'center',cursor:'pointer'}}>
+            <input type="checkbox" checked={hidden} onChange={e=>setHidden(e.target.checked)} style={{width:16,height:16,accentColor:ACCENT}}/>
+            <span style={{fontSize:13,color:MUTED}}>Ocultar das listas</span>
+          </label>
+
+          {/* Salvar */}
+          <div style={{display:'flex',gap:10,paddingTop:4}}>
+            <button onClick={save} disabled={saving} style={{flex:1,padding:12,background:saving?'#555':ACCENT,border:'none',borderRadius:4,color:'white',fontSize:14,fontWeight:700,cursor:saving?'wait':'pointer',fontFamily:'Overpass,sans-serif'}}>
+              {saving?'Salvando...':'Salvar'}
+            </button>
+            <button onClick={onClose} style={{flex:1,padding:12,background:'#151f2e',border:'1px solid rgba(255,255,255,.07)',borderRadius:4,color:MUTED,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Componente principal ──────────────────────────────────────────────────────
+export default function TitlePage({params}:{params:Promise<{id:string}>}){
+  const{id}=use(params);
+  const parsed=parseSlug(id);
+
+  const[entry,         setEntry]         =useState<EntryData|null>(null);
+  const[show,          setShow]          =useState<TmdbShow|null>(null);
+  const[seasonDetail,  setSeasonDetail]  =useState<TmdbSeasonDetail|null>(null);
+  const[movie,         setMovie]         =useState<TmdbMovie|null>(null);
+  const[relations,     setRelations]     =useState<RelationItem[]>([]);
+  const[editingRel,    setEditingRel]    =useState(false);
+  const[showAddRel,    setShowAddRel]    =useState(false);
+  const[showCoverEdit, setShowCoverEdit] =useState(false);
+  // customPoster: capa sobrescrita pelo usuário (salva no banco)
+  const[customPoster,  setCustomPoster]  =useState<string|null>(null);
+  const[activeTab,     setActiveTab]     =useState<'overview'|'characters'|'staff'|'videos'>('overview');
+  const[loading,       setLoading]       =useState(true);
+  const[error,         setError]         =useState<string|null>(null);
+  const[editorOpen,    setEditorOpen]    =useState(false);
+  const[source,        setSource]        =useState<string|null>(null);
+  const[mounted,       setMounted]       =useState(false);
+
+  // Inject CSS once
+  useEffect(()=>{
+    if(document.getElementById('tp-css'))return;
+    const el=document.createElement('style');
+    el.id='tp-css';el.textContent=GLOBAL_CSS;
+    document.head.appendChild(el);
+  },[]);
+
+  // ─── Fetch de dados ─────────────────────────────────────────────────────────
+  useEffect(()=>{
+    let cancelled=false;
+    async function load(){
+      setLoading(true);setError(null);setMounted(false);
+      setEntry(null);setShow(null);setSeasonDetail(null);setMovie(null);
+      setRelations([]);setCustomPoster(null);setSource(null);
+      try{
+        if(parsed.kind==='movie'){
+          const[eRes,tRes]=await Promise.all([
             fetch(`/api/entry/movie-${parsed.movieId}`),
             fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
           ]);
-          if (entryRes.ok) setEntry(await entryRes.json());
-          if (!tmdbRes.ok) throw new Error(`Filme ${parsed.movieId} não encontrado no TMDB`);
-          const movieData = await tmdbRes.json();
-          setMovie(movieData);
+          if(cancelled)return;
+          if(eRes.ok){const e:EntryData=await eRes.json();setEntry(e);if(e.imagePath)setCustomPoster(e.imagePath);}
+          if(!tRes.ok)throw new Error('Filme não encontrado no TMDB');
+          const md:TmdbMovie=await tRes.json();
+          if(cancelled)return;
+          setMovie(md);
 
-          try {
-            const keywordsRes = await fetch(`${TMDB}/movie/${parsed.movieId}/keywords?api_key=${API_KEY}`);
-            if (keywordsRes.ok) {
-              const keywordsData = await keywordsRes.json();
-              const keywords = keywordsData.keywords?.map((k: any) => k.name.toLowerCase()) || [];
-              if (keywords.some((k: string) => k.includes('comic') || k.includes('manga') || k.includes('graphic novel'))) {
-                setSource('Comic Book');
-              } else if (keywords.some((k: string) => k.includes('novel') || k.includes('book') || k.includes('literature'))) {
-                setSource('Novel');
-              } else if (keywords.some((k: string) => k.includes('video game') || k.includes('game'))) {
-                setSource('Video Game');
-              } else if (keywords.some((k: string) => k.includes('anime'))) {
-                setSource('Anime');
-              } else {
-                setSource('Original');
+          // ── Relations para filmes: coleção TMDB ──────────────────────────
+          // belongs_to_collection é exatamente onde o TMDB registra franquias.
+          // Ex: Mario → pertence à coleção "Super Mario Collection"
+          //     → parts = [Mario 1, Mario 2, Mario Galaxy...]
+          // Pegamos somente o filme imediatamente anterior (prequel) e
+          // o imediatamente seguinte (sequel) na ordem de release_date.
+          if(md.belongs_to_collection){
+            try{
+              const cRes=await fetch(`${TMDB}/collection/${md.belongs_to_collection.id}?api_key=${API_KEY}&language=pt-BR`);
+              if(cRes.ok&&!cancelled){
+                const col:TmdbCollection=await cRes.json();
+                // Ordena por data de lançamento
+                const sorted=[...col.parts].sort((a,b)=>
+                  new Date(a.release_date||'9999').getTime()-new Date(b.release_date||'9999').getTime()
+                );
+                const myIdx=sorted.findIndex(p=>p.id===parsed.movieId);
+                const rels:RelationItem[]=[];
+                if(myIdx>0){
+                  const p=sorted[myIdx-1];
+                  rels.push({slug:`movie-${p.id}`,relationType:'PREQUEL',title:p.title,poster_path:p.poster_path,kind:'movie',year:getYear(p.release_date)});
+                }
+                if(myIdx<sorted.length-1){
+                  const p=sorted[myIdx+1];
+                  rels.push({slug:`movie-${p.id}`,relationType:'SEQUEL',title:p.title,poster_path:p.poster_path,kind:'movie',year:getYear(p.release_date)});
+                }
+                if(!cancelled)setRelations(rels);
               }
-            }
-          } catch (e) {
-            setSource('Original');
+            }catch{}
           }
 
-        } else if (parsed.kind === 'tv') {
-          const { showId, seasonNumber } = parsed;
-          const [entryRes, showRes, seasonRes] = await Promise.all([
+          // Source via keywords
+          try{
+            const kRes=await fetch(`${TMDB}/movie/${parsed.movieId}/keywords?api_key=${API_KEY}`);
+            if(kRes.ok&&!cancelled){
+              const kd=await kRes.json();
+              const kws=(kd.keywords??[]).map((k:any)=>k.name.toLowerCase());
+              if(kws.some((k:string)=>k.includes('comic')||k.includes('graphic novel')))setSource('Comic Book');
+              else if(kws.some((k:string)=>k.includes('manga')))setSource('Manga');
+              else if(kws.some((k:string)=>k.includes('novel')||k.includes('book')))setSource('Novel');
+              else if(kws.some((k:string)=>k.includes('video game')||k.includes('game')))setSource('Video Game');
+              else setSource('Original');
+            }
+          }catch{if(!cancelled)setSource('Original');}
+
+        }else if(parsed.kind==='tv'){
+          const{showId,seasonNumber}=parsed;
+          const[eRes,sRes,sdRes]=await Promise.all([
             fetch(`/api/entry/tv-${showId}-s${seasonNumber}`),
             fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
             fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`),
           ]);
-          if (entryRes.ok) setEntry(await entryRes.json());
-          if (!showRes.ok) throw new Error(`Série ${showId} não encontrada no TMDB`);
-          const showData: TmdbShow = await showRes.json();
-          setShow(showData);
-          if (seasonRes.ok) setSeasonDetail(await seasonRes.json());
+          if(cancelled)return;
+          if(eRes.ok){const e:EntryData=await eRes.json();setEntry(e);if(e.imagePath)setCustomPoster(e.imagePath);}
+          if(!sRes.ok)throw new Error('Série não encontrada no TMDB');
+          const sd:TmdbShow=await sRes.json();
+          if(cancelled)return;
+          setShow(sd);
+          if(sdRes.ok)setSeasonDetail(await sdRes.json());
 
-          try {
-            const keywordsRes = await fetch(`${TMDB}/tv/${showId}/keywords?api_key=${API_KEY}`);
-            if (keywordsRes.ok) {
-              const keywordsData = await keywordsRes.json();
-              const keywords = keywordsData.results?.map((k: any) => k.name.toLowerCase()) || [];
-              if (keywords.some((k: string) => k.includes('comic') || k.includes('manga') || k.includes('anime'))) {
-                setSource('Manga');
-              } else if (keywords.some((k: string) => k.includes('novel') || k.includes('book') || k.includes('light novel'))) {
-                setSource('Light Novel');
-              } else if (keywords.some((k: string) => k.includes('video game') || k.includes('game'))) {
-                setSource('Video Game');
-              } else if (keywords.some((k: string) => k.includes('webtoon') || k.includes('manhwa'))) {
-                setSource('Webtoon');
-              } else {
-                setSource('Original');
-              }
+          // ── Relations para séries: apenas prequel direta + sequel direta ──
+          // Ex: Invencível S3 → prequel = S2, sequel = S4 (não todas as 5 season)
+          const numbered=sd.seasons.filter(s=>s.season_number>0);
+          const prevSeason=numbered.find(s=>s.season_number===seasonNumber-1);
+          const nextSeason=numbered.find(s=>s.season_number===seasonNumber+1);
+          const tvRels:RelationItem[]=[];
+          if(prevSeason)tvRels.push({
+            slug:`tv-${showId}-s${prevSeason.season_number}`,
+            relationType:'PREQUEL',
+            title:buildSeasonTitle(sd.name,prevSeason.season_number),
+            poster_path:prevSeason.poster_path,kind:'tv',
+            year:getYear(prevSeason.air_date),seasonNumber:prevSeason.season_number,
+          });
+          if(nextSeason)tvRels.push({
+            slug:`tv-${showId}-s${nextSeason.season_number}`,
+            relationType:'SEQUEL',
+            title:buildSeasonTitle(sd.name,nextSeason.season_number),
+            poster_path:nextSeason.poster_path,kind:'tv',
+            year:getYear(nextSeason.air_date),seasonNumber:nextSeason.season_number,
+          });
+          if(!cancelled)setRelations(tvRels);
+
+          // Source keywords
+          try{
+            const kRes=await fetch(`${TMDB}/tv/${showId}/keywords?api_key=${API_KEY}`);
+            if(kRes.ok&&!cancelled){
+              const kd=await kRes.json();
+              const kws=(kd.results??[]).map((k:any)=>k.name.toLowerCase());
+              if(kws.some((k:string)=>k.includes('manga')||k.includes('anime')))setSource('Manga');
+              else if(kws.some((k:string)=>k.includes('comic')))setSource('Comic Book');
+              else if(kws.some((k:string)=>k.includes('light novel')||k.includes('novel')))setSource('Light Novel');
+              else if(kws.some((k:string)=>k.includes('webtoon')||k.includes('manhwa')))setSource('Webtoon');
+              else if(kws.some((k:string)=>k.includes('video game')||k.includes('game')))setSource('Video Game');
+              else setSource('Original');
             }
-          } catch (e) {
-            setSource('Original');
-          }
+          }catch{if(!cancelled)setSource('Original');}
 
-          setRelations(
-            showData.seasons
-              .filter(s => s.season_number > 0 && s.season_number !== seasonNumber)
-              .map(s => ({
-                slug: `tv-${showId}-s${s.season_number}`,
-                relationType: s.season_number < seasonNumber ? 'PREQUEL' : 'SEQUEL',
-                title: buildSeasonTitle(showData.name, s.season_number),
-                poster_path: s.poster_path,
-                kind: 'tv' as const,
-                year: getYear(s.air_date),
-                seasonNumber: s.season_number,
-              }))
-          );
-        } else {
-          setError('Slug inválido.');
+        }else{
+          setError('Slug de título inválido.');
         }
-      } catch (e: any) {
-        setError(e.message ?? 'Erro desconhecido');
-      } finally {
-        setLoading(false);
+      }catch(e:any){
+        if(!cancelled)setError(e.message??'Erro desconhecido');
+      }finally{
+        if(!cancelled){setLoading(false);setTimeout(()=>setMounted(true),60);}
       }
     }
-    fetchData();
-  }, [id]);
+    load();
+    return()=>{cancelled=true;};
+  },[id]);
 
-  async function handleAddRelation() {
-    const kindChoice = prompt('Tipo: "movie" ou "tv"?')?.toLowerCase();
-    if (kindChoice !== 'movie' && kindChoice !== 'tv') return;
-    const tmdbIdStr = prompt('TMDB ID (para tv = ID da série pai):');
-    const tmdbId = parseInt(tmdbIdStr ?? '', 10);
-    if (isNaN(tmdbId)) return;
-    const relType = prompt('Relação (sequel, prequel, spin off, adaptation, other):') ?? 'other';
-
-    try {
-      if (kindChoice === 'tv') {
-        const snStr = prompt('Número da temporada:');
-        const sn = parseInt(snStr ?? '1', 10);
-        if (isNaN(sn)) return;
-        const [sRes, pRes] = await Promise.all([
-          fetch(`${TMDB}/tv/${tmdbId}/season/${sn}?api_key=${API_KEY}&language=pt-BR`),
-          fetch(`${TMDB}/tv/${tmdbId}?api_key=${API_KEY}&language=pt-BR`),
-        ]);
-        const [sd, pd] = await Promise.all([sRes.json(), pRes.json()]);
-        setRelations(prev => [...prev, { slug: `tv-${tmdbId}-s${sn}`, relationType: relType, title: buildSeasonTitle(pd.name, sn), poster_path: sd.poster_path, kind: 'tv', year: getYear(sd.air_date), seasonNumber: sn }]);
-      } else {
-        const res = await fetch(`${TMDB}/movie/${tmdbId}?api_key=${API_KEY}&language=pt-BR`);
-        const d = await res.json();
-        setRelations(prev => [...prev, { slug: `movie-${tmdbId}`, relationType: relType, title: d.title, poster_path: d.poster_path, kind: 'movie', year: getYear(d.release_date) }]);
-      }
-    } catch { alert('Erro ao buscar no TMDB.'); }
+  // ─── Loading / Error ────────────────────────────────────────────────────────
+  if(loading)return<LoadingScreen/>;
+  if(error||parsed.kind==='unknown'){
+    return(
+      <div style={{minHeight:'100vh',background:BG,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'Overpass,sans-serif'}}>
+        <div style={{textAlign:'center',color:TEXT,animation:'fadeInUp .4s ease'}}>
+          <div style={{fontSize:52,marginBottom:18}}>😕</div>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:8}}>Título não encontrado</div>
+          <div style={{fontSize:13,color:MUTED,marginBottom:24}}>{error}</div>
+          <Link href="/" style={{display:'inline-block',padding:'10px 24px',background:ACCENT,borderRadius:4,color:'white',fontWeight:700,textDecoration:'none',fontSize:13}}>← Voltar</Link>
+        </div>
+      </div>
+    );
   }
 
-  // ─── Loading / Error ──────────────────────────────────────────────────────
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: '#3a3737', fontFamily: 'Overpass, sans-serif', color: '#e0e4e8' }}>Carregando...</div>;
-  if (error || parsed.kind === 'unknown') return <div style={{ padding: '100px', textAlign: 'center', color: '#e0e4e8', fontFamily: 'Overpass, sans-serif' }}><div style={{ fontSize: '18px', marginBottom: '10px' }}>Título não encontrado</div><div style={{ fontSize: '13px', color: '#92a0ad' }}>{error}</div></div>;
+  // ─── Dados derivados ────────────────────────────────────────────────────────
+  const isTV        = parsed.kind==='tv';
+  const showId      = isTV?(parsed as any).showId as number:null;
+  const seasonNumber= isTV?(parsed as any).seasonNumber as number:null;
+  const displayTitle= isTV&&show?buildSeasonTitle(show.name,seasonNumber!):movie?.title??'';
+  const banner      = (isTV?show?.backdrop_path:movie?.backdrop_path)
+    ?`https://image.tmdb.org/t/p/original${isTV?show!.backdrop_path:movie!.backdrop_path}`:null;
 
-  // ─── Dados derivados ──────────────────────────────────────────────────────
-  const isTV = parsed.kind === 'tv';
-  const displayTitle = isTV && show ? buildSeasonTitle(show.name, parsed.seasonNumber) : movie?.title ?? '';
-  const banner = (isTV ? show?.backdrop_path : movie?.backdrop_path) ? `https://image.tmdb.org/t/p/original${isTV ? show!.backdrop_path : movie!.backdrop_path}` : null;
-  const posterPath = isTV ? (seasonDetail?.poster_path || show?.poster_path || entry?.imagePath) : (entry?.imagePath || movie?.poster_path);
-  const poster = posterPath ? `https://image.tmdb.org/t/p/w500${posterPath}` : null;
-  const rawScore = isTV ? (seasonDetail?.vote_average ?? show?.vote_average ?? 0) : (movie?.vote_average ?? 0);
-  const score = rawScore ? Math.round(rawScore * 10) : null;
-  const overview = isTV ? (seasonDetail?.overview || show?.overview || '') : (movie?.overview || '');
-  const cast: CastMember[] = isTV ? (seasonDetail?.credits?.cast ?? show?.credits?.cast ?? []) : (movie?.credits?.cast ?? []);
-  const staffJobs = ['Director', 'Writer', 'Screenplay', 'Producer', 'Executive Producer', 'Director of Photography', 'Original Music Composer', 'Series Director'];
-  const allCrew: CrewMember[] = isTV ? (seasonDetail?.credits?.crew ?? show?.credits?.crew ?? []) : (movie?.credits?.crew ?? []);
-  const filteredCrew = allCrew.filter(c => staffJobs.includes(c.job)).reduce<CrewMember[]>((acc, cur) => { if (!acc.find(x => x.id === cur.id && x.job === cur.job)) acc.push(cur); return acc; }, []);
-  const allVids: VideoItem[] = isTV ? [...(seasonDetail?.videos?.results ?? []), ...(show?.videos?.results ?? [])] : (movie?.videos?.results ?? []);
-  const uniqueVideos = allVids.filter(v => v.site === 'YouTube' && ['Trailer', 'Teaser', 'Clip'].includes(v.type)).filter((v, i, a) => a.findIndex(x => x.key === v.key) === i);
-  const recommendations: TmdbRecommendation[] = isTV ? (show?.recommendations?.results?.slice(0, 6) ?? []) : (movie?.recommendations?.results?.slice(0, 6) ?? []);
-  
-  // DATAS DA TEMPORADA ESPECÍFICA (não da série!)
-  const seasonAirDate = isTV ? (seasonDetail?.air_date || entry?.releaseDate) : (movie?.release_date || entry?.releaseDate);
-  const seasonEpisodes = isTV ? (seasonDetail?.episodes ?? []) : [];
-  const seasonAiringStatus = isTV ? getSeasonAiringStatus(seasonEpisodes) : null;
-  
-  // End Date = último episódio que já foi ao ar (da temporada específica)
-  const today = new Date().toISOString().split('T')[0];
-  const airedEpisodes = seasonEpisodes.filter(ep => ep.air_date && ep.air_date <= today);
-  const lastAiredEpisodeDate = airedEpisodes.length > 0 ? airedEpisodes[airedEpisodes.length - 1].air_date : null;
-  const endDate = isTV ? (lastAiredEpisodeDate || entry?.endDate) : null;
-  
-  const year = getYear(seasonAirDate ?? undefined);
-  const episodeCount = isTV ? (seasonDetail?.episodes?.length ?? show?.seasons?.find(s => s.season_number === parsed.seasonNumber)?.episode_count) : null;
-  const genresList = (isTV ? show?.genres : movie?.genres) ?? [];
-  const studios = (isTV ? show?.production_companies : movie?.production_companies) ?? [];
+  // Poster: customPoster (banco) > temporada > série/filme
+  const rawPosterPath=customPoster
+    ??(isTV?(seasonDetail?.poster_path||show?.poster_path):movie?.poster_path)
+    ??null;
+  const poster=rawPosterPath
+    ?(rawPosterPath.startsWith('http')?rawPosterPath:`https://image.tmdb.org/t/p/w500${rawPosterPath}`)
+    :null;
 
-  const formatDisplay = isTV && show 
-    ? getFormat(show.networks ?? [], show.production_companies ?? []) 
-    : 'Movie';
+  // ID a ser enviado ao criar uma entrada (prefere entry existente, depois season.id/movie.id)
+  const createTmdbId = entry?.tmdbId ?? (isTV ? (seasonDetail?.id ?? show?.seasons?.find(s=>s.season_number===seasonNumber)?.id ?? null) : (movie?.id ?? null));
 
-  // ─── Estilos ──────────────────────────────────────────────────────────────
-  const bgColor = '#3a3737';
-  const accentColor = 'rgb(230, 125, 153)';
-  const cardBg = '#2a2727';
+  // Score como decimal (0–10), não percentual
+  const rawScore=isTV?(seasonDetail?.vote_average??show?.vote_average??0):(movie?.vote_average??0);
+  const scoreDisplay = rawScore > 0 ? formatScore(rawScore) : null;
 
-  const card: React.CSSProperties = { background: cardBg, borderRadius: '4px', overflow: 'hidden' };
-  const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '30px' };
-  const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '30px' };
-  const grid4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '30px' };
-  const sectionTitle: React.CSSProperties = { fontSize: '14px', fontWeight: 'bold', color: accentColor, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' };
-  const dataType: React.CSSProperties = { fontWeight: 'bold', color: '#92a0ad', fontSize: '12px', marginBottom: '2px' };
-  const dataValue: React.CSSProperties = { color: '#e0e4e8', lineHeight: '1.4' };
-  const tabItem = (active: boolean): React.CSSProperties => ({ padding: '12px 20px', fontSize: '14px', fontWeight: active ? 'bold' : 'normal', color: active ? accentColor : '#92a0ad', borderBottom: active ? `2px solid ${accentColor}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.15s', userSelect: 'none', whiteSpace: 'nowrap' });
+  const overview    = isTV?(seasonDetail?.overview||show?.overview||''):(movie?.overview||'');
 
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case 'WATCHING': return '#3db4f2';
-      case 'COMPLETED': return '#2ecc71';
-      case 'PAUSED': return '#f1c40f';
-      case 'DROPPED': return '#e74c3c';
-      case 'REWATCHING': return '#9b59b6';
-      case 'UPCOMING': return '#e67e22';
-      default: return accentColor;
-    }
-  };
+  // Cast — deduplicado e ordenado por crédito de tela
+  const cast:CastMember[]=(isTV
+    ?[...(seasonDetail?.credits?.cast??[]),...(show?.credits?.cast??[])]
+    :(movie?.credits?.cast??[]))
+    .filter((c,i,a)=>a.findIndex(x=>x.id===c.id)===i)
+    .sort((a,b)=>(a.order??99)-(b.order??99));
 
-  // ─── Subcomponentes ───────────────────────────────────────────────────────
+  // Staff — TODOS os cargos agrupados por departamento
+  const allCrew:CrewMember[]=(isTV
+    ?[...(seasonDetail?.credits?.crew??[]),...(show?.credits?.crew??[])]
+    :(movie?.credits?.crew??[]))
+    .filter((c,i,a)=>a.findIndex(x=>x.id===c.id&&x.job===c.job)===i);
 
-  function CharCard({ p }: { p: CastMember }) {
-    return (
-      <div style={{ ...card, display: 'flex', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex' }}>
-          <img src={p.profile_path ? `https://image.tmdb.org/t/p/w185${p.profile_path}` : `https://placehold.co/60x80/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{ width: '60px', height: '80px', objectFit: 'cover' }} alt={p.name} />
-          <div style={{ padding: '8px 10px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#e0e4e8' }}>{p.name}</div>
-            <div style={{ fontSize: '11px', color: '#92a0ad', marginTop: '2px' }}>Actor</div>
+  // Agrupa por departamento para exibir na aba Staff
+  const crewByDept=allCrew.reduce<Record<string,CrewMember[]>>((acc,c)=>{
+    const d=c.department||'Other';
+    if(!acc[d])acc[d]=[];acc[d].push(c);return acc;
+  },{});
+  const DEPT_ORDER=['Directing','Writing','Production','Sound','Camera','Editing','Art','Costume & Make-Up','Visual Effects','Crew','Other'];
+  const sortedDepts=Object.keys(crewByDept).sort((a,b)=>{
+    const ai=DEPT_ORDER.indexOf(a),bi=DEPT_ORDER.indexOf(b);
+    return(ai===-1?99:ai)-(bi===-1?99:bi);
+  });
+
+  // Videos
+  const allVids:VideoItem[]=isTV
+    ?[...(seasonDetail?.videos?.results??[]),...(show?.videos?.results??[])]
+    :(movie?.videos?.results??[]);
+  const uniqueVideos=allVids
+    .filter(v=>v.site==='YouTube'&&['Trailer','Teaser','Clip','Featurette'].includes(v.type))
+    .filter((v,i,a)=>a.findIndex(x=>x.key===v.key)===i)
+    .sort((a,b)=>(b.official?1:0)-(a.official?1:0));
+
+  const recommendations:TmdbRec[]=isTV
+    ?(show?.recommendations?.results?.slice(0,6)??[])
+    :(movie?.recommendations?.results?.slice(0,6)??[]);
+
+  const seasonAirDate =isTV?(seasonDetail?.air_date||entry?.releaseDate):(movie?.release_date||entry?.releaseDate);
+  const seasonEpisodes=isTV?(seasonDetail?.episodes??[]):[];
+  const seasonStatus  =isTV?getSeasonStatus(seasonEpisodes):null;
+  const todayStr      =new Date().toISOString().split('T')[0];
+  const airedEps      =seasonEpisodes.filter(e=>e.air_date&&e.air_date<=todayStr);
+  const lastAired     =airedEps.length?airedEps.at(-1)!.air_date:null;
+  const endDate       =isTV?(lastAired||entry?.endDate):null;
+  const year          =getYear(seasonAirDate);
+  const episodeCount  =isTV?(seasonDetail?.episodes?.length??show?.seasons?.find(s=>s.season_number===seasonNumber)?.episode_count):null;
+  const genresList    =(isTV?show?.genres:movie?.genres)??[];
+  const studios       =(isTV?show?.production_companies:movie?.production_companies)??[];
+  const formatDisplay =isTV&&show?getFormat(show.networks??[],show.production_companies??[]):'Movie';
+
+  // Sidebar rows — inclui Producers (empresas) como campo separado
+  const sidebarRows:([string,React.ReactNode])[]=[
+    ['Format',formatDisplay],
+    ...(isTV&&show?[['Season',`${getOrdinal(seasonNumber!)} Season`] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ...(isTV&&seasonStatus?[['Status',seasonStatus] as [string,React.ReactNode]]:(!isTV&&movie?.status?[['Status',movie.status] as [string,React.ReactNode]]:[] as [string,React.ReactNode][])),
+    ...(seasonAirDate?[['Air Date',new Date(seasonAirDate+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ...(isTV&&endDate?[['Last Air',new Date(endDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ...(episodeCount?[['Episodes',String(episodeCount)] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ...(!isTV&&movie?.runtime?[['Duration',`${movie.runtime} min`] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ...(scoreDisplay?[['Avg Score',scoreDisplay] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ['Popularity',Math.floor((isTV?show?.popularity:movie?.popularity)??0).toLocaleString('pt-BR')] as [string,React.ReactNode],
+    ...(genresList.length?[['Genres',genresList.map(g=>g.name).join(', ')] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ...(source?[['Source',source] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    ...(isTV&&show?.networks?.length?[['Network',show.networks[0].name] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+    // Producers: empresas produtoras (não pessoas)
+    ...(studios.length?[['Producers',studios.map((s,i)=>(
+      <span key={s.id}>{s.name}{i<studios.length-1?', ':''}</span>
+    ))] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
+  ];
+
+  // ─── Subcomponentes ─────────────────────────────────────────────────────────
+
+  function CharCard({p}:{p:CastMember}){
+    return(
+      <div className="tp-char-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex',justifyContent:'space-between'}}>
+        <div style={{display:'flex'}}>
+          <img src={p.profile_path?`https://image.tmdb.org/t/p/w185${p.profile_path}`:`https://placehold.co/60x80/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{width:60,height:80,objectFit:'cover'}} alt={p.name}/>
+          <div style={{padding:'8px 10px'}}>
+            <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{p.name}</div>
+            <div style={{fontSize:11,color:MUTED,marginTop:2}}>Actor</div>
           </div>
         </div>
-        <div style={{ padding: '8px 10px', textAlign: 'right' }}>
-          <div style={{ fontSize: '12px', color: '#e0e4e8', fontWeight: '500' }}>{p.character}</div>
-          <div style={{ fontSize: '11px', color: '#92a0ad', marginTop: '2px' }}>Character</div>
+        <div style={{padding:'8px 10px',textAlign:'right'}}>
+          <div style={{fontSize:12,color:TEXT,fontWeight:500}}>{p.character}</div>
+          <div style={{fontSize:11,color:MUTED,marginTop:2}}>Character</div>
         </div>
       </div>
     );
   }
 
-  function StaffCard({ p }: { p: CrewMember }) {
-    return (
-      <div style={{ ...card, display: 'flex' }}>
-        <img src={p.profile_path ? `https://image.tmdb.org/t/p/w185${p.profile_path}` : `https://placehold.co/50x65/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{ width: '50px', height: '65px', objectFit: 'cover' }} alt={p.name} />
-        <div style={{ padding: '8px 10px' }}>
-          <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#e0e4e8', lineHeight: '1.3' }}>{p.name}</div>
-          <div style={{ fontSize: '11px', color: '#92a0ad', marginTop: '3px' }}>{p.job}</div>
+  function StaffCard({p}:{p:CrewMember}){
+    return(
+      <div className="tp-staff-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex'}}>
+        <img src={p.profile_path?`https://image.tmdb.org/t/p/w185${p.profile_path}`:`https://placehold.co/50x65/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{width:50,height:65,objectFit:'cover'}} alt={p.name}/>
+        <div style={{padding:'8px 10px'}}>
+          <div style={{fontSize:12,fontWeight:700,color:TEXT,lineHeight:1.3}}>{p.name}</div>
+          <div style={{fontSize:11,color:MUTED,marginTop:3}}>{p.job}</div>
         </div>
       </div>
     );
   }
 
-  function RelCard({ rel }: { rel: RelationItem }) {
-    return (
-      <div style={{ ...card, display: 'flex', height: '90px', position: 'relative' }}>
-        <img src={rel.poster_path ? `https://image.tmdb.org/t/p/w200${rel.poster_path}` : 'https://placehold.co/60x90/2a2727/92a0ad?text=?'} style={{ width: '60px', objectFit: 'cover', flexShrink: 0 }} alt={rel.title} />
-        <a href={`/titles/${rel.slug}`} style={{ textDecoration: 'none', display: 'flex', flex: 1, minWidth: 0 }}>
-          <div style={{ padding: '10px 12px', flex: 1, minWidth: 0 }}>
-            <div style={{ color: accentColor, fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.5px', marginBottom: '4px' }}>{rel.relationType.toUpperCase()}</div>
-            <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#e0e4e8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rel.title}</div>
-            {rel.year && <div style={{ fontSize: '11px', color: '#92a0ad', marginTop: '3px' }}>{rel.kind === 'movie' ? 'Movie' : rel.seasonNumber ? `${getOrdinal(rel.seasonNumber)} Season` : 'TV'} · {rel.year}</div>}
+  function RelCard({rel}:{rel:RelationItem}){
+    return(
+      <div className="tp-rel-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex',height:90,position:'relative'}}>
+        <img src={rel.poster_path?`https://image.tmdb.org/t/p/w200${rel.poster_path}`:'https://placehold.co/60x90/2a2727/92a0ad?text=?'} style={{width:60,objectFit:'cover',flexShrink:0}} alt={rel.title}/>
+        <a href={`/titles/${rel.slug}`} style={{textDecoration:'none',display:'flex',flex:1,minWidth:0}}>
+          <div style={{padding:'10px 12px',flex:1,minWidth:0}}>
+            <div style={{color:ACCENT,fontSize:10,fontWeight:800,letterSpacing:'.8px',marginBottom:4}}>{REL_LABEL[rel.relationType]??rel.relationType.toUpperCase()}</div>
+            <div className="tp-rel-title" style={{fontSize:13,fontWeight:700,color:TEXT,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',transition:'color .15s'}}>{rel.title}</div>
+            {rel.year&&<div style={{fontSize:11,color:MUTED,marginTop:4}}>{rel.kind==='movie'?'Film':rel.seasonNumber?`${getOrdinal(rel.seasonNumber)} Season`:'TV'} · {rel.year}</div>}
           </div>
         </a>
-        {editingRelations && (
-          <button onClick={() => setRelations(prev => prev.filter(r => r.slug !== rel.slug))} style={{ position: 'absolute', top: '6px', right: '6px', background: '#e53e3e', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        {editingRel&&(
+          <button onClick={()=>setRelations(prev=>prev.filter(r=>r.slug!==rel.slug))}
+            style={{position:'absolute',top:6,right:6,background:'#e53e3e',color:'white',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>×</button>
         )}
       </div>
     );
   }
 
-  function RecCard({ rec }: { rec: TmdbRecommendation }) {
-    const t = rec.title || rec.name || '';
-    const slug = rec.media_type === 'movie' ? `movie-${rec.id}` : `tv-${rec.id}-s1`;
-    return (
-      <a href={`/titles/${slug}`} style={{ textDecoration: 'none' }}>
-        <div style={{ ...card, cursor: 'pointer' }}>
-          {rec.poster_path ? <img src={`https://image.tmdb.org/t/p/w342${rec.poster_path}`} style={{ width: '100%', aspectRatio: '2/3', objectFit: 'cover', display: 'block' }} alt={t} /> : <div style={{ width: '100%', aspectRatio: '2/3', backgroundColor: '#2a2727', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#92a0ad', fontSize: '12px' }}>Sem imagem</div>}
-          <div style={{ padding: '8px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#e0e4e8', lineHeight: '1.3' }}>{t}</div>
-            <div style={{ fontSize: '11px', color: '#92a0ad', marginTop: '2px' }}>{getYear(rec.release_date || rec.first_air_date)} · {Math.round(rec.vote_average * 10)}%</div>
+  function RecCard({rec}:{rec:TmdbRec}){
+    const t=rec.title||rec.name||'';
+    const slug=rec.media_type==='movie'?`movie-${rec.id}`:`tv-${rec.id}-s1`;
+    const rs=rec.vote_average>0?rec.vote_average.toFixed(1):null;
+    return(
+      <a href={`/titles/${slug}`} style={{textDecoration:'none'}}>
+        <div className="tp-rec-card" style={{background:CARD,borderRadius:4,overflow:'hidden',cursor:'pointer'}}>
+          {rec.poster_path
+            ?<img src={`https://image.tmdb.org/t/p/w342${rec.poster_path}`} style={{width:'100%',aspectRatio:'2/3',objectFit:'cover',display:'block'}} alt={t}/>
+            :<div style={{width:'100%',aspectRatio:'2/3',background:'#1e1c1c',display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:12}}>Sem imagem</div>
+          }
+          <div style={{padding:8}}>
+            <div style={{fontSize:12,fontWeight:700,color:TEXT,lineHeight:1.3,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{t}</div>
+            <div style={{fontSize:11,color:MUTED,marginTop:3}}>
+              {getYear(rec.release_date||rec.first_air_date)}
+              {rs&&<span style={{color:scoreColor(+rs),fontWeight:700,marginLeft:6}}>★ {rs}</span>}
+            </div>
           </div>
         </div>
       </a>
     );
   }
 
-  // ─── Aba Overview ─────────────────────────────────────────────────────────
+  // ─── Aba Overview ────────────────────────────────────────────────────────────
+  const sectionTitle:React.CSSProperties={fontSize:14,fontWeight:700,color:ACCENT,marginBottom:12,display:'flex',alignItems:'center',gap:8};
+  const grid2:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:30};
+  const grid3:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:30};
+  const grid4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:30};
 
-  function OverviewTab() {
-    return (
+  function OverviewTab(){
+    const d=(i:number)=>({animationDelay:`${i*.07}s`});
+    return(
       <>
-        <div style={{ backgroundColor: cardBg, borderRadius: '4px', padding: '20px', marginBottom: '25px', lineHeight: '1.7', color: '#e0e4e8', fontSize: '14px' }}>
-          {overview || 'Nenhuma sinopse disponível.'}
+        <div className="anim-fade-up" style={{...d(0),background:CARD,borderRadius:4,padding:20,marginBottom:25,lineHeight:1.75,color:TEXT,fontSize:14}}>
+          {overview||'Nenhuma sinopse disponível.'}
         </div>
 
-        {relations.length > 0 && (
-          <div style={{ marginBottom: '25px' }}>
+        {/* Relations */}
+        {(relations.length>0||editingRel)&&(
+          <div className="anim-fade-up" style={{...d(1),marginBottom:25}}>
             <div style={sectionTitle}>
               <span>Relations</span>
-              <button onClick={() => setEditingRelations(v => !v)} style={{ marginLeft: 'auto', background: editingRelations ? '#e53e3e' : accentColor, color: 'white', border: 'none', borderRadius: '3px', padding: '3px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>{editingRelations ? 'Cancelar' : 'Editar'}</button>
-              {editingRelations && <button onClick={handleAddRelation} style={{ background: '#48bb78', color: 'white', border: 'none', borderRadius: '3px', padding: '3px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>+ Adicionar</button>}
+              <button onClick={()=>setEditingRel(v=>!v)} style={{marginLeft:'auto',background:editingRel?'#e53e3e':'rgba(230,125,153,.18)',color:editingRel?'white':ACCENT,border:`1px solid ${editingRel?'#e53e3e':ACCENT}`,borderRadius:3,padding:'3px 10px',fontSize:11,cursor:'pointer',fontWeight:700}}>
+                {editingRel?'Cancelar':'Editar'}
+              </button>
+              {editingRel&&<button onClick={()=>setShowAddRel(true)} style={{background:'#2ecc71',color:'white',border:'none',borderRadius:3,padding:'3px 10px',fontSize:11,cursor:'pointer',fontWeight:700}}>+ Adicionar</button>}
             </div>
-            <div style={grid2}>{relations.map(rel => <RelCard key={rel.slug} rel={rel} />)}</div>
+            <div style={grid2}>{relations.map(r=><RelCard key={r.slug} rel={r}/>)}</div>
           </div>
         )}
 
-        {cast.length > 0 && (
-          <div style={{ marginBottom: '25px' }}>
-            <div style={sectionTitle}><span>Characters</span><span style={{ marginLeft: 'auto', color: accentColor, fontSize: '12px', cursor: 'pointer' }} onClick={() => setActiveTab('characters')}>Ver todos</span></div>
-            <div style={grid2}>{cast.slice(0, 6).map(p => <CharCard key={p.id} p={p} />)}</div>
+        {/* Characters preview */}
+        {cast.length>0&&(
+          <div className="anim-fade-up" style={{...d(2),marginBottom:25}}>
+            <div style={sectionTitle}>
+              <span>Characters</span>
+              <span style={{marginLeft:'auto',color:ACCENT,fontSize:12,cursor:'pointer',opacity:.7}} onClick={()=>setActiveTab('characters')}>Ver todos →</span>
+            </div>
+            <div style={grid2}>{cast.slice(0,6).map(p=><CharCard key={p.id} p={p}/>)}</div>
           </div>
         )}
 
-        {filteredCrew.length > 0 && (
-          <div style={{ marginBottom: '25px' }}>
-            <div style={sectionTitle}><span>Staff</span><span style={{ marginLeft: 'auto', color: accentColor, fontSize: '12px', cursor: 'pointer' }} onClick={() => setActiveTab('staff')}>Ver todos</span></div>
-            <div style={grid3}>{filteredCrew.slice(0, 3).map(p => <StaffCard key={`${p.id}-${p.job}`} p={p} />)}</div>
+        {/* Staff preview */}
+        {allCrew.length>0&&(
+          <div className="anim-fade-up" style={{...d(3),marginBottom:25}}>
+            <div style={sectionTitle}>
+              <span>Staff</span>
+              <span style={{marginLeft:'auto',color:ACCENT,fontSize:12,cursor:'pointer',opacity:.7}} onClick={()=>setActiveTab('staff')}>Ver todos →</span>
+            </div>
+            <div style={grid3}>{allCrew.slice(0,6).map(p=><StaffCard key={`${p.id}-${p.job}`} p={p}/>)}</div>
           </div>
         )}
 
-        {uniqueVideos.length > 0 && (
-          <div style={{ marginBottom: '25px' }}>
-            <div style={sectionTitle}><span>Trailer</span><span style={{ marginLeft: 'auto', color: accentColor, fontSize: '12px', cursor: 'pointer' }} onClick={() => setActiveTab('videos')}>Ver todos</span></div>
-            <div style={{ position: 'relative', paddingBottom: '56.25%', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#000' }}>
-              <iframe src={`https://www.youtube.com/embed/${uniqueVideos[0].key}`} title={uniqueVideos[0].name} allowFullScreen style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }} />
+        {/* Trailer */}
+        {uniqueVideos.length>0&&(
+          <div className="anim-fade-up" style={{...d(4),marginBottom:25}}>
+            <div style={sectionTitle}>
+              <span>Trailer</span>
+              <span style={{marginLeft:'auto',color:ACCENT,fontSize:12,cursor:'pointer',opacity:.7}} onClick={()=>setActiveTab('videos')}>Ver todos →</span>
+            </div>
+            <div style={{position:'relative',paddingBottom:'56.25%',borderRadius:6,overflow:'hidden',background:'#000'}}>
+              <iframe src={`https://www.youtube.com/embed/${uniqueVideos[0].key}`} title={uniqueVideos[0].name} allowFullScreen style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',border:'none'}}/>
             </div>
           </div>
         )}
 
-        {recommendations.length > 0 && (
-          <div style={{ marginBottom: '25px' }}>
+        {/* Recomendações */}
+        {recommendations.length>0&&(
+          <div className="anim-fade-up" style={{...d(5),marginBottom:25}}>
             <div style={sectionTitle}>Recomendações</div>
-            <div style={grid4}>{recommendations.slice(0, 4).map(rec => <RecCard key={rec.id} rec={rec} />)}</div>
+            <div style={grid4}>{recommendations.slice(0,4).map(r=><RecCard key={r.id} rec={r}/>)}</div>
           </div>
         )}
       </>
     );
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
-  return (
-    <div style={{ backgroundColor: bgColor, minHeight: '100vh', fontFamily: 'Overpass, sans-serif', color: '#e0e4e8' }}>
+  // ─── Aba Staff (completo, por departamento) ──────────────────────────────────
+  function StaffTab(){
+    return(
+      <div className="anim-fade-in">
+        {sortedDepts.length===0&&<div style={{textAlign:'center',color:MUTED,padding:40,fontSize:14}}>Nenhum staff disponível.</div>}
+        {sortedDepts.map((dept,di)=>(
+          <div key={dept} style={{marginBottom:28,animation:`fadeInUp .4s ease ${di*.05}s both`}}>
+            <div style={{fontSize:11,fontWeight:800,color:MUTED,textTransform:'uppercase',letterSpacing:'1px',marginBottom:10,paddingBottom:6,borderBottom:'1px solid rgba(255,255,255,.05)'}}>{dept}</div>
+            <div style={grid3}>{crewByDept[dept].map(p=><StaffCard key={`${p.id}-${p.job}`} p={p}/>)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+  return(
+    <div style={{background:BG,minHeight:'100vh',fontFamily:'Overpass,sans-serif',color:TEXT}}>
       {/* BANNER */}
-      <div style={{ width: '100%', height: '400px', position: 'relative', backgroundColor: '#1a1a2e', overflow: 'hidden' }}>
-        {banner && <img src={banner} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }} alt="banner" />}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '200px', background: 'linear-gradient(to bottom, transparent, #3a3737)' }} />
+      <div style={{width:'100%',height:400,position:'relative',background:'#1a1a2e',overflow:'hidden'}}>
+        {banner&&<img src={banner} alt="banner" style={{width:'100%',height:'100%',objectFit:'cover',opacity:.5,animation:'fadeIn .8s ease'}}/>}
+        <div style={{position:'absolute',inset:0,background:'linear-gradient(to bottom,transparent 30%,rgba(58,55,55,.75) 70%,#3a3737 100%)'}}/>
       </div>
 
-      <div style={{ maxWidth: '1100px', margin: '0 auto', position: 'relative', marginTop: '-140px', padding: '0 20px', paddingBottom: '80px' }}>
-        <div style={{ display: 'flex', gap: '30px', alignItems: 'flex-start' }}>
+      <div style={{maxWidth:1100,margin:'0 auto',position:'relative',marginTop:-140,padding:'0 20px 80px'}}>
+        <div style={{display:'flex',gap:30,alignItems:'flex-start'}}>
 
-          {/* SIDEBAR */}
-          <div style={{ width: '215px', flexShrink: 0 }}>
-            {poster && <img src={poster} style={{ width: '215px', borderRadius: '4px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', marginBottom: '8px', display: 'block' }} alt="poster" />}
-            
-            <button
-              onClick={() => setEditorOpen(true)}
-              style={{
-                backgroundColor: getStatusColor(entry?.status),
-                color: 'white',
-                padding: '10px',
-                borderRadius: '4px',
-                textAlign: 'center',
-                fontWeight: 'bold',
-                marginBottom: '8px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                border: 'none',
-                width: '100%',
-                transition: 'background 0.2s, transform 0.1s',
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.transform = 'scale(1.02)';
-                e.currentTarget.style.opacity = '0.9';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.transform = 'scale(1)';
-                e.currentTarget.style.opacity = '1';
-              }}
-            >
-              {entry?.status ?? 'PLANNING'}
+          {/* ── SIDEBAR ── */}
+          <div style={{width:215,flexShrink:0,animation:mounted?'slideLeft .45s ease both':'none'}}>
+
+            {/* Poster + botão de editar capa (aparece no hover) */}
+            <div className="tp-poster-wrap" style={{position:'relative',marginBottom:8}}>
+              {poster
+                ?<img src={poster} style={{width:215,borderRadius:4,boxShadow:'0 6px 24px rgba(0,0,0,.5)',display:'block'}} alt="poster"/>
+                :<div style={{width:215,height:310,background:CARD,borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:13}}>Sem imagem</div>
+              }
+              {/* Overlay de editar capa (visível no hover via CSS .tp-poster-overlay) */}
+              <div className="tp-poster-overlay"
+                onClick={()=>setShowCoverEdit(true)}
+                style={{position:'absolute',inset:0,background:'rgba(0,0,0,.68)',borderRadius:4,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',opacity:0,transition:'opacity .22s ease',gap:6}}>
+                <div style={{fontSize:24}}>🖼</div>
+                <div style={{fontSize:13,fontWeight:700,color:'white'}}>Alterar Capa</div>
+                <div style={{fontSize:11,color:'rgba(255,255,255,.6)',textAlign:'center',padding:'0 12px',lineHeight:1.4}}>Salvo em todo o site</div>
+              </div>
+            </div>
+
+            {/* Status / adicionar à lista */}
+            <button className="tp-status-btn"
+              onClick={()=>setEditorOpen(true)}
+              style={{background:statusColor(entry?.status),color:'white',padding:10,borderRadius:4,textAlign:'center',fontWeight:700,marginBottom:8,cursor:'pointer',fontSize:13,border:'none',width:'100%',letterSpacing:'.3px'}}>
+              {entry?.status??'+ ADICIONAR'}
             </button>
 
-            <div style={{ backgroundColor: cardBg, borderRadius: '4px', padding: '16px', fontSize: '13px', color: '#e0e4e8' }}>
-              {[
-                ['Format', formatDisplay],
-                isTV && show ? ['Season', `${getOrdinal(parsed.seasonNumber)} of ${show.number_of_seasons}`] : null,
-                isTV && seasonAiringStatus ? ['Status', seasonAiringStatus] : null,
-                seasonAirDate ? ['First Air Date', new Date(seasonAirDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })] : null,
-                isTV && endDate ? ['Last Air Date', new Date(endDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })] : null,
-                episodeCount ? ['Episodes', String(episodeCount)] : null,
-                !isTV && movie?.runtime ? ['Duration', `${movie.runtime} min`] : null,
-                score !== null ? ['Average Score', `${score}%`] : null,
-                ['Popularity', Math.floor((isTV ? show?.popularity : movie?.popularity) ?? 0).toLocaleString('pt-BR')],
-                genresList.length > 0 ? ['Genres', genresList.map(g => g.name).join(', ')] : null,
-                ['Source', source ?? 'Original'],
-                isTV && show?.networks?.[0] ? ['Network', show.networks[0].name] : null,
-                studios && studios[0] ? ['Studio', studios[0].name] : null,
-              ].filter((item): item is [string, string] => item !== null && item !== undefined).map(([label, value]) => (
-                <div key={label} style={{ marginBottom: '14px' }}>
-                  <div style={dataType}>{label}</div>
-                  <div style={label === 'Average Score' ? { ...dataValue, color: (score ?? 0) >= 70 ? '#2ecc71' : (score ?? 0) >= 50 ? '#f1c40f' : '#e74c3c', fontWeight: 'bold' } : dataValue}>
+            {/* Info panel */}
+            <div style={{background:CARD,borderRadius:4,padding:16,fontSize:13,color:TEXT}}>
+              {sidebarRows.map(([label,value],i)=>(
+                <div key={String(label)} style={{marginBottom:13,padding:'3px 0',animation:mounted?`fadeInUp .4s ease ${.1+i*.04}s both`:'none'}}>
+                  <div style={{fontWeight:700,color:MUTED,fontSize:11,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>{label}</div>
+                  {/* Avg Score: cor dinâmica */}
+                  <div style={{color:String(label)==='Avg Score'?scoreColor(Number(scoreDisplay??0)):TEXT,lineHeight:1.4,fontWeight:String(label)==='Avg Score'?800:400,fontSize:String(label)==='Avg Score'?16:13}}>
                     {value}
                   </div>
                 </div>
@@ -523,63 +1113,101 @@ export default function TitlePage({ params }: { params: Promise<{ id: string }> 
             </div>
           </div>
 
-          {/* MAIN */}
-          <div style={{ flex: 1, paddingTop: '140px', minWidth: 0 }}>
-            <h1 style={{ fontSize: '26px', color: accentColor, marginBottom: '4px', fontWeight: '600', lineHeight: '1.2' }}>{displayTitle}</h1>
-            <div style={{ fontSize: '13px', color: '#92a0ad', marginBottom: '20px' }}>{year}</div>
+          {/* ── MAIN ── */}
+          <div style={{flex:1,paddingTop:140,minWidth:0,animation:mounted?'fadeInUp .5s ease .1s both':'none'}}>
+            <h1 style={{fontSize:26,color:ACCENT,marginBottom:4,fontWeight:700,lineHeight:1.2}}>{displayTitle}</h1>
+            <div style={{fontSize:13,color:MUTED,marginBottom:22}}>{year}</div>
 
-            {/* Abas */}
-            <div style={{ display: 'flex', borderBottom: '1px solid #2a2727', marginBottom: '25px' }}>
-              {(['overview', 'characters', 'staff', 'videos'] as const).map(tab => (
-                <span key={tab} style={tabItem(activeTab === tab)} onClick={() => setActiveTab(tab)}>
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {/* Tabs */}
+            <div style={{display:'flex',borderBottom:'1px solid rgba(255,255,255,.07)',marginBottom:25}}>
+              {(['overview','characters','staff','videos']as const).map(tab=>(
+                <span key={tab} className="tp-tab"
+                  onClick={()=>setActiveTab(tab)}
+                  style={{padding:'12px 20px',fontSize:14,cursor:'pointer',fontWeight:activeTab===tab?700:500,color:activeTab===tab?ACCENT:MUTED,borderBottom:activeTab===tab?`2px solid ${ACCENT}`:'2px solid transparent',userSelect:'none',whiteSpace:'nowrap'}}>
+                  {tab.charAt(0).toUpperCase()+tab.slice(1)}
                 </span>
               ))}
             </div>
 
-            {activeTab === 'overview' && <OverviewTab />}
-            {activeTab === 'characters' && (<><div style={sectionTitle}>Elenco Completo</div><div style={grid2}>{cast.map(p => <CharCard key={p.id} p={p} />)}</div></>)}
-            {activeTab === 'staff' && (<><div style={sectionTitle}>Equipe Completa</div><div style={grid3}>{filteredCrew.map(p => <StaffCard key={`${p.id}-${p.job}`} p={p} />)}</div></>)}
-            {activeTab === 'videos' && (
-              uniqueVideos.length === 0
-                ? <div style={{ color: '#92a0ad', textAlign: 'center', padding: '40px', fontSize: '14px' }}>Nenhum vídeo disponível.</div>
-                : <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  {uniqueVideos.map(v => (
-                    <div key={v.id}>
-                      <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#e0e4e8', marginBottom: '8px' }}>{v.name} <span style={{ fontWeight: 'normal', color: '#92a0ad', fontSize: '12px' }}>({v.type})</span></div>
-                      <div style={{ position: 'relative', paddingBottom: '56.25%', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#000' }}>
-                        <iframe src={`https://www.youtube.com/embed/${v.key}`} title={v.name} allowFullScreen style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }} />
+            {activeTab==='overview'&&<OverviewTab/>}
+
+            {activeTab==='characters'&&(
+              <div className="anim-fade-in">
+                <div style={{fontSize:14,fontWeight:700,color:ACCENT,marginBottom:14}}>Elenco Completo</div>
+                {!cast.length
+                  ?<div style={{textAlign:'center',color:MUTED,padding:40,fontSize:14}}>Nenhum elenco disponível.</div>
+                  :<div style={grid2}>{cast.map((p,i)=>(
+                    <div key={p.id} style={{animation:`fadeInUp .35s ease ${i*.025}s both`}}><CharCard p={p}/></div>
+                  ))}</div>
+                }
+              </div>
+            )}
+
+            {activeTab==='staff'&&<StaffTab/>}
+
+            {activeTab==='videos'&&(
+              <div className="anim-fade-in">
+                {!uniqueVideos.length
+                  ?<div style={{textAlign:'center',color:MUTED,padding:40,fontSize:14}}>Nenhum vídeo disponível.</div>
+                  :<div style={{display:'flex',flexDirection:'column',gap:24}}>
+                    {uniqueVideos.map((v,i)=>(
+                      <div key={v.id} style={{animation:`fadeInUp .38s ease ${i*.06}s both`}}>
+                        <div style={{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8,display:'flex',alignItems:'center',gap:8}}>
+                          {v.name}
+                          <span style={{fontWeight:400,color:MUTED,fontSize:12}}>({v.type})</span>
+                          {v.official&&<span style={{fontSize:10,background:'rgba(230,125,153,.2)',color:ACCENT,padding:'2px 6px',borderRadius:3,fontWeight:700}}>Official</span>}
+                        </div>
+                        <div style={{position:'relative',paddingBottom:'56.25%',borderRadius:6,overflow:'hidden',background:'#000'}}>
+                          <iframe src={`https://www.youtube.com/embed/${v.key}`} title={v.name} allowFullScreen style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',border:'none'}}/>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                }
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* ListEditor Modal */}
-      <ListEditor
-        isOpen={editorOpen}
-        onClose={() => { setEditorOpen(false); window.location.reload(); }}
-        tmdbId={isTV ? (parsed as any).showId : (parsed as any).movieId}
-        parentTmdbId={isTV ? (parsed as any).showId : undefined}
-        seasonNumber={isTV ? (parsed as any).seasonNumber : undefined}
-        type={isTV ? 'TV_SEASON' : 'MOVIE'}
-        title={displayTitle}
-        poster_path={posterPath}
-        totalEpisodes={episodeCount ?? undefined}
-        existingData={entry ? {
-          status: entry.status,
-          score: entry.score ?? null,
-          progress: entry.progress ?? null,
-          startDate: entry.startDate ?? null,
-          finishDate: entry.finishDate ?? null,
-          rewatchCount: entry.rewatchCount ?? 0,
-          notes: entry.notes ?? null,
-          hidden: entry.hidden ?? false,
-        } : undefined}
-      />
+      {/* ── Modais ── */}
+      {showCoverEdit&&entry&&(
+        <CoverModal
+          entryId={entry.id}
+          current={customPoster??rawPosterPath??null}
+          onSaved={p=>{setCustomPoster(p);setShowCoverEdit(false);}}
+          onClose={()=>setShowCoverEdit(false)}
+        />
+      )}
+      {showAddRel&&(
+        <AddRelModal
+          onAdd={r=>setRelations(prev=>[...prev,r])}
+          onClose={()=>setShowAddRel(false)}
+        />
+      )}
+      {editorOpen&&(
+        <ListEditorModal
+          entry={entry}
+          isTV={isTV}
+          showId={showId}
+          seasonNumber={seasonNumber}
+          displayTitle={displayTitle}
+          posterPath={rawPosterPath}
+          episodeCount={episodeCount}
+          tmdbId={createTmdbId}
+          onClose={()=>setEditorOpen(false)}
+          onSaved={async u=>{
+            if(entry){ setEntry(prev=>prev?{...prev,...u}:prev); setEditorOpen(false); return; }
+            // If we created a new entry, refetch it from the API and set state
+            const slug = isTV ? `tv-${showId}-s${seasonNumber}` : `movie-${movie?.id ?? (parsed as any).movieId}`;
+            try{
+              const r = await fetch(`/api/entry/${slug}`);
+              if(r.ok){ const newE = await r.json(); setEntry(newE); if(newE.imagePath) setCustomPoster(newE.imagePath); }
+            }catch(e){}
+            setEditorOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

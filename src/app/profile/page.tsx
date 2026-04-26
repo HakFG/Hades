@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { formatScore, scoreColor } from '@/lib/utils';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -13,7 +15,7 @@ interface Entry {
   title: string;
   type: 'MOVIE' | 'TV_SEASON';
   status: 'WATCHING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REWATCHING' | 'UPCOMING';
-  score: number; // 0-10, decimais
+  score: number;
   progress: number;
   totalEpisodes?: number | null;
   imagePath?: string | null;
@@ -39,7 +41,7 @@ interface Profile {
   avatarColor?: string | null;
 }
 
-type Tab      = 'overview' | 'series' | 'films' | 'favorites' | 'stats';
+type Tab = 'overview' | 'series' | 'films' | 'favorites' | 'stats';
 type StatusKey = 'WATCHING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REWATCHING' | 'UPCOMING';
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
@@ -68,19 +70,6 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const ALL_STATUSES: StatusKey[] = ['WATCHING', 'COMPLETED', 'PAUSED', 'DROPPED', 'PLANNING', 'REWATCHING', 'UPCOMING'];
-
-function formatScore(score: number): string {
-  if (score === 0) return '-';
-  return score % 1 === 0 ? score.toString() : score.toFixed(1);
-}
-
-function scoreColor(s: number): string {
-  if (!s) return '#c9d0d8';
-  if (s >= 9) return '#2ecc71';
-  if (s >= 7) return '#3db4f2';
-  if (s >= 5) return '#f39c12';
-  return '#e74c3c';
-}
 
 function imgUrl(p?: string | null): string {
   if (!p) return '';
@@ -122,7 +111,7 @@ function entryFormat(e: Entry): string {
   return 'TV';
 }
 
-// ─── EntryCard (sem estrela e avatar com fundo transparente) ───────────────────
+// ─── EntryCard ─────────────────────────────────────────────────────────────────
 
 function EntryCard({ entry, onEdit, onToggleFav }: {
   entry: Entry;
@@ -271,7 +260,7 @@ function EntryCard({ entry, onEdit, onToggleFav }: {
   );
 }
 
-// ─── List Editor (com campo de score sem zero inicial e botão delete) ─────────
+// ─── List Editor ───────────────────────────────────────────────────────────────
 
 function ListEditor({ entry, onClose, onSaved }: {
   entry: Entry;
@@ -323,7 +312,6 @@ function ListEditor({ entry, onClose, onSaved }: {
     try {
       const res = await fetch(`/api/entries/${entry.id}`, { method: 'DELETE' });
       if (res.ok) {
-        // Recarregar a página para refletir a remoção
         window.location.reload();
       } else {
         alert('Erro ao deletar.');
@@ -438,7 +426,6 @@ function ListEditor({ entry, onClose, onSaved }: {
             </button>
           </div>
 
-          {/* Botão Delete */}
           <button
             onClick={handleDelete}
             disabled={deleting}
@@ -456,7 +443,7 @@ function ListEditor({ entry, onClose, onSaved }: {
   );
 }
 
-// ─── Profile Editor (com avatar transparente) ─────────────────────────────────
+// ─── Profile Editor ───────────────────────────────────────────────────────────
 
 function ProfileEditor({ profile, onClose, onSaved }: {
   profile: Profile;
@@ -526,18 +513,15 @@ function ProfileEditor({ profile, onClose, onSaved }: {
           <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#e0e4e8', margin: 0 }}>Edit Profile</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#92a0ad', fontSize: '24px', cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
-
         <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div>
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Username</label>
             <input value={username} onChange={e => setUsername(e.target.value)} style={{ width: '100%', padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '14px' }} />
           </div>
-
           <div>
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Bio</label>
             <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} style={{ width: '100%', padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '13px', resize: 'vertical' }} />
           </div>
-
           <div>
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Avatar (Image)</label>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -546,7 +530,6 @@ function ProfileEditor({ profile, onClose, onSaved }: {
               <input type="text" value={avatarUrl} onChange={e => { setAvatarUrl(e.target.value); setAvatarPreview(e.target.value); }} placeholder="Or paste URL" style={{ flex: 2, padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '13px' }} />
             </div>
           </div>
-
           <div>
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Avatar Color (fallback)</label>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -554,7 +537,6 @@ function ProfileEditor({ profile, onClose, onSaved }: {
               <span style={{ fontSize: '13px', color: '#92a0ad' }}>{avatarColor}</span>
             </div>
           </div>
-
           <div>
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Banner Image</label>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -563,7 +545,6 @@ function ProfileEditor({ profile, onClose, onSaved }: {
             </div>
             {bannerPreview && <img src={bannerPreview} alt="banner preview" style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '8px', marginTop: '12px' }} />}
           </div>
-
           <div style={{ display: 'flex', gap: '12px', paddingTop: '8px' }}>
             <button onClick={save} disabled={saving} style={{ flex: 1, padding: '12px', background: '#3db4f2', border: 'none', borderRadius: '8px', color: 'white', fontSize: '14px', fontWeight: '700', cursor: saving ? 'wait' : 'pointer' }}>
               {saving ? 'Saving...' : 'Save'}
@@ -578,7 +559,7 @@ function ProfileEditor({ profile, onClose, onSaved }: {
   );
 }
 
-// ─── MediaListTab (com filtro de gênero corrigido) ────────────────────────────
+// ─── MediaListTab ─────────────────────────────────────────────────────────────
 
 function MediaListTab({ entries, type, onEdit, onToggleFav }: {
   entries: Entry[];
@@ -611,7 +592,6 @@ function MediaListTab({ entries, type, onEdit, onToggleFav }: {
   const baseFiltered = useMemo(() => {
     return mine.filter(e => {
       if (search && !e.title.toLowerCase().includes(search.toLowerCase())) return false;
-      // Filtro de gênero – verifica se o gênero selecionado está presente na string de gêneros do entry
       if (genreFilter !== 'ALL') {
         const entryGenres = e.genres?.toLowerCase() || '';
         if (!entryGenres.includes(genreFilter.toLowerCase())) return false;
@@ -795,7 +775,7 @@ function FavoritesTab({ entries, onEdit, onToggleFav }: {
   );
 }
 
-// ─── Stats Tab (com botão de sincronização manual) ───────────────────────────
+// ─── Stats Tab (com botão de sincronização reposicionado) ───────────────────────
 
 function StatsTab({ entries }: { entries: Entry[] }) {
   const [syncing, setSyncing] = useState(false);
@@ -861,51 +841,46 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', position: 'relative' }}>
-      {/* Botão de sincronização global */}
-      <div style={{ position: 'absolute', top: 0, right: 0 }}>
-        <button
-          onClick={syncAll}
-          disabled={syncing}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: syncing ? '#4a4a5a' : 'linear-gradient(135deg, #3db4f2, #2c8bc0)',
-            border: 'none',
-            borderRadius: '30px',
-            padding: '8px 20px',
-            color: 'white',
-            fontSize: '12px',
-            fontWeight: '600',
-            cursor: syncing ? 'wait' : 'pointer',
-            transition: 'all 0.2s ease',
-            boxShadow: syncing ? 'none' : '0 2px 8px rgba(61,180,242,0.3)',
-          }}
-          onMouseEnter={e => {
-            if (!syncing) {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(61,180,242,0.4)';
-            }
-          }}
-          onMouseLeave={e => {
-            if (!syncing) {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(61,180,242,0.3)';
-            }
-          }}
-        >
-          <span
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {/* Cabeçalho da seção Stats com título e botão alinhados */}
+      <div style={{ position: 'relative', marginBottom: '8px' }}>
+        <h2 style={{
+          fontSize: '18px',
+          fontWeight: '700',
+          color: '#e67d99',
+          margin: '0 0 16px 0',
+          borderLeft: '3px solid #e67d99',
+          paddingLeft: '12px',
+          letterSpacing: '-0.3px',
+        }}>
+          Estatísticas
+        </h2>
+        <div style={{ position: 'absolute', top: 0, right: 0 }}>
+          <button
+            onClick={syncAll}
+            disabled={syncing}
             style={{
-              display: 'inline-block',
-              animation: syncing ? 'spin 0.8s linear infinite' : 'none',
-              fontSize: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: syncing ? '#4a4a5a' : '#3db4f2',
+              border: 'none',
+              borderRadius: '20px',
+              padding: '6px 14px',
+              color: 'white',
+              fontSize: '11px',
+              fontWeight: '600',
+              cursor: syncing ? 'wait' : 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: syncing ? 'none' : '0 1px 4px rgba(0,0,0,0.2)',
             }}
+            onMouseEnter={e => { if (!syncing) (e.currentTarget.style.background = '#2c8bc0'); }}
+            onMouseLeave={e => { if (!syncing) (e.currentTarget.style.background = '#3db4f2'); }}
           >
-            ↻
-          </span>
-          {syncing ? 'Sincronizando...' : 'Sincronizar todos os títulos'}
-        </button>
+            <span style={{ display: 'inline-block', animation: syncing ? 'spin 0.8s linear infinite' : 'none', fontSize: '12px' }}>↻</span>
+            {syncing ? 'Sincronizando...' : 'Sincronizar dados'}
+          </button>
+        </div>
       </div>
 
       {/* Animações */}
@@ -915,7 +890,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
         }
       `}</style>
 
-      {/* Grid de estatísticas (restante inalterado) */}
+      {/* Grid de estatísticas */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
         <StatBox label="Total Series" value={series.length} accent="#3db4f2" sub={`${seriesCompleted.length} completed`} />
         <StatBox label="Episodes" value={totalEpisodes.toLocaleString()} accent="#3db4f2" />
@@ -1007,7 +982,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   );
 }
 
-// ─── Overview Tab (sem estrela nas notas) ─────────────────────────────────────
+// ─── Overview Tab ─────────────────────────────────────────────────────────────
 
 function OverviewTab({ entries, onEdit, onToggleFav }: {
   entries: Entry[];
@@ -1109,12 +1084,23 @@ function OverviewTab({ entries, onEdit, onToggleFav }: {
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 export default function ProfilePage() {
+  const searchParams = useSearchParams();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('overview');
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingProf, setEditingProf] = useState(false);
+
+  // Sincronizar aba com a URL
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['overview', 'series', 'films', 'favorites', 'stats'].includes(tabParam)) {
+      setTab(tabParam as Tab);
+    } else {
+      setTab('overview');
+    }
+  }, [searchParams]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1130,28 +1116,6 @@ export default function ProfilePage() {
   function handleSaved(updated: Partial<Entry>) {
     setEntries(prev => prev.map(e => e.id === editingEntry?.id ? { ...e, ...updated } : e));
   }
-
-  // Dentro do ProfilePage, antes do return ou no cabeçalho
-const [syncing, setSyncing] = useState(false);
-
-const syncAll = async () => {
-  if (!confirm('Isso pode levar alguns segundos. Deseja sincronizar TODOS os títulos com o TMDB?')) return;
-  setSyncing(true);
-  try {
-    const res = await fetch('/api/refresh-all', { method: 'POST' });
-    const data = await res.json();
-    if (res.ok) {
-      alert(`Sincronização concluída!\nAtualizados: ${data.updated}\nFalhas: ${data.failed}\nTotal: ${data.total}`);
-      window.location.reload();
-    } else {
-      alert('Erro na sincronização.');
-    }
-  } catch (err) {
-    alert('Erro de rede.');
-  } finally {
-    setSyncing(false);
-  }
-};
 
   async function toggleFav(entry: Entry) {
     const next = !entry.isFavorite;
@@ -1174,7 +1138,6 @@ const syncAll = async () => {
       <div style={{ height: '300px', backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative', display: 'flex', alignItems: 'flex-end', backgroundImage: profile?.bannerUrl ? `url(${profile.bannerUrl})` : 'linear-gradient(135deg, #121212 0%, #1e1e1e 50%, #121212 100%)' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'linear-gradient(180deg, rgba(18,18,18,0) 0%, rgba(18,18,18,.6) 100%)' }} />
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '30px', position: 'relative', zIndex: 2, transform: 'translateY(35px)', maxWidth: '1140px', margin: '0 auto', padding: '0 50px', width: '100%' }}>
-          {/* Avatar: fundo transparente quando há imagem */}
           <div style={{
             width: '160px', height: '160px', borderRadius: '4px',
             background: profile?.avatarUrl ? 'transparent' : (profile?.avatarColor ?? '#3db4f2'),
@@ -1188,8 +1151,6 @@ const syncAll = async () => {
         </div>
         <button onClick={() => setEditingProf(true)} style={{ position: 'absolute', top: '14px', right: '16px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', color: 'white', padding: '7px 13px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', backdropFilter: 'blur(4px)' }}>✎ Edit Profile</button>
       </div>
-
-      
 
       <div style={{ background: '#1e1e1e', paddingTop: '50px', marginBottom: '30px' }}>
         <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '0 20px' }}>
