@@ -43,6 +43,7 @@ model Entry {
   synopsis      String?     @db.Text
   releaseDate   String?
   rating        Float?      // Nota média do TMDB
+  popularity    Float?      // Popularidade do TMDB (atualizada diariamente)
   imagePath     String?     // Poster
   bannerPath    String?     // Backdrop
   customImage   String?     // Imagem customizada (URL)
