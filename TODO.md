@@ -8,19 +8,9 @@
 - **Problema**: Relations adicionadas/removidas manualmente voltam ao estado original do TMDB depois de recarregar a página.
 - **Solução proposta**: Criar tabela `Relation` no banco de dados, associada a `Entry`, e usá-la para salvar relações customizadas. A UI deve priorizar os dados do banco e, se vazio, usar fallback automático (prequel/sequel via coleção ou temporadas).
 
-### 2. Notas (score) desaparecem no perfil após F5
-- **Problema**: Ao inserir uma nota decimal (ex: 8.4) e recarregar a página, o valor volta a ser 0 ou inteiro.
-- **Solução proposta**: Verificar se `PATCH /api/entries/[id]` está salvando `score` como `Float` (banco já atualizado). Garantir que `GET /api/entries` retorne o valor correto. No front-end, após salvar, atualizar o estado local com o valor retornado pela API.
-- ✅ **CORRIGIDO**
-
 ### 3. Filtros da Search – inconsistências
-- **Defeito A**: Buscar texto + ano (ex: "Invencível" + 2020) ainda retorna a série, quando deveria não retornar nada (filtro AND).
-- **Defeito B**: Filtrar por ano traz todas as temporadas de uma série, não apenas a que lançou naquele ano.
 - **Defeito C**: Na seção "Airing Now", temporadas antigas de séries que ainda estão no ar (ex: Euphoria S1, S2) aparecem junto com a temporada atual.
-- **Solução proposta**: 
-  - Cada temporada é um card independente; o filtro de ano deve agir sobre a `air_date` da temporada.
-  - Na busca textual + ano, aplicar o filtro de ano APENAS à temporada, não à série pai.
-  - Para "Airing Now", buscar apenas a última temporada de cada série que esteja "em produção" ou com próximo episódio agendado.
+- **Solução proposta**: Buscar apenas a última temporada de cada série que esteja "em produção" ou com próximo episódio agendado.
 
 ---
 
@@ -29,6 +19,7 @@
 ### 1. Internacionalização parcial (inglês para títulos, capas e banners)
 - **Objetivo**: Nomes de séries/filmes, capas (`poster_path`) e banners (`backdrop_path`) devem vir sempre em inglês (idioma original). Sinopses e descrições permanecem em português.
 - **Solução proposta**: Nas chamadas ao TMDB, usar `language=pt-BR` apenas para `overview`; para `title`/`name` usar `language=en-US`. Imagens não dependem de idioma.
+- **Pendente**: Ajustar as chamadas de capas no `page.tsx` da página de título (`titles/[id]`) para garantir que os posters e banners correspondam ao idioma original (embora as URLs sejam as mesmas, garantir que não haja sobreposição de textos em português).
 
 ### 2. Perfil – botões + / - para episódios
 - **Objetivo**: Adicionar botões de incremento e decremento ao lado do contador de episódios nos cards de série (`EntryCard`), com tamanho proporcional à fonte do número.
@@ -46,5 +37,5 @@
 
 ## 📌 Nota
 
-- Prioridade sugerida: **Corrigir bugs 1 e 2 primeiro** (afetam diretamente persistência de dados).  
+- Prioridade sugerida: **Corrigir bug 1 primeiro** (afeta diretamente persistência de dados).  
 - Em seguida, implementar as melhorias na ordem que preferir.
