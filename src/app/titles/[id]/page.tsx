@@ -650,6 +650,224 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   const[source,        setSource]        =useState<string|null>(null);
   const[mounted,       setMounted]       =useState(false);
 
+  // ========== NOVAS FUNÇÕES AQUI ==========
+async function addRelation(newRel: RelationItem) {
+  console.log('addRelation chamado', newRel);
+
+  // 1. Obtém o sourceEntryId — se não está na lista, cria apenas a source entry
+  let sourceEntryId: string | null = entry?.id || null;
+  if (!sourceEntryId) {
+    const addRes = await fetch('/api/add-media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tmdbId: createTmdbId,
+        parentTmdbId: isTV ? showId : null,
+        seasonNumber: isTV ? seasonNumber : null,
+        type: isTV ? 'TV_SEASON' : 'MOVIE',
+        title: displayTitle,
+        poster_path: rawPosterPath,
+        totalEpisodes: episodeCount ?? null,
+      }),
+    });
+    if (!addRes.ok) {
+      alert('Erro ao adicionar título à lista. Tente novamente.');
+      return;
+    }
+    const newEntry = await addRes.json();
+    sourceEntryId = newEntry.id;
+    setEntry(newEntry);
+  }
+
+  // 2. Extrai metadados do target pelo slug — SEM criar Entry no banco
+  let targetTmdbId: number | null = null;
+  let targetParentTmdbId: number | null = null;
+  let targetSeasonNumber: number | null = null;
+  let targetType: 'MOVIE' | 'TV_SEASON' | null = null;
+
+  try {
+    if (newRel.slug.startsWith('movie-')) {
+      targetTmdbId = parseInt(newRel.slug.split('-')[1]);
+      targetType = 'MOVIE';
+    } else if (newRel.slug.startsWith('tv-')) {
+      const match = newRel.slug.match(/^tv-(\d+)-s(\d+)$/);
+      if (!match) throw new Error('Slug TV inválido');
+      targetParentTmdbId = parseInt(match[1]);
+      targetSeasonNumber = parseInt(match[2]);
+      targetType = 'TV_SEASON';
+      // Busca o season.id real (tmdbId da temporada, não da série)
+      const sRes = await fetch(
+        `${TMDB}/tv/${targetParentTmdbId}/season/${targetSeasonNumber}?api_key=${API_KEY}&language=pt-BR`
+      );
+      if (!sRes.ok) throw new Error('Temporada não encontrada no TMDB');
+      const sData = await sRes.json();
+      targetTmdbId = sData.id;
+    } else {
+      throw new Error('Slug inválido');
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Erro ao obter dados do título relacionado.');
+    return;
+  }
+
+  if (!targetTmdbId) return;
+
+  // 3. Salva a relação — a API vincula ao targetEntryId automaticamente se já existir
+  const relRes = await fetch('/api/relations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sourceEntryId,
+      relationType: newRel.relationType,
+      title: newRel.title,
+      poster_path: newRel.poster_path,
+      kind: newRel.kind,
+      year: newRel.year,
+      seasonNumber: newRel.seasonNumber,
+      targetTmdbId,
+      targetParentTmdbId,
+      targetSeasonNumber,
+      targetType,
+    }),
+  });
+
+if (relRes.ok) {
+  console.log('✅ Relação salva');
+
+  // Recarrega as relações do banco
+  try {
+    const refreshRes = await fetch(`/api/relations?sourceId=${sourceEntryId}`);
+    if (refreshRes.ok) {
+      const saved = await refreshRes.json();
+      function mapRelation(r: any): RelationItem | null {
+  // Prioridade: targetEntry (entry já na lista) → campos targetTmdbId (só metadados)
+  let slug = '';
+  if (r.targetEntry) {
+    const t = r.targetEntry;
+    slug = t.type === 'MOVIE'
+      ? `movie-${t.tmdbId}`
+      : `tv-${t.parentTmdbId ?? t.tmdbId}-s${t.seasonNumber ?? 1}`;
+  } else if (r.targetTmdbId) {
+    slug = r.targetType === 'MOVIE'
+      ? `movie-${r.targetTmdbId}`
+      : `tv-${r.targetParentTmdbId ?? r.targetTmdbId}-s${r.targetSeasonNumber ?? 1}`;
+  } else {
+    return null; // sem dados suficientes para montar o slug
+  }
+  return {
+    slug,
+    relationType: r.relationType,
+    title: r.title,
+    poster_path: r.poster_path,
+    kind: r.kind,
+    year: r.year ?? undefined,
+    seasonNumber: r.seasonNumber ?? undefined,
+  };
+}
+      setRelations(saved.map(mapRelation).filter(Boolean) as RelationItem[]);
+    } else {
+      console.error('Falha ao recarregar relações:', refreshRes.status);
+    }
+  } catch (e) {
+    console.error('Erro ao recarregar relações', e);
+  }
+} else {
+  const errorText = await relRes.text();
+  console.error('❌ Falha ao salvar relação:', errorText);
+  alert('Erro ao salvar relação.');
+}
+}
+
+async function fetchRelations(sourceId: string) {
+  try {
+    const res = await fetch(`/api/relations?sourceId=${sourceId}`);
+    if (res.ok) {
+      const saved = await res.json();
+      const mapped = saved.map((r: any) => {
+        const target = r.targetEntry;
+        if (!target) return null;
+        let slug = '';
+        if (target.type === 'MOVIE') {
+          slug = `movie-${target.tmdbId}`;
+        } else {
+          slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+        }
+        return {
+          slug,
+          relationType: r.relationType,
+          title: r.title,
+          poster_path: r.poster_path,
+          kind: r.kind,
+          year: r.year ?? undefined,
+          seasonNumber: r.seasonNumber ?? undefined,
+        };
+      }).filter(Boolean);
+      setRelations(mapped);
+    }
+  } catch (e) {
+    console.warn('Erro ao recarregar relações', e);
+  }
+}
+
+async function removeRelation(relToRemove: RelationItem) {
+  if (!entry) return;
+  let targetEntryId: string | null = null;
+
+  try {
+    // Tenta buscar pelo slug (entry pode já estar na lista do usuário)
+    const res = await fetch(`/api/entry/${relToRemove.slug}`);
+    if (res.ok) {
+      const e = await res.json();
+      targetEntryId = e.id;
+    }
+  } catch {}
+
+  // Fallback: se não achou pelo slug, busca direto nas relações salvas no banco
+  // para pegar o targetEntryId correto sem depender de a entry estar na lista
+  if (!targetEntryId) {
+    try {
+      const relRes = await fetch(`/api/relations?sourceId=${entry.id}`);
+      if (relRes.ok) {
+        const saved = await relRes.json();
+        const match = saved.find((r: any) => {
+          const t = r.targetEntry;
+          if (!t) return false;
+          const slug = t.type === 'MOVIE'
+            ? `movie-${t.tmdbId}`
+            : `tv-${t.parentTmdbId ?? t.tmdbId}-s${t.seasonNumber ?? 1}`;
+          return slug === relToRemove.slug;
+        });
+        if (match) targetEntryId = match.targetEntryId;
+      }
+    } catch {}
+  }
+
+  if (!targetEntryId) return;
+
+  // Extrai o targetTmdbId do slug para deletar sem precisar de Entry
+let targetTmdbId: number | null = null;
+if (relToRemove.slug.startsWith('movie-')) {
+  targetTmdbId = parseInt(relToRemove.slug.split('-')[1]);
+} else {
+  const match = relToRemove.slug.match(/^tv-(\d+)-s(\d+)$/);
+  if (match) {
+    const parentId = parseInt(match[1]);
+    const seasonNum = parseInt(match[2]);
+    try {
+      const sRes = await fetch(`${TMDB}/tv/${parentId}/season/${seasonNum}?api_key=${API_KEY}&language=pt-BR`);
+      if (sRes.ok) { const sData = await sRes.json(); targetTmdbId = sData.id; }
+    } catch {}
+  }
+}
+
+if (!targetTmdbId) return;
+await fetch(`/api/relations?sourceId=${entry.id}&targetTmdbId=${targetTmdbId}`, { method: 'DELETE' });
+setRelations(prev => prev.filter(r => r.slug !== relToRemove.slug));
+  setRelations(prev => prev.filter(r => r.slug !== relToRemove.slug));
+}
+// ========== FIM DAS FUNÇÕES ==========
+
   // Inject CSS once
   useEffect(()=>{
     if(document.getElementById('tp-css'))return;
@@ -658,134 +876,290 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
     document.head.appendChild(el);
   },[]);
 
-  // ─── Fetch de dados ─────────────────────────────────────────────────────────
-  useEffect(()=>{
-    let cancelled=false;
-    async function load(){
-      setLoading(true);setError(null);setMounted(false);
-      setEntry(null);setShow(null);setSeasonDetail(null);setMovie(null);
-      setRelations([]);setCustomPoster(null);setSource(null);
-      try{
-        if(parsed.kind==='movie'){
-          const[eRes,tRes]=await Promise.all([
-            fetch(`/api/entry/movie-${parsed.movieId}`),
-            fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
-          ]);
-          if(cancelled)return;
-          if(eRes.ok){const e:EntryData=await eRes.json();setEntry(e);if(e.imagePath)setCustomPoster(e.imagePath);}
-          if(!tRes.ok)throw new Error('Filme não encontrado no TMDB');
-          const md:TmdbMovie=await tRes.json();
-          if(cancelled)return;
-          setMovie(md);
+// ─── Fetch de dados (corrigido para carregar relations salvas) ──────────────
+useEffect(() => {
+  let cancelled = false;
+  async function load() {
+    setLoading(true);
+    setError(null);
+    setMounted(false);
+    setEntry(null);
+    setShow(null);
+    setSeasonDetail(null);
+    setMovie(null);
+    setRelations([]);
+    setCustomPoster(null);
+    setSource(null);
 
-          // ── Relations para filmes: coleção TMDB ──────────────────────────
-          // belongs_to_collection é exatamente onde o TMDB registra franquias.
-          // Ex: Mario → pertence à coleção "Super Mario Collection"
-          //     → parts = [Mario 1, Mario 2, Mario Galaxy...]
-          // Pegamos somente o filme imediatamente anterior (prequel) e
-          // o imediatamente seguinte (sequel) na ordem de release_date.
-          if(md.belongs_to_collection){
-            try{
-              const cRes=await fetch(`${TMDB}/collection/${md.belongs_to_collection.id}?api_key=${API_KEY}&language=pt-BR`);
-              if(cRes.ok&&!cancelled){
-                const col:TmdbCollection=await cRes.json();
-                // Ordena por data de lançamento
-                const sorted=[...col.parts].sort((a,b)=>
-                  new Date(a.release_date||'9999').getTime()-new Date(b.release_date||'9999').getTime()
-                );
-                const myIdx=sorted.findIndex(p=>p.id===parsed.movieId);
-                const rels:RelationItem[]=[];
-                if(myIdx>0){
-                  const p=sorted[myIdx-1];
-                  rels.push({slug:`movie-${p.id}`,relationType:'PREQUEL',title:p.title,poster_path:p.poster_path,kind:'movie',year:getYear(p.release_date)});
-                }
-                if(myIdx<sorted.length-1){
-                  const p=sorted[myIdx+1];
-                  rels.push({slug:`movie-${p.id}`,relationType:'SEQUEL',title:p.title,poster_path:p.poster_path,kind:'movie',year:getYear(p.release_date)});
-                }
-                if(!cancelled)setRelations(rels);
-              }
-            }catch{}
-          }
-
-          // Source via keywords
-          try{
-            const kRes=await fetch(`${TMDB}/movie/${parsed.movieId}/keywords?api_key=${API_KEY}`);
-            if(kRes.ok&&!cancelled){
-              const kd=await kRes.json();
-              const kws=(kd.keywords??[]).map((k:any)=>k.name.toLowerCase());
-              if(kws.some((k:string)=>k.includes('comic')||k.includes('graphic novel')))setSource('Comic Book');
-              else if(kws.some((k:string)=>k.includes('manga')))setSource('Manga');
-              else if(kws.some((k:string)=>k.includes('novel')||k.includes('book')))setSource('Novel');
-              else if(kws.some((k:string)=>k.includes('video game')||k.includes('game')))setSource('Video Game');
-              else setSource('Original');
-            }
-          }catch{if(!cancelled)setSource('Original');}
-
-        }else if(parsed.kind==='tv'){
-          const{showId,seasonNumber}=parsed;
-          const[eRes,sRes,sdRes]=await Promise.all([
-            fetch(`/api/entry/tv-${showId}-s${seasonNumber}`),
-            fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
-            fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`),
-          ]);
-          if(cancelled)return;
-          if(eRes.ok){const e:EntryData=await eRes.json();setEntry(e);if(e.imagePath)setCustomPoster(e.imagePath);}
-          if(!sRes.ok)throw new Error('Série não encontrada no TMDB');
-          const sd:TmdbShow=await sRes.json();
-          if(cancelled)return;
-          setShow(sd);
-          if(sdRes.ok)setSeasonDetail(await sdRes.json());
-
-          // ── Relations para séries: apenas prequel direta + sequel direta ──
-          // Ex: Invencível S3 → prequel = S2, sequel = S4 (não todas as 5 season)
-          const numbered=sd.seasons.filter(s=>s.season_number>0);
-          const prevSeason=numbered.find(s=>s.season_number===seasonNumber-1);
-          const nextSeason=numbered.find(s=>s.season_number===seasonNumber+1);
-          const tvRels:RelationItem[]=[];
-          if(prevSeason)tvRels.push({
-            slug:`tv-${showId}-s${prevSeason.season_number}`,
-            relationType:'PREQUEL',
-            title:buildSeasonTitle(sd.name,prevSeason.season_number),
-            poster_path:prevSeason.poster_path,kind:'tv',
-            year:getYear(prevSeason.air_date),seasonNumber:prevSeason.season_number,
-          });
-          if(nextSeason)tvRels.push({
-            slug:`tv-${showId}-s${nextSeason.season_number}`,
-            relationType:'SEQUEL',
-            title:buildSeasonTitle(sd.name,nextSeason.season_number),
-            poster_path:nextSeason.poster_path,kind:'tv',
-            year:getYear(nextSeason.air_date),seasonNumber:nextSeason.season_number,
-          });
-          if(!cancelled)setRelations(tvRels);
-
-          // Source keywords
-          try{
-            const kRes=await fetch(`${TMDB}/tv/${showId}/keywords?api_key=${API_KEY}`);
-            if(kRes.ok&&!cancelled){
-              const kd=await kRes.json();
-              const kws=(kd.results??[]).map((k:any)=>k.name.toLowerCase());
-              if(kws.some((k:string)=>k.includes('manga')||k.includes('anime')))setSource('Manga');
-              else if(kws.some((k:string)=>k.includes('comic')))setSource('Comic Book');
-              else if(kws.some((k:string)=>k.includes('light novel')||k.includes('novel')))setSource('Light Novel');
-              else if(kws.some((k:string)=>k.includes('webtoon')||k.includes('manhwa')))setSource('Webtoon');
-              else if(kws.some((k:string)=>k.includes('video game')||k.includes('game')))setSource('Video Game');
-              else setSource('Original');
-            }
-          }catch{if(!cancelled)setSource('Original');}
-
-        }else{
-          setError('Slug de título inválido.');
+    try {
+      if (parsed.kind === 'movie') {
+        const [eRes, tRes, tResEn, recResEn] = await Promise.all([
+  fetch(`/api/entry/movie-${parsed.movieId}`),
+  fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`),
+  fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=en-US`),
+  fetch(`${TMDB}/movie/${parsed.movieId}/recommendations?api_key=${API_KEY}&language=en-US`),
+]);
+        if (cancelled) return;
+        
+        let entryId: string | null = null;
+        if (eRes.ok) {
+          const e: EntryData = await eRes.json();
+          setEntry(e);
+          entryId = e.id;
+          if (e.imagePath) setCustomPoster(e.imagePath);
         }
-      }catch(e:any){
-        if(!cancelled)setError(e.message??'Erro desconhecido');
-      }finally{
-        if(!cancelled){setLoading(false);setTimeout(()=>setMounted(true),60);}
+        if (!tRes.ok) throw new Error('Filme não encontrado no TMDB');
+        const md: TmdbMovie = await tRes.json();
+const mdEn: TmdbMovie = tResEn.ok ? await tResEn.json() : md;
+md.title = mdEn.title || md.title;
+md.original_title = mdEn.original_title || md.original_title;
+        if (cancelled) return;
+        setMovie(md);
+
+        // ---------- Relations ----------
+        let initialRels: RelationItem[] = [];
+
+        // 1) Se a entry existe (temos entryId), tenta carregar do banco
+if (entryId) {
+  try {
+    const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
+    if (relRes.ok) {
+      const saved = await relRes.json();
+      console.log(`[Relations] Carregadas ${saved.length} relações do banco para entryId ${entryId}`);
+      if (saved.length) {
+        initialRels = saved.map((r: any) => {
+          const target = r.targetEntry;
+          if (!target) {
+            console.warn('Relação sem targetEntry', r);
+            return null;
+          }
+          let slug = '';
+          if (target.type === 'MOVIE') {
+            slug = `movie-${target.tmdbId}`;
+          } else {
+            slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+          }
+          return {
+            slug,
+            relationType: r.relationType,
+            title: r.title,
+            poster_path: r.poster_path,
+            kind: r.kind,
+            year: r.year ?? undefined,
+            seasonNumber: r.seasonNumber ?? undefined,
+          };
+        }).filter(Boolean);
+        console.log('[Relations] Mapeadas:', initialRels);
+      }
+    } else {
+      console.error(`Falha ao carregar relações: status ${relRes.status}`);
+    }
+  } catch (e) {
+    console.warn('[Relations] Falha ao carregar do banco', e);
+  }
+}
+
+        // 2) Se não tem relações salvas, gerar automáticas (TMDB)
+        if (initialRels.length === 0 && md.belongs_to_collection) {
+          try {
+            const cRes = await fetch(
+              `${TMDB}/collection/${md.belongs_to_collection.id}?api_key=${API_KEY}&language=pt-BR`
+            );
+            if (cRes.ok) {
+              const col: TmdbCollection = await cRes.json();
+              const sorted = [...col.parts].sort(
+                (a, b) =>
+                  new Date(a.release_date || '9999').getTime() -
+                  new Date(b.release_date || '9999').getTime()
+              );
+              const myIdx = sorted.findIndex((p) => p.id === parsed.movieId);
+              if (myIdx > 0) {
+                const p = sorted[myIdx - 1];
+                initialRels.push({
+                  slug: `movie-${p.id}`,
+                  relationType: 'PREQUEL',
+                  title: p.title,
+                  poster_path: p.poster_path,
+                  kind: 'movie',
+                  year: getYear(p.release_date),
+                });
+              }
+              if (myIdx < sorted.length - 1) {
+                const p = sorted[myIdx + 1];
+                initialRels.push({
+                  slug: `movie-${p.id}`,
+                  relationType: 'SEQUEL',
+                  title: p.title,
+                  poster_path: p.poster_path,
+                  kind: 'movie',
+                  year: getYear(p.release_date),
+                });
+              }
+            }
+          } catch {}
+        }
+
+        if (!cancelled) setRelations(initialRels);
+
+        // Source (keywords) – inalterado
+        try {
+          const kRes = await fetch(
+            `${TMDB}/movie/${parsed.movieId}/keywords?api_key=${API_KEY}`
+          );
+          if (kRes.ok && !cancelled) {
+            const kd = await kRes.json();
+            const kws = (kd.keywords ?? []).map((k: any) => k.name.toLowerCase());
+            if (kws.some((k: string) => k.includes('comic') || k.includes('graphic novel')))
+              setSource('Comic Book');
+            else if (kws.some((k: string) => k.includes('manga'))) setSource('Manga');
+            else if (kws.some((k: string) => k.includes('novel') || k.includes('book')))
+              setSource('Novel');
+            else if (kws.some((k: string) => k.includes('video game') || k.includes('game')))
+              setSource('Video Game');
+            else setSource('Original');
+          }
+        } catch {
+          if (!cancelled) setSource('Original');
+        }
+      } else if (parsed.kind === 'tv') {
+        const { showId, seasonNumber } = parsed;
+        const [eRes, sRes, sdRes, sResEn] = await Promise.all([
+  fetch(`/api/entry/tv-${showId}-s${seasonNumber}`),
+  fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
+  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`),
+  fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=en-US`),
+]);
+        if (cancelled) return;
+        
+        let entryId: string | null = null;
+        if (eRes.ok) {
+          const e: EntryData = await eRes.json();
+          setEntry(e);
+          entryId = e.id;
+          if (e.imagePath) setCustomPoster(e.imagePath);
+        }
+        if (!sRes.ok) throw new Error('Série não encontrada no TMDB');
+        const sd: TmdbShow = await sRes.json();
+const sdEn: TmdbShow = sResEn.ok ? await sResEn.json() : sd;
+sd.name = sdEn.name || sd.name;
+sd.original_name = sdEn.original_name || sd.original_name;
+        if (cancelled) return;
+        setShow(sd);
+        if (sdRes.ok) setSeasonDetail(await sdRes.json());
+
+        // ---------- Relations ----------
+        let initialRels: RelationItem[] = [];
+
+        // 1) Carregar do banco se entry existe
+if (entryId) {
+  try {
+    const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
+    if (relRes.ok) {
+      const saved = await relRes.json();
+      console.log(`[Relations] Carregadas ${saved.length} relações do banco para entryId ${entryId}`);
+      if (saved.length) {
+        initialRels = saved.map((r: any) => {
+          const target = r.targetEntry;
+          if (!target) {
+            console.warn('Relação sem targetEntry', r);
+            return null;
+          }
+          let slug = '';
+          if (target.type === 'MOVIE') {
+            slug = `movie-${target.tmdbId}`;
+          } else {
+            slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+          }
+          return {
+            slug,
+            relationType: r.relationType,
+            title: r.title,
+            poster_path: r.poster_path,
+            kind: r.kind,
+            year: r.year ?? undefined,
+            seasonNumber: r.seasonNumber ?? undefined,
+          };
+        }).filter(Boolean);
+        console.log('[Relations] Mapeadas:', initialRels);
+      }
+    } else {
+      console.error(`Falha ao carregar relações: status ${relRes.status}`);
+    }
+  } catch (e) {
+    console.warn('[Relations] Falha ao carregar do banco', e);
+  }
+}
+
+        // 2) Se não há salvas, gerar automáticas (TMDB)
+        if (initialRels.length === 0) {
+          const numbered = sd.seasons.filter((s) => s.season_number > 0);
+          const prevSeason = numbered.find((s) => s.season_number === seasonNumber - 1);
+          const nextSeason = numbered.find((s) => s.season_number === seasonNumber + 1);
+          if (prevSeason) {
+            initialRels.push({
+              slug: `tv-${showId}-s${prevSeason.season_number}`,
+              relationType: 'PREQUEL',
+              title: buildSeasonTitle(sd.name, prevSeason.season_number),
+              poster_path: prevSeason.poster_path,
+              kind: 'tv',
+              year: getYear(prevSeason.air_date),
+              seasonNumber: prevSeason.season_number,
+            });
+          }
+          if (nextSeason) {
+            initialRels.push({
+              slug: `tv-${showId}-s${nextSeason.season_number}`,
+              relationType: 'SEQUEL',
+              title: buildSeasonTitle(sd.name, nextSeason.season_number),
+              poster_path: nextSeason.poster_path,
+              kind: 'tv',
+              year: getYear(nextSeason.air_date),
+              seasonNumber: nextSeason.season_number,
+            });
+          }
+        }
+
+        if (!cancelled) setRelations(initialRels);
+
+        // Source (keywords) – inalterado
+        try {
+          const kRes = await fetch(
+            `${TMDB}/tv/${showId}/keywords?api_key=${API_KEY}`
+          );
+          if (kRes.ok && !cancelled) {
+            const kd = await kRes.json();
+            const kws = (kd.results ?? []).map((k: any) => k.name.toLowerCase());
+            if (kws.some((k: string) => k.includes('manga') || k.includes('anime')))
+              setSource('Manga');
+            else if (kws.some((k: string) => k.includes('comic'))) setSource('Comic Book');
+            else if (kws.some((k: string) => k.includes('light novel') || k.includes('novel')))
+              setSource('Light Novel');
+            else if (kws.some((k: string) => k.includes('webtoon') || k.includes('manhwa')))
+              setSource('Webtoon');
+            else if (kws.some((k: string) => k.includes('video game') || k.includes('game')))
+              setSource('Video Game');
+            else setSource('Original');
+          }
+        } catch {
+          if (!cancelled) setSource('Original');
+        }
+      } else {
+        setError('Slug de título inválido.');
+      }
+    } catch (e: any) {
+      if (!cancelled) setError(e.message ?? 'Erro desconhecido');
+    } finally {
+      if (!cancelled) {
+        setLoading(false);
+        setTimeout(() => setMounted(true), 60);
       }
     }
-    load();
-    return()=>{cancelled=true;};
-  },[id]);
+  }
+  load();
+  return () => {
+    cancelled = true;
+  };
+}, [id]); // ← dependência apenas no `id`
 
   // ─── Loading / Error ────────────────────────────────────────────────────────
   if(loading)return<LoadingScreen/>;
@@ -929,7 +1303,7 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
     );
   }
 
-  function RelCard({rel}:{rel:RelationItem}){
+  function RelCard({rel, onRemove}:{rel:RelationItem; onRemove:(rel:RelationItem)=>void}){
     return(
       <div className="tp-rel-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex',height:90,position:'relative'}}>
         <img src={rel.poster_path?`https://image.tmdb.org/t/p/w200${rel.poster_path}`:'https://placehold.co/60x90/2a2727/92a0ad?text=?'} style={{width:60,objectFit:'cover',flexShrink:0}} alt={rel.title}/>
@@ -985,19 +1359,81 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
           {overview||'Nenhuma sinopse disponível.'}
         </div>
 
-        {/* Relations */}
-        {(relations.length>0||editingRel)&&(
-          <div className="anim-fade-up" style={{...d(1),marginBottom:25}}>
-            <div style={sectionTitle}>
-              <span>Relations</span>
-              <button onClick={()=>setEditingRel(v=>!v)} style={{marginLeft:'auto',background:editingRel?'#e53e3e':'rgba(230,125,153,.18)',color:editingRel?'white':ACCENT,border:`1px solid ${editingRel?'#e53e3e':ACCENT}`,borderRadius:3,padding:'3px 10px',fontSize:11,cursor:'pointer',fontWeight:700}}>
-                {editingRel?'Cancelar':'Editar'}
-              </button>
-              {editingRel&&<button onClick={()=>setShowAddRel(true)} style={{background:'#2ecc71',color:'white',border:'none',borderRadius:3,padding:'3px 10px',fontSize:11,cursor:'pointer',fontWeight:700}}>+ Adicionar</button>}
-            </div>
-            <div style={grid2}>{relations.map(r=><RelCard key={r.slug} rel={r}/>)}</div>
-          </div>
-        )}
+{/* Relations */}
+{(relations.length > 0 || editingRel) && (
+  <div className="anim-fade-up" style={{...d(1), marginBottom: 25}}>
+    <div style={sectionTitle}>
+      <span>Relations</span>
+      <button
+        onClick={async () => {
+          if (!entry) {
+            if (!createTmdbId) { alert('Erro: ID do título não encontrado.'); return; }
+            const addRes = await fetch('/api/add-media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                tmdbId: createTmdbId,
+                parentTmdbId: isTV ? showId : null,
+                seasonNumber: isTV ? seasonNumber : null,
+                type: isTV ? 'TV_SEASON' : 'MOVIE',
+                title: displayTitle,
+                poster_path: rawPosterPath,
+                totalEpisodes: episodeCount ?? null,
+              }),
+            });
+            if (addRes.ok) {
+              const newEntry = await addRes.json();
+              setEntry(newEntry);
+              setEditingRel(true);
+            } else {
+              alert('Erro ao adicionar título à lista. Tente novamente.');
+            }
+          } else {
+            setEditingRel(v => !v);
+          }
+        }}
+        style={{marginLeft:'auto', background:editingRel?'#e53e3e':'rgba(230,125,153,.18)', color:editingRel?'white':ACCENT, border:`1px solid ${editingRel?'#e53e3e':ACCENT}`, borderRadius:3, padding:'3px 10px', fontSize:11, cursor:'pointer', fontWeight:700}}
+      >
+        {editingRel ? 'Cancelar' : 'Editar'}
+      </button>
+      {editingRel && (
+        <button
+          onClick={async () => {
+            if (!entry) {
+              if (!createTmdbId) { alert('Erro: ID do título não encontrado.'); return; }
+              const addRes = await fetch('/api/add-media', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  tmdbId: createTmdbId,
+                  parentTmdbId: isTV ? showId : null,
+                  seasonNumber: isTV ? seasonNumber : null,
+                  type: isTV ? 'TV_SEASON' : 'MOVIE',
+                  title: displayTitle,
+                  poster_path: rawPosterPath,
+                  totalEpisodes: episodeCount ?? null,
+                }),
+              });
+              if (addRes.ok) {
+                const newEntry = await addRes.json();
+                setEntry(newEntry);
+                setShowAddRel(true);
+              } else {
+                alert('Erro ao adicionar título à lista. Tente novamente.');
+              }
+            } else {
+              setShowAddRel(true);
+            }
+          }}
+          style={{background:'#2ecc71', color:'white', border:'none', borderRadius:3, padding:'3px 10px', fontSize:11, cursor:'pointer', fontWeight:700}}
+        >
+          + Adicionar
+        </button>
+      )}
+    </div>
+    <div style={grid2}>{relations.map(r => <RelCard key={r.slug} rel={r} onRemove={removeRelation} />)}</div>
+  </div>
+)}
 
         {/* Characters preview */}
         {cast.length>0&&(
@@ -1179,8 +1615,8 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
       )}
       {showAddRel&&(
         <AddRelModal
-          onAdd={r=>setRelations(prev=>[...prev,r])}
-          onClose={()=>setShowAddRel(false)}
+          onAdd={addRelation}
+          onClose={() => setShowAddRel(false)}
         />
       )}
       {editorOpen&&(

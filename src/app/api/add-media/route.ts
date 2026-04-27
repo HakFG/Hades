@@ -156,13 +156,17 @@ export async function POST(req: Request) {
     // TIPO: 'tv' — adiciona TODAS as temporadas de uma série de uma vez
     // ─────────────────────────────────────────────────────────────────────────
     if (type === 'tv') {
-      const seriesRes = await fetch(`${TMDB}/tv/${tmdbId}?api_key=${API_KEY}&language=pt-BR`);
-      if (!seriesRes.ok) {
-        return NextResponse.json({ error: 'Falha ao buscar série no TMDB' }, { status: 502 });
-      }
-      const seriesData = await seriesRes.json();
-
-      const showName   = seriesData.name ?? title.trim();
+      const [seriesRes, seriesResEn] = await Promise.all([
+  fetch(`${TMDB}/tv/${tmdbId}?api_key=${API_KEY}&language=pt-BR`),
+  fetch(`${TMDB}/tv/${tmdbId}?api_key=${API_KEY}&language=en-US`),
+]);
+if (!seriesRes.ok) {
+  return NextResponse.json({ error: 'Falha ao buscar série no TMDB' }, { status: 502 });
+}
+const seriesData = await seriesRes.json();
+const seriesDataEn = seriesResEn.ok ? await seriesResEn.json() : seriesData;
+// Nome sempre em inglês
+const showName = seriesDataEn.name ?? seriesData.name ?? title.trim();
       const extra      = {
         genres:     (seriesData.genres ?? []).map((g: any) => g.name).join(', '),
         studio:     (seriesData.production_companies ?? [])[0]?.name ?? null,
@@ -223,12 +227,20 @@ export async function POST(req: Request) {
       }
 
       // Busca dados da série pai e da temporada em paralelo
-      const [extra, { releaseDate, endDate }] = await Promise.all([
-        fetchSeriesExtra(parentTmdbId),
-        fetchSeasonDates(parentTmdbId, seasonNumber ?? 1, null),
-      ]);
+      const [extra, { releaseDate, endDate }, seriesEnRes] = await Promise.all([
+  fetchSeriesExtra(parentTmdbId),
+  fetchSeasonDates(parentTmdbId, seasonNumber ?? 1, null),
+  fetch(`${TMDB}/tv/${parentTmdbId}?api_key=${API_KEY}&language=en-US`),
+]);
+const seriesEnName = seriesEnRes.ok
+  ? ((await seriesEnRes.json()).name ?? null)
+  : null;
+// Reconstrói o título em inglês se possível
+const englishTitle = seriesEnName
+  ? buildSeasonTitle(seriesEnName, seasonNumber ?? 1)
+  : title.trim();
 
-      await prisma.entry.upsert({
+      const entry = await prisma.entry.upsert({
         where:  { tmdbId },
         update: {
           title:         title.trim(),
@@ -262,7 +274,7 @@ export async function POST(req: Request) {
         },
       });
 
-      return NextResponse.json({ success: true, saved: title.trim() });
+      return NextResponse.json(entry);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -277,20 +289,24 @@ export async function POST(req: Request) {
       let rating: number | null      = null;
 
       try {
-        const movieRes = await fetch(`${TMDB}/movie/${tmdbId}?api_key=${API_KEY}&language=pt-BR`);
-        if (!movieRes.ok) throw new Error('movie fetch failed');
-        const d = await movieRes.json();
+        const [movieRes, movieResEn] = await Promise.all([
+  fetch(`${TMDB}/movie/${tmdbId}?api_key=${API_KEY}&language=pt-BR`),
+  fetch(`${TMDB}/movie/${tmdbId}?api_key=${API_KEY}&language=en-US`),
+]);
+if (!movieRes.ok) throw new Error('movie fetch failed');
+const d    = await movieRes.json();
+const dEn  = movieResEn.ok ? await movieResEn.json() : d;
 
         // Valida a data antes de salvar — evita "0000-00-00" ou datas malformadas
         releaseDate = isValidDate(d.release_date) ? d.release_date : null;
-        genres      = (d.genres ?? []).map((g: any) => g.name).join(', ');
+genres      = (d.genres ?? []).map((g: any) => g.name).join(', ');
         studio      = (d.production_companies ?? [])[0]?.name ?? null;
         bannerPath  = d.backdrop_path ?? null;
         popularity  = typeof d.popularity   === 'number' ? d.popularity   : 0;
         rating      = typeof d.vote_average === 'number' ? d.vote_average : null;
       } catch { /* mantém nulls */ }
 
-      await prisma.entry.upsert({
+      const entry = await prisma.entry.upsert({
         where:  { tmdbId },
         update: {
           title:         title.trim(),
@@ -319,7 +335,7 @@ export async function POST(req: Request) {
         },
       });
 
-      return NextResponse.json({ success: true, saved: title.trim() });
+      return NextResponse.json(entry);
     }
 
     return NextResponse.json({ error: `Tipo desconhecido: ${type}` }, { status: 400 });

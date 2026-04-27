@@ -25,50 +25,81 @@ enum MediaType {
 model Entry {
   id            String      @id @default(cuid())
   tmdbId        Int         @unique
-  parentTmdbId  Int?        // ID da série original (para agrupar Seasons)
-  seasonNumber  Int?        // Número da temporada (para TV_SEASON)
+  parentTmdbId  Int?
+  seasonNumber  Int?
   title         String
   type          MediaType
   status        MediaStatus @default(PLANNING)
-  score         Float       @default(0)  // ← agora suporta decimais (0.0 - 10.0)
+  score         Float       @default(0)
   progress      Int         @default(0)
   totalEpisodes Int?
 
-  // Datas de acompanhamento
   startDate     DateTime?
   finishDate    DateTime?
   rewatchCount  Int         @default(0)
 
-  // Dados do TMDB (alguns podem ser órfãos, mas mantidos para compatibilidade)
   synopsis      String?     @db.Text
   releaseDate   String?
   endDate       String?
   format        String?
-  rating        Float?      // Nota média do TMDB
-  popularity    Float?      // Popularidade do TMDB
-  imagePath     String?     // Poster
-  bannerPath    String?     // Backdrop
-  customImage   String?     // Imagem customizada (URL)
-  genres        String?     // Ex: "Action, Drama"
-  studio        String?     // Produtora principal
-  staff         Json?       // Diretores, roteiristas, etc.
+  rating        Float?
+  popularity    Float?
+  imagePath     String?
+  bannerPath    String?
+  customImage   String?
+  genres        String?
+  studio        String?
+  staff         Json?
 
-  // Configurações
   notes         String?     @db.Text
   private       Boolean     @default(false)
   hidden        Boolean     @default(false)
 
-  // Favoritos
   isFavorite    Boolean     @default(false)
   favoriteRank  Int?
 
   updatedAt     DateTime    @updatedAt
   createdAt     DateTime    @default(now())
 
+  // Relações corrigidas
+  relationsFrom Relation[] @relation("SourceRelations")
+  relationsTo   Relation[] @relation("TargetRelations")
+
   @@index([status])
   @@index([type])
   @@index([tmdbId])
   @@index([isFavorite])
+}
+
+model Relation {
+  id            String   @id @default(cuid())
+
+  sourceEntryId String
+  targetEntryId String?
+
+  relationType  String
+
+  title         String
+  poster_path   String?
+  kind          String
+  year          String?
+  seasonNumber  Int?
+  order         Int?
+
+  targetTmdbId       Int
+  targetParentTmdbId Int?
+  targetSeasonNumber Int?
+  targetType         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sourceEntry Entry  @relation("SourceRelations", fields: [sourceEntryId], references: [id], onDelete: Cascade)
+  targetEntry Entry? @relation("TargetRelations", fields: [targetEntryId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceEntryId, targetTmdbId])
+  @@index([sourceEntryId])
+  @@index([targetEntryId])
 }
 
 model Profile {

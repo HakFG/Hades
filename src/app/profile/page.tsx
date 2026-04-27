@@ -293,19 +293,24 @@ function ListEditor({ entry, onClose, onSaved }: {
     if (status === 'REWATCHING' && !startDate) setStartDate(today);
   }, [status]);
 
-  async function save() {
-    setSaving(true);
-    try {
-      const payload = { score, status, progress, startDate: startDate || null, finishDate: finishDate || null, rewatchCount, notes: notes || null, hidden };
-      const res = await fetch(`/api/entries/${entry.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) { onSaved(payload); onClose(); }
-      else alert('Error saving.');
-    } finally { setSaving(false); }
-  }
+async function save() {
+  setSaving(true);
+  try {
+    const payload = { score, status, progress, startDate: startDate || null, finishDate: finishDate || null, rewatchCount, notes: notes || null, hidden };
+    const res = await fetch(`/api/entries/${entry.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const updatedEntry = await res.json();   // ← obtém a entry atualizada do banco
+      onSaved(updatedEntry);                   // ← passa o objeto completo, não apenas o payload
+      onClose();
+    } else {
+      alert('Error saving.');
+    }
+  } finally { setSaving(false); }
+}
 
   async function handleDelete() {
     if (!confirm('Tem certeza que deseja remover esta entrada permanentemente?')) return;
@@ -1114,9 +1119,9 @@ function ProfileContent() {
 
   useEffect(() => { load(); }, [load]);
 
-  function handleSaved(updated: Partial<Entry>) {
-    setEntries(prev => prev.map(e => e.id === editingEntry?.id ? { ...e, ...updated } : e));
-  }
+function handleSaved(updated: Partial<Entry>) {
+  setEntries(prev => prev.map(e => e.id === editingEntry?.id ? { ...e, ...updated } : e));
+}
 
   async function toggleFav(entry: Entry) {
     const next = !entry.isFavorite;

@@ -32,6 +32,10 @@ interface MediaCard {
   season_number?: number;
   linkSlug: string;
   popularity?: number;
+  airYear?: string;
+  airDate?: string;      
+  seriesStatus?: string; 
+  seasonStatus?: 'Airing' | 'Finished' | 'Not Yet Aired';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,25 +72,66 @@ const FORMAT_MOVIE_OPTIONS = [
 
 // ─── Expander ─────────────────────────────────────────────────────────────────
 
+function resolveSeasonStatus(
+  season: any,
+  allSeasons: any[],
+  seriesStatus: string,
+  inProduction: boolean,
+): 'Airing' | 'Finished' | 'Not Yet Aired' {
+  const today = new Date().toISOString().split('T')[0];
+  const airDate: string | undefined = season.air_date;
+
+  // Ainda não estreou
+  if (!airDate || airDate > today) return 'Not Yet Aired';
+
+  // Série encerrada: toda temporada já passada é Finished
+  if (!inProduction && seriesStatus !== 'Returning Series') return 'Finished';
+
+  // Série em produção: só a temporada mais recente (maior season_number) é Airing
+  const maxSeasonNumber = Math.max(
+    ...allSeasons
+      .filter(s => s.season_number > 0 && s.air_date && s.air_date <= today)
+      .map(s => s.season_number)
+  );
+
+  return season.season_number === maxSeasonNumber ? 'Airing' : 'Finished';
+}
+
 async function expandShow(show: RawShow, includeSpecials = false): Promise<MediaCard[]> {
   try {
-    const res = await fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=pt-BR`);
+    const [res, resEn] = await Promise.all([
+      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
+      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
+    ]);
     if (!res.ok) return [];
-    const detail = await res.json();
+    const detail   = await res.json();
+    const detailEn = resEn.ok ? await resEn.json() : detail;
+    // Nome sempre em inglês para títulos e cards
+    const showName = detailEn.name || detail.name;
     const seasons: any[] = detail.seasons ?? [];
+    const seriesStatus: string = detail.status ?? '';
+    const inProduction: boolean = detail.in_production ?? false;
+
     return seasons
       .filter(s => includeSpecials || s.season_number > 0)
-      .map(s => ({
-        tmdbId: s.id,
-        parentTmdbId: show.id,
-        title: buildSeasonTitle(detail.name, s.season_number),
-        poster_path: s.poster_path || show.poster_path,
-        type: 'TV_SEASON' as const,
-        episode_count: s.episode_count,
-        season_number: s.season_number,
-        linkSlug: `tv-${show.id}-s${s.season_number}`,
-        popularity: show.popularity,
-      }));
+      .map(s => {
+        const seasonStatus = resolveSeasonStatus(s, seasons, seriesStatus, inProduction);
+        return {
+          tmdbId: s.id,
+          parentTmdbId: show.id,
+          title: buildSeasonTitle(showName, s.season_number),
+          poster_path: s.poster_path || show.poster_path,
+          type: 'TV_SEASON' as const,
+          episode_count: s.episode_count,
+          season_number: s.season_number,
+          linkSlug: `tv-${show.id}-s${s.season_number}`,
+          popularity: show.popularity,
+          airYear: s.air_date ? s.air_date.split('-')[0] : undefined,
+          airDate: s.air_date ?? undefined,
+          seriesStatus,
+          seasonStatus, // ← 'Airing' | 'Finished' | 'Not Yet Aired'
+        };
+      });
   } catch {
     return [];
   }
@@ -100,7 +145,24 @@ function movieToCard(m: RawShow): MediaCard {
     type: 'MOVIE' as const,
     linkSlug: `movie-${m.id}`,
     popularity: m.popularity,
+    airYear: m.release_date ? m.release_date.split('-')[0] : undefined,
   };
+}
+
+/**
+ * Determina se uma temporada está ativamente "em exibição".
+ *
+ * Critérios (todos precisam ser verdadeiros):
+ *   1. A série pai tem status "Returning Series" (ainda produzindo)
+ *   2. A air_date da temporada já passou (já começou a ir ao ar)
+ *   3. É a temporada com o maior season_number da série
+ *      OU sua air_date é do ano atual / ano anterior
+ *      (cobre casos de séries com temporadas sobrepostas)
+ */
+function isSeasonAiring(card: MediaCard): boolean {
+  // Usa o status já resolvido pelo resolveSeasonStatus dentro do expandShow
+  // Elimina toda heurística — a fonte da verdade é a mesma lógica do page.tsx de detalhe
+  return card.seasonStatus === 'Airing';
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -171,14 +233,25 @@ export default function SearchPage() {
         ]);
 
         const expandLatest = async (shows: RawShow[]) => {
-          const cards = await Promise.all(shows.slice(0, 6).map(async show => {
-            const seasons = await expandShow(show, false);
-            if (!seasons.length) return null;
-            const latest = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0))[0];
-            return { ...latest, popularity: show.popularity };
-          }));
-          return cards.filter(Boolean) as MediaCard[];
-        };
+  const today = new Date().toISOString().split('T')[0];
+
+  const cards = await Promise.all(shows.slice(0, 6).map(async show => {
+    const seasons = await expandShow(show, false);
+    if (!seasons.length) return null;
+
+    const sorted = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
+
+    // Tenta encontrar a temporada que está efetivamente airing:
+    // 1. Preferência: temporada airing segundo isSeasonAiring
+    // 2. Fallback: a mais recente por número
+    const airingSeasons = sorted.filter(s => s.seasonStatus === 'Airing');
+const chosen = airingSeasons.length > 0 ? airingSeasons[0] : sorted[0];
+
+    return { ...chosen, popularity: show.popularity };
+  }));
+
+  return cards.filter(Boolean) as MediaCard[];
+};
 
         setTrending((await expandLatest(trendData.results ?? [])).sort(sortByPop));
         setPopularNow((await expandLatest(onAirData.results ?? [])).sort(sortByPop));
@@ -226,24 +299,47 @@ export default function SearchPage() {
       setHasMore(data.page < data.total_pages);
     } else {
       let url = `${TMDB}/discover/tv?api_key=${API_KEY}&language=pt-BR&sort_by=popularity.desc&page=${page}`;
-      if (selectedGenre) url += `&with_genres=${selectedGenre}`;
-      if (selectedYear) url += `&first_air_date_year=${selectedYear}`;
-      // CORREÇÃO 3: with_type correto por formato
-      if (selectedFormat === 'scripted')    url += `&with_type=4`;
-      if (selectedFormat === 'miniseries')  url += `&with_type=2`;
-      if (selectedFormat === 'special')     url += `&with_type=6`;
-      if (selectedFormat === 'reality')     url += `&with_type=3`;
-      if (selectedFormat === 'documentary') url += `&with_type=0`;
-      // Status
-      if (selectedStatus === 'airing')        url += `&with_status=returning`;
-      if (selectedStatus === 'finished')       url += `&with_status=ended`;
-      if (selectedStatus === 'not_yet_aired')  url += `&with_status=planned`;
+if (selectedGenre) url += `&with_genres=${selectedGenre}`;
+// Sem filtro de ano aqui — o TMDB filtra pela série pai, não pela temporada.
+// O filtro real é feito por airYear após a expansão.
+if (selectedFormat === 'scripted')    url += `&with_type=4`;
+if (selectedFormat === 'miniseries')  url += `&with_type=2`;
+if (selectedFormat === 'special')     url += `&with_type=6`;
+if (selectedFormat === 'reality')     url += `&with_type=3`;
+if (selectedFormat === 'documentary') url += `&with_type=0`;
+if (selectedStatus === 'airing')       url += `&with_status=returning`;
+if (selectedStatus === 'finished')     url += `&with_status=ended`;
+if (selectedStatus === 'not_yet_aired') url += `&with_status=planned`;
 
-      const res = await fetch(url);
-      const data = await res.json();
-      const shows: RawShow[] = data.results ?? [];
-      const allSeasonCards = (await Promise.all(shows.map(s => expandShow(s, selectedFormat === 'special')))).flat();
-      if (resetResults) setResults(allSeasonCards); else setResults(prev => [...prev, ...allSeasonCards]);
+const res = await fetch(url);
+const data = await res.json();
+const shows: RawShow[] = data.results ?? [];
+let allSeasonCards = (await Promise.all(
+  shows.map(s => expandShow(s, selectedFormat === 'special'))
+)).flat();
+
+// Filtro de ano por air_date da temporada (não da série pai)
+if (selectedYear) {
+  allSeasonCards = allSeasonCards.filter(
+    card => card.airYear !== undefined && card.airYear === selectedYear
+  );
+}
+
+// Filtro de status "airing": apenas a temporada ativa de cada série
+if (selectedStatus === 'airing') {
+  allSeasonCards = allSeasonCards.filter(isSeasonAiring);
+}
+
+if (selectedStatus === 'finished') {
+  allSeasonCards = allSeasonCards.filter(c => c.seasonStatus === 'Finished');
+}
+
+if (selectedStatus === 'not_yet_aired') {
+  allSeasonCards = allSeasonCards.filter(c => c.seasonStatus === 'Not Yet Aired');
+}
+
+if (resetResults) setResults(allSeasonCards);
+else setResults(prev => [...prev, ...allSeasonCards]);
       setHasMore(data.page < data.total_pages);
     }
   }, [mediaType, selectedGenre, selectedYear, selectedFormat, selectedStatus]);
@@ -259,22 +355,39 @@ export default function SearchPage() {
     }
   }, [selectedGenre, selectedYear, selectedFormat, selectedStatus, query, performSearch]);
 
-  const handleTextSearch = async () => {
-    if (!query.trim()) return;
-    setSearching(true); setResults([]);
-    try {
-      const res = await fetch(`${TMDB}/search/${mediaType}?api_key=${API_KEY}&language=pt-BR&query=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
-      if (mediaType === 'tv') {
-        const expanded = await Promise.all((data.results ?? []).map((show: RawShow) => expandShow(show, false)));
-        setResults(expanded.flat());
-      } else {
-        setResults((data.results ?? []).map(movieToCard));
+const handleTextSearch = async () => {
+  if (!query.trim()) return;
+  setSearching(true);
+  setResults([]);
+  try {
+    const res = await fetch(`${TMDB}/search/${mediaType}?api_key=${API_KEY}&language=en-US&query=${encodeURIComponent(query.trim())}`);
+    const data = await res.json();
+    if (mediaType === 'tv') {
+const expanded = await Promise.all((data.results ?? []).map((show: RawShow) => expandShow(show, false)));
+let allCards: MediaCard[] = expanded.flat();
+
+if (selectedYear) {
+  // Filtra apenas temporadas com airYear definido E igual ao ano selecionado
+  // Temporadas sem air_date (airYear === undefined) são excluídas ao usar filtro de ano
+  allCards = allCards.filter(
+    (card: MediaCard) => card.airYear !== undefined && card.airYear === selectedYear
+  );
+}
+setResults(allCards);
+    } else {
+      let movieCards: MediaCard[] = (data.results ?? []).map(movieToCard);
+      if (selectedYear) {
+        movieCards = movieCards.filter((card: MediaCard) => card.airYear === selectedYear);
       }
-      setHasMore(false);
-    } catch (err) { console.error(err); }
-    finally { setSearching(false); }
-  };
+      setResults(movieCards);
+    }
+    setHasMore(false);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    setSearching(false);
+  }
+};
 
   // Scroll infinito
   useEffect(() => {

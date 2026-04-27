@@ -1,0 +1,7 @@
+{
+  "models": {
+    "Entry": {
+      "fieldsToHide": ["relationsFrom", "relationsTo"]
+    }
+  }
+}
