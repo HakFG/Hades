@@ -157,59 +157,25 @@
 - **Teste manual**:
   - Navegar pelo site, observar a navbar.
 
-### 2. Recent Activity – agrupar múltiplos episódios em uma única entrada
+### 2. Recent Activity – agrupar múltiplos episódios com janela de 24h
 - **Prioridade**: P2
-- **Descrição**: Quando o usuário atualizar vários episódios de uma vez (ex: do 4 ao 7), o log deve mostrar “Assistiu episódios 4–7 de Daredevil: Born Again” em vez de 4 entradas separadas.
+- **Descrição**: Quando o usuário atualizar vários episódios de uma vez (ex: do 4 ao 7), o log deve mostrar “Assistiu episódios 4–7 de Daredevil: Born Again” em vez de 4 entradas separadas. Além disso, deve haver uma **janela de 24 horas** para continuar agrupando: se o usuário assistir episódios consecutivos dentro de 24 horas desde a última atualização, eles são agrupados na mesma entrada. Caso contrário (mais de 24h sem atualizar), um novo grupo é criado.
 - **Solução esperada**:
   - No momento de `pushActivity`, verificar a última atividade da mesma `entryId`.
-  - Se for do mesmo tipo (progress) e o novo progresso for consecutivo, em vez de criar uma nova entrada, atualizar a última com o intervalo.
-  - Exemplo: armazenar `progressStart` e `progressEnd` na `ActivityLog`.
+  - Se for do mesmo tipo (progress) e o novo progresso for consecutivo **e** a diferença de tempo entre a última atividade e agora for ≤ 24 horas, atualizar a última entrada com o intervalo (`progressStart` a `progressEnd`).
+  - Se a diferença for > 24h, criar uma nova entrada mesmo que os números sejam consecutivos.
+  - Armazenar `progressStart`, `progressEnd` e `lastUpdate` na `ActivityLog`.
 - **Arquivos envolvidos**:
   - `src/app/profile/page.tsx` (função `pushActivity`, interface `ActivityLog`)
 - **Critério de aceitação**:
   - Ao avançar múltiplos episódios (ex: de 3 para 5), aparece apenas um log: “Episódios 3–5 de Título”.
-  - Cada episódio individual continua gerando log separado se não forem consecutivos.
+  - Se o usuário assistir episódios 6–8 no mesmo dia, eles se juntam ao grupo anterior (ex: 3–8).
+  - Se esperar mais de 24h e depois assistir 9–10, cria um novo log separado.
 - **Teste manual**:
-  - No perfil, selecionar uma série e clicar + várias vezes rapidamente.
-  - Verificar se o log agrupa os incrementos consecutivos.
+  - No perfil, selecionar uma série e clicar + várias vezes rapidamente → tudo agrupado.
+  - Avançar episódios no dia seguinte (após 24h) → novo grupo começa.
 
-### 3. Recent Activity – descrições inteligentes por ação
-- **Prioridade**: P2
-- **Descrição**: As mensagens do log devem ser mais humanas e variadas conforme a ação:  
-  - “Assistiu o episódio X de Y” (para séries)  
-  - “Completou o filme X” (ao marcar 100% ou status COMPLETED)  
-  - “Começou a assistir X” (primeiro episódio ou status WATCHING)  
-  - “Reassistiu X” (rewatch)  
-  - “Adicionou X à lista” (status PLANNING)
-- **Solução esperada**:
-  - No `pushActivity`, gerar uma string de texto (`activityText`) baseada no `status` e `progress`.
-  - Armazenar essa string no `ActivityLog` ou calcular na hora da exibição.
-- **Arquivos envolvidos**:
-  - `src/app/profile/page.tsx` (interface `ActivityLog`, componente `ActivityItem`, função `pushActivity`)
-- **Critério de aceitação**:
-  - Cada ação tem uma descrição específica e adequada.
-  - Filmes: “Completou Matrix” / “Começou a assistir Matrix”.
-  - Séries: “Assistiu episódio 3 de Stranger Things S4”.
-- **Teste manual**:
-  - Realizar várias ações diferentes (adicionar, assistir, completar, rewatch) e verificar as mensagens.
-
-### 4. Perfil – filtro de ano com slider único (faixa contínua)
-- **Prioridade**: P2
-- **Descrição**: Substituir os dois sliders (min/max) por um único slider que define um ano específico. O usuário move a bolinha para um ano e a lista filtra apenas os títulos cujo `releaseYear` **seja igual** àquele ano.
-- **Solução esperada**:
-  - Em `MediaListTab`, unificar `yearMin` e `yearMax` em um único estado `selectedYear`.
-  - O slider terá valor de `TMDB_MIN_YEAR` a `TMDB_MAX_YEAR`.
-  - Na filtragem, alterar para `releaseYear(e) === selectedYear`.
-- **Arquivos envolvidos**:
-  - `src/app/profile/page.tsx` (componente `MediaListTab`)
-- **Critério de aceitação**:
-  - Um único controle deslizante, mostrando o ano selecionado.
-  - A lista exibe apenas títulos lançados exatamente naquele ano.
-- **Teste manual**:
-  - No perfil, aba “Series List” ou “Film List”, mover o slider do ano.
-  - Verificar que apenas títulos daquele ano aparecem.
-
-### 5. Perfil – borda do avatar some ao usar imagem PNG
+### 3. Perfil – borda do avatar some ao usar imagem PNG
 - **Prioridade**: P3
 - **Descrição**: Quando o usuário faz upload de uma imagem de avatar (especialmente PNG com transparência), o fundo quadrado (background color) não deve aparecer – a imagem deve preencher completamente o círculo/quadrado.
 - **Solução esperada**:

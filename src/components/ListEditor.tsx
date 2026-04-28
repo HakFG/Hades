@@ -3,26 +3,32 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-interface ListEditorProps {
-  isOpen: boolean;
-  onClose: () => void;
+interface Entry {
+  id: string;
   tmdbId: number;
-  parentTmdbId?: number;
-  seasonNumber?: number;
-  type: 'MOVIE' | 'TV_SEASON';
+  parentTmdbId?: number | null;
+  seasonNumber?: number | null;
   title: string;
-  poster_path: string | null | undefined;
-  totalEpisodes?: number;
-  existingData?: {
-    status: string;
-    score: number | null;
-    progress: number | null;
-    startDate: string | null;
-    finishDate: string | null;
-    rewatchCount: number;
-    notes: string | null;
-    hidden: boolean;
-  };
+  type: 'MOVIE' | 'TV_SEASON';
+  status: 'WATCHING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REWATCHING' | 'UPCOMING';
+  score: number;
+  progress: number;
+  totalEpisodes?: number | null;
+  imagePath?: string | null;
+  isFavorite: boolean;
+  startDate?: string | null;
+  finishDate?: string | null;
+  rewatchCount: number;
+  notes?: string | null;
+  hidden: boolean;
+  // ... outros campos opcionais
+}
+
+interface ListEditorProps {
+  entry: Entry;
+  onClose: () => void;
+  onSave: (updatedEntry: Entry) => void;   // ← novo callback
+  onDelete?: () => void;                   // opcional, se quiser notificar pai
 }
 
 const STATUS_OPTIONS = [
@@ -35,50 +41,38 @@ const STATUS_OPTIONS = [
   { value: 'UPCOMING', label: 'Upcoming', icon: '🔮' },
 ];
 
-export default function ListEditor({
-  isOpen,
-  onClose,
-  tmdbId,
-  parentTmdbId,
-  seasonNumber,
-  type,
-  title,
-  poster_path,
-  totalEpisodes,
-  existingData,
-}: ListEditorProps) {
+export default function ListEditor({ entry, onClose, onSave, onDelete }: ListEditorProps) {
   // Estado do formulário
-  const [status, setStatus] = useState(existingData?.status ?? 'PLANNING');
-  const [score, setScore] = useState<number | null>(existingData?.score ?? null);
-  const [scoreInput, setScoreInput] = useState(existingData?.score?.toString() ?? '');
-  const [progress, setProgress] = useState(existingData?.progress ?? 0);
-  const [startDate, setStartDate] = useState(existingData?.startDate ?? '');
-  const [finishDate, setFinishDate] = useState(existingData?.finishDate ?? '');
-  const [rewatchCount, setRewatchCount] = useState(existingData?.rewatchCount ?? 0);
-  const [notes, setNotes] = useState(existingData?.notes ?? '');
-  const [isHidden, setIsHidden] = useState(existingData?.hidden ?? false);
+  const [status, setStatus] = useState(entry.status);
+  const [score, setScore] = useState(entry.score);
+  const [scoreInput, setScoreInput] = useState(entry.score === 0 ? '' : entry.score.toString());
+  const [progress, setProgress] = useState(entry.progress);
+  const [startDate, setStartDate] = useState(entry.startDate ?? '');
+  const [finishDate, setFinishDate] = useState(entry.finishDate ?? '');
+  const [rewatchCount, setRewatchCount] = useState(entry.rewatchCount ?? 0);
+  const [notes, setNotes] = useState(entry.notes ?? '');
+  const [isHidden, setIsHidden] = useState(entry.hidden ?? false);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Resetar ao abrir
+  // Resetar ao mudar a entry (quando reabrir com outro título)
   useEffect(() => {
-    if (isOpen && existingData) {
-      setStatus(existingData.status);
-      setScore(existingData.score ?? null);
-      setScoreInput(existingData.score?.toString() ?? '');
-      setProgress(existingData.progress ?? 0);
-      setStartDate(existingData.startDate ?? '');
-      setFinishDate(existingData.finishDate ?? '');
-      setRewatchCount(existingData.rewatchCount ?? 0);
-      setNotes(existingData.notes ?? '');
-      setIsHidden(existingData.hidden ?? false);
-    }
-  }, [isOpen, existingData]);
+    setStatus(entry.status);
+    setScore(entry.score);
+    setScoreInput(entry.score === 0 ? '' : entry.score.toString());
+    setProgress(entry.progress);
+    setStartDate(entry.startDate ?? '');
+    setFinishDate(entry.finishDate ?? '');
+    setRewatchCount(entry.rewatchCount ?? 0);
+    setNotes(entry.notes ?? '');
+    setIsHidden(entry.hidden ?? false);
+  }, [entry]);
 
   // Bloquear scroll e fechar com ESC
   useEffect(() => {
-    if (!isOpen) return;
+    if (!entry) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -88,9 +82,8 @@ export default function ListEditor({
       document.removeEventListener('keydown', handleEsc);
       document.body.style.overflow = 'auto';
     };
-  }, [isOpen, onClose]);
+  }, [entry, onClose]);
 
-  // Fechar ao clicar fora do modal (apenas no overlay)
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose();
   };
@@ -99,7 +92,7 @@ export default function ListEditor({
     const value = e.target.value;
     setScoreInput(value);
     if (value === '') {
-      setScore(null);
+      setScore(0);
     } else {
       const num = parseFloat(value);
       if (!isNaN(num) && num >= 0 && num <= 10) setScore(num);
@@ -111,12 +104,13 @@ export default function ListEditor({
     const today = new Date().toISOString().split('T')[0];
     if (status === 'COMPLETED' && !finishDate) setFinishDate(today);
     if (status === 'WATCHING' && !startDate) setStartDate(today);
+    if (status === 'REWATCHING' && !startDate) setStartDate(today);
   }, [status, finishDate, startDate]);
 
-  const maxProgress = Math.max(totalEpisodes ?? 1, 1);
+  const maxProgress = Math.max(entry.totalEpisodes ?? 1, 1);
 
-  const getScoreColor = (s: number | null) => {
-    if (s === null) return '#4a4a5a';
+  const getScoreColor = (s: number) => {
+    if (s === 0) return '#4a4a5a';
     if (s >= 7) return '#2ecc71';
     if (s >= 5) return '#f39c12';
     return '#e74c3c';
@@ -125,30 +119,25 @@ export default function ListEditor({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/update-entry', {
-        method: 'POST',
+      const payload = {
+        status,
+        score: score > 0 ? Math.round(score * 10) : 0,
+        progress,
+        startDate: startDate || null,
+        finishDate: finishDate || null,
+        rewatchCount,
+        notes: notes || null,
+        hidden: isHidden,
+      };
+      const res = await fetch(`/api/entries/${entry.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tmdbId,
-          parentTmdbId: parentTmdbId ?? null,
-          seasonNumber: seasonNumber ?? null,
-          type,
-          title,
-          status,
-          score: score !== null ? Math.round(score * 10) : null,
-          progress: progress > 0 ? progress : 0,
-          totalEpisodes: totalEpisodes ?? null,
-          imagePath: poster_path ?? null,
-          startDate: startDate || null,
-          finishDate: finishDate || null,
-          rewatchCount,
-          notes: notes || null,
-          hidden: isHidden,
-        }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
+        const updatedEntry = await res.json();
+        onSave(updatedEntry);  // ← notifica o pai e fecha
         onClose();
-        window.location.reload();
       } else {
         const err = await res.json().catch(() => ({}));
         alert('Erro ao salvar: ' + (err.error ?? 'Erro desconhecido'));
@@ -161,7 +150,30 @@ export default function ListEditor({
     }
   };
 
-  if (!isOpen) return null;
+  const handleDelete = async () => {
+    if (!confirm('Tem certeza que deseja remover esta entrada permanentemente?')) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/entries/${entry.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        if (onDelete) onDelete();
+        onClose();
+      } else {
+        alert('Erro ao deletar entrada.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de rede ao deletar.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (!entry) return null;
+
+  const poster = entry.imagePath
+    ? `https://image.tmdb.org/t/p/w200${entry.imagePath}`
+    : null;
 
   return (
     <div
@@ -204,10 +216,10 @@ export default function ListEditor({
           }}
         >
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            {poster_path ? (
+            {poster ? (
               <img
-                src={`https://image.tmdb.org/t/p/w200${poster_path}`}
-                alt={title}
+                src={poster}
+                alt={entry.title}
                 style={{
                   width: '64px',
                   height: '96px',
@@ -244,10 +256,10 @@ export default function ListEditor({
                   lineHeight: 1.3,
                 }}
               >
-                {title}
+                {entry.title}
               </h2>
               <p style={{ fontSize: '12px', color: 'rgba(220,210,215,0.6)', margin: 0 }}>
-                {type === 'MOVIE' ? 'Film' : `Season ${seasonNumber ?? ''}`}
+                {entry.type === 'MOVIE' ? 'Film' : `Season ${entry.seasonNumber ?? ''}`}
               </p>
             </div>
             <button
@@ -300,8 +312,6 @@ export default function ListEditor({
                   justifyContent: 'space-between',
                   transition: 'border-color 0.2s',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(230,125,153,0.6)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(230,125,153,0.3)')}
               >
                 <span>
                   {STATUS_OPTIONS.find(s => s.value === status)?.icon}{' '}
@@ -329,7 +339,7 @@ export default function ListEditor({
                     <button
                       key={opt.value}
                       onClick={() => {
-                        setStatus(opt.value);
+                        setStatus(opt.value as any);
                         setShowStatusDropdown(false);
                       }}
                       style={{
@@ -342,12 +352,6 @@ export default function ListEditor({
                         fontSize: '13px',
                         cursor: 'pointer',
                         transition: 'background 0.2s',
-                      }}
-                      onMouseEnter={e => {
-                        if (status !== opt.value) e.currentTarget.style.background = 'rgba(230,125,153,0.08)';
-                      }}
-                      onMouseLeave={e => {
-                        if (status !== opt.value) e.currentTarget.style.background = 'transparent';
                       }}
                     >
                       {opt.icon} {opt.label}
@@ -365,7 +369,7 @@ export default function ListEditor({
                 Score (0–10)
               </label>
               <span style={{ fontSize: '18px', fontWeight: '800', color: getScoreColor(score) }}>
-                {score !== null ? score.toFixed(1) : '-'}
+                {score > 0 ? score.toFixed(1) : '-'}
               </span>
             </div>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -388,8 +392,6 @@ export default function ListEditor({
                   outline: 'none',
                   transition: 'border-color 0.2s',
                 }}
-                onFocus={e => (e.target.style.borderColor = 'rgb(230,125,153)')}
-                onBlur={e => (e.target.style.borderColor = 'rgba(230,125,153,0.3)')}
               />
             </div>
             <p style={{ fontSize: '10px', color: 'rgba(220,210,215,0.4)', marginTop: '6px' }}>
@@ -398,10 +400,10 @@ export default function ListEditor({
           </div>
 
           {/* Progresso (apenas para TV) */}
-          {type === 'TV_SEASON' && (
+          {entry.type === 'TV_SEASON' && (
             <div>
               <label style={{ fontSize: '11px', fontWeight: '700', color: 'rgb(230,125,153)', textTransform: 'uppercase', letterSpacing: '1px', display: 'block', marginBottom: '8px' }}>
-                Episode Progress {totalEpisodes ? `/ ${totalEpisodes}` : ''}
+                Episode Progress {entry.totalEpisodes ? `/ ${entry.totalEpisodes}` : ''}
               </label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <button
@@ -417,8 +419,6 @@ export default function ListEditor({
                     cursor: 'pointer',
                     transition: 'all 0.2s',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(230,125,153,0.2)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'rgb(58,55,55)')}
                 >
                   −
                 </button>
@@ -452,8 +452,6 @@ export default function ListEditor({
                     cursor: 'pointer',
                     transition: 'all 0.2s',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(230,125,153,0.2)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'rgb(58,55,55)')}
                 >
                   +
                 </button>
@@ -603,20 +601,9 @@ export default function ListEditor({
                 fontSize: '14px',
                 fontWeight: '700',
                 cursor: saving ? 'wait' : 'pointer',
-                transition: 'transform 0.2s, opacity 0.2s',
-                boxShadow: '0 2px 8px rgba(230,125,153,0.3)',
               }}
-              onMouseEnter={e => { if (!saving) (e.currentTarget.style.transform = 'scale(1.02)'); }}
-              onMouseLeave={e => { if (!saving) (e.currentTarget.style.transform = 'scale(1)'); }}
             >
-              {saving ? (
-                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
-                  Saving...
-                </span>
-              ) : (
-                'Save'
-              )}
+              {saving ? 'Saving...' : 'Save'}
             </button>
             <button
               onClick={onClose}
@@ -631,14 +618,31 @@ export default function ListEditor({
                 fontSize: '14px',
                 fontWeight: '600',
                 cursor: saving ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
               }}
-              onMouseEnter={e => { if (!saving) (e.currentTarget.style.borderColor = 'rgb(230,125,153)'); }}
-              onMouseLeave={e => { if (!saving) (e.currentTarget.style.borderColor = 'rgba(230,125,153,0.4)'); }}
             >
               Cancel
             </button>
           </div>
+
+          {/* Botão Delete */}
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: '#e74c3c',
+              border: 'none',
+              borderRadius: '30px',
+              color: 'white',
+              fontSize: '13px',
+              fontWeight: '700',
+              cursor: deleting ? 'wait' : 'pointer',
+              marginTop: '4px',
+            }}
+          >
+            {deleting ? 'Deleting...' : 'Delete Entry'}
+          </button>
         </div>
       </div>
 
@@ -650,9 +654,6 @@ export default function ListEditor({
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px) scale(0.96); }
           to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes spin {
-          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>

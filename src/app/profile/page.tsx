@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { formatScore, scoreColor } from '@/lib/utils';
 import { Suspense } from 'react';
+import ListEditor from '@/components/ListEditor';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -34,18 +35,19 @@ interface Entry {
 }
 
 interface ActivityLog {
-  id: string;           // uuid único do evento
+  id: string;
   entryId: string;
   title: string;
   imagePath?: string | null;
   type: 'MOVIE' | 'TV_SEASON';
   status: string;
   progress: number;
-  progressStart?: number;   // ← ADICIONADO
-  progressEnd?: number;     // ← ADICIONADO
+  progressStart?: number;
+  progressEnd?: number;
   score: number;
   slug: string;
-  createdAt: string;    // ISO timestamp do evento
+  createdAt: string;
+  lastUpdatedAt?: string;   // ← NOVO
 }
 
 interface Profile {
@@ -367,194 +369,6 @@ const handleIncrement = (e: React.MouseEvent) => {
   );
 }
 
-// ─── List Editor ───────────────────────────────────────────────────────────────
-
-function ListEditor({ entry, onClose, onSaved }: {
-  entry: Entry;
-  onClose: () => void;
-  onSaved: (updated: Partial<Entry>) => void;
-}) {
-  const [status, setStatus] = useState(entry.status);
-  const [score, setScore] = useState(entry.score);
-  const [progress, setProgress] = useState(entry.progress);
-  const [startDate, setStartDate] = useState(entry.startDate ?? '');
-  const [finishDate, setFinishDate] = useState(entry.finishDate ?? '');
-  const [rewatchCount, setRewatchCount] = useState(entry.rewatchCount ?? 0);
-  const [notes, setNotes] = useState(entry.notes ?? '');
-  const [hidden, setHidden] = useState(entry.hidden ?? false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', h);
-    document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', h); document.body.style.overflow = ''; };
-  }, [onClose]);
-
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    if (status === 'WATCHING' && !startDate) setStartDate(today);
-    if (status === 'COMPLETED' && !finishDate) setFinishDate(today);
-    if (status === 'REWATCHING' && !startDate) setStartDate(today);
-  }, [status]);
-
-async function save() {
-  setSaving(true);
-  try {
-    const payload = { score, status, progress, startDate: startDate || null, finishDate: finishDate || null, rewatchCount, notes: notes || null, hidden };
-    const res = await fetch(`/api/entries/${entry.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok) {
-      const updatedEntry = await res.json();   // ← obtém a entry atualizada do banco
-      onSaved(updatedEntry);                   // ← passa o objeto completo, não apenas o payload
-      onClose();
-    } else {
-      alert('Error saving.');
-    }
-  } finally { setSaving(false); }
-}
-
-  async function handleDelete() {
-    if (!confirm('Tem certeza que deseja remover esta entrada permanentemente?')) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`/api/entries/${entry.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        alert('Erro ao deletar.');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Erro de rede ao deletar.');
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  const poster = imgUrl(entry.imagePath);
-  const maxEp = entry.totalEpisodes ?? 9999;
-
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(3px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a2e', borderRadius: '12px', width: '100%', maxWidth: '480px', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ position: 'relative', padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: '16px', alignItems: 'center' }}>
-          {poster && <img src={poster} alt="" style={{ width: '50px', height: '70px', objectFit: 'cover', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }} />}
-          <div style={{ flex: 1 }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#e0e4e8', margin: 0 }}>{entry.title}</h3>
-            <p style={{ fontSize: '12px', color: '#8ba2b9', margin: '4px 0 0' }}>{entry.type === 'MOVIE' ? 'Movie' : `Season ${entry.seasonNumber ?? ''}`}</p>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8ba2b9', fontSize: '24px', cursor: 'pointer', lineHeight: 1 }}>×</button>
-        </div>
-
-        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>Status</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {ALL_STATUSES.map(s => (
-                <button key={s} onClick={() => setStatus(s)} style={{
-                  padding: '6px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', border: 'none', cursor: 'pointer',
-                  background: status === s ? STATUS_COLOR[s] : '#2b2d42',
-                  color: status === s ? 'white' : '#92a0ad',
-                  transition: 'all 0.2s',
-                }}>
-                  {STATUS_LABEL[s]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>
-              Score (0 – 10) <span style={{ color: scoreColor(score), fontWeight: 'bold', marginLeft: '8px' }}>{formatScore(score)}</span>
-            </label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              max="10"
-              value={score === 0 ? '' : score}
-              onChange={e => {
-                const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                setScore(isNaN(val) ? 0 : Math.min(10, Math.max(0, val)));
-              }}
-              placeholder="0"
-              style={{
-                width: '100%', padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px',
-                color: '#e0e4e8', fontSize: '14px', fontFamily: 'Overpass, sans-serif', outline: 'none', transition: '0.2s'
-              }}
-            />
-          </div>
-
-          {entry.type === 'TV_SEASON' && (
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>Progress</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <button onClick={() => setProgress(p => Math.max(0, p - 1))} style={{ width: '34px', height: '34px', borderRadius: '8px', background: '#2b2d42', border: '1px solid #3d3d5c', color: '#e0e4e8', fontSize: '18px', cursor: 'pointer' }}>−</button>
-                <input type="number" min={0} max={maxEp} value={progress} onChange={e => setProgress(Math.min(maxEp, Math.max(0, Number(e.target.value))))} style={{ flex: 1, padding: '9px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '14px', textAlign: 'center' }} />
-                <button onClick={() => setProgress(p => Math.min(maxEp, p + 1))} style={{ width: '34px', height: '34px', borderRadius: '8px', background: '#2b2d42', border: '1px solid #3d3d5c', color: '#e0e4e8', fontSize: '18px', cursor: 'pointer' }}>+</button>
-                <span style={{ fontSize: '12px', color: '#647380' }}>/ {entry.totalEpisodes ?? '?'}</span>
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>Start Date</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ width: '100%', padding: '9px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '6px', color: '#e0e4e8', fontSize: '13px' }} />
-            </div>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>Finish Date</label>
-              <input type="date" value={finishDate} onChange={e => setFinishDate(e.target.value)} style={{ width: '100%', padding: '9px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '6px', color: '#e0e4e8', fontSize: '13px' }} />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', alignItems: 'center' }}>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>Rewatch Count</label>
-              <input type="number" min={0} value={rewatchCount} onChange={e => setRewatchCount(Number(e.target.value))} style={{ width: '100%', padding: '9px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '6px', color: '#e0e4e8', fontSize: '13px' }} />
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', paddingTop: '22px' }}>
-              <input type="checkbox" checked={hidden} onChange={e => setHidden(e.target.checked)} style={{ accentColor: '#3db4f2', width: '18px', height: '18px' }} />
-              <span style={{ fontSize: '12px', color: '#92a0ad' }}>Hidden</span>
-            </label>
-          </div>
-
-          <div>
-            <label style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '8px' }}>Notes</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Personal notes..." style={{ width: '100%', padding: '9px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '13px', resize: 'vertical', fontFamily: 'Overpass, sans-serif' }} />
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', paddingTop: '8px' }}>
-            <button onClick={save} disabled={saving} style={{ flex: 1, padding: '12px', background: '#3db4f2', border: 'none', borderRadius: '8px', color: 'white', fontSize: '14px', fontWeight: '700', cursor: saving ? 'wait' : 'pointer' }}>
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-            <button onClick={onClose} style={{ flex: 1, padding: '12px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
-              Cancel
-            </button>
-          </div>
-
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            style={{
-              width: '100%', padding: '10px', background: '#e74c3c', border: 'none', borderRadius: '8px',
-              color: 'white', fontSize: '13px', fontWeight: '700', cursor: deleting ? 'wait' : 'pointer',
-              marginTop: '8px',
-            }}
-          >
-            {deleting ? 'Deleting...' : 'Delete Entry'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Profile Editor ───────────────────────────────────────────────────────────
 
 function ProfileEditor({ profile, onClose, onSaved }: {
@@ -637,7 +451,19 @@ function ProfileEditor({ profile, onClose, onSaved }: {
           <div>
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Avatar (Image)</label>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              {avatarPreview && <img src={avatarPreview} alt="avatar preview" style={{ width: '64px', height: '64px', borderRadius: '8px', objectFit: 'cover', background: 'transparent' }} />}
+              {avatarPreview && (
+  <img 
+    src={avatarPreview} 
+    alt="avatar preview" 
+    style={{ 
+      width: '64px', 
+      height: '64px', 
+      borderRadius: '8px', 
+      objectFit: 'cover', 
+      background: 'transparent'   // ✅ força transparência
+    }} 
+  />
+)}
               <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ flex: 1, padding: '8px', background: '#2b2d42', borderRadius: '8px', color: '#e0e4e8', fontSize: '12px', border: '1px solid #3d3d5c' }} />
               <input type="text" value={avatarUrl} onChange={e => { setAvatarUrl(e.target.value); setAvatarPreview(e.target.value); }} placeholder="Or paste URL" style={{ flex: 2, padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '13px' }} />
             </div>
@@ -1334,50 +1160,43 @@ function ProfileContent() {
 
   useEffect(() => { load(); }, [load]);
 
-  function pushActivity(entry: Entry) {
-    const now = Date.now();
-    const key = `${entry.id}-${entry.status}-${entry.progress}-${entry.score}-${Math.floor(now / 200)}`;
-    if (recentActivityIds.current.has(key)) return;
-    recentActivityIds.current.add(key);
-    setTimeout(() => recentActivityIds.current.delete(key), 500);
+function pushActivity(entry: Entry) {
+  // Evita duplicatas muito rápidas (mesmo milésimo de segundo)
+  const now = Date.now();
+  const key = `${entry.id}-${entry.status}-${entry.progress}-${entry.score}-${Math.floor(now / 200)}`;
+  if (recentActivityIds.current.has(key)) return;
+  recentActivityIds.current.add(key);
+  setTimeout(() => recentActivityIds.current.delete(key), 500);
 
-    if (entry.type === 'TV_SEASON' && entry.status === 'WATCHING') {
-      setActivityLog(prev => {
-        // Verifica se o último evento é do mesmo entryId e é progress consecutivo
-        const last = prev[0];
-        if (
-          last &&
-          last.entryId === entry.id &&
-          last.status === entry.status &&
-          (last.progressEnd ?? last.progress) === entry.progress - 1
-        ) {
-          // Agrupa: atualiza progressEnd do último evento
-          return [
-            { ...last, progressEnd: entry.progress },
-            ...prev.slice(1),
-          ];
-        }
-        // Novo evento
-        const event: ActivityLog = {
-          id: crypto.randomUUID(),
-          entryId: entry.id,
-          title: entry.title,
-          imagePath: entry.imagePath,
-          type: entry.type,
-          status: entry.status,
-          progress: entry.progress,
-          progressStart: entry.progress,
-          progressEnd: entry.progress,
-          score: entry.score,
-          slug: entrySlug(entry),
-          createdAt: new Date().toISOString(),
-        };
-        return [event, ...prev];
-      });
-      return;
+  // Apenas séries com progresso incremental devem ser agrupadas
+  const shouldGroup = entry.type === 'TV_SEASON' && 
+                      (entry.status === 'WATCHING' || entry.status === 'REWATCHING');
+
+  setActivityLog(prev => {
+    const last = prev[0];
+    const nowISO = new Date().toISOString();
+
+    // Verifica se podemos mesclar com o último log
+    if (shouldGroup && last && last.entryId === entry.id && last.status === entry.status) {
+      const lastTime = new Date(last.lastUpdatedAt || last.createdAt);
+      const hoursDiff = (now - lastTime.getTime()) / (1000 * 60 * 60);
+      const isConsecutive = (last.progressEnd ?? last.progress) === entry.progress - 1;
+
+      if (hoursDiff <= 24 && isConsecutive) {
+        // Mescla: atualiza progressEnd e lastUpdatedAt
+        return [
+          {
+            ...last,
+            progressEnd: entry.progress,
+            lastUpdatedAt: nowISO,
+          },
+          ...prev.slice(1),
+        ];
+      }
     }
 
-    const event: ActivityLog = {
+    // Cria um novo log
+    const newLog: ActivityLog = {
       id: crypto.randomUUID(),
       entryId: entry.id,
       title: entry.title,
@@ -1385,12 +1204,16 @@ function ProfileContent() {
       type: entry.type,
       status: entry.status,
       progress: entry.progress,
+      progressStart: shouldGroup ? entry.progress : undefined,
+      progressEnd: shouldGroup ? entry.progress : undefined,
       score: entry.score,
       slug: entrySlug(entry),
-      createdAt: new Date().toISOString(),
+      createdAt: nowISO,
+      lastUpdatedAt: nowISO,
     };
-    setActivityLog(prev => [event, ...prev]);
-  }
+    return [newLog, ...prev];
+  });
+}
 
   function handleSaved(updated: Partial<Entry>) {
     setEntries(prev => prev.map(e => {
@@ -1445,15 +1268,17 @@ function ProfileContent() {
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'linear-gradient(180deg, rgba(18,18,18,0) 0%, rgba(18,18,18,.6) 100%)' }} />
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '30px', position: 'relative', zIndex: 2, transform: 'translateY(35px)', maxWidth: '1140px', margin: '0 auto', padding: '0 50px', width: '100%' }}>
           <div style={{
-            width: '160px', height: '160px', borderRadius: '4px',
-            background: profile?.avatarUrl ? 'transparent' : (profile?.avatarColor ?? '#3db4f2'),
-            boxShadow: '0 0 10px rgba(0,0,0,0.5)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px'
-          }}>
-            {profile?.avatarUrl
-              ? <img src={profile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="avatar" />
-              : <span style={{ fontSize: '64px' }}>🎬</span>
-            }
-          </div>
+  width: '160px', height: '160px', borderRadius: '4px',
+  background: profile?.avatarUrl ? 'transparent' : (profile?.avatarColor ?? '#3db4f2'),
+  boxShadow: profile?.avatarUrl ? 'none' : '0 0 10px rgba(0,0,0,0.5)',
+  overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px'
+}}>
+  {profile?.avatarUrl ? (
+    <img src={profile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="avatar" />
+  ) : (
+    <span style={{ fontSize: '64px' }}>👤</span>
+  )}
+</div>
           <div style={{ paddingBottom: '10px' }}>
             <h1 style={{ color: '#fff', fontSize: '2.2rem', fontWeight: 800, filter: 'drop-shadow(0px 0px 6px black)', margin: 0 }}>{profile?.username ?? 'My Profile'}</h1>
           </div>
@@ -1498,7 +1323,7 @@ function ProfileContent() {
         {tab === 'stats' && <StatsTab entries={entries} />}
       </div>
 
-      {editingEntry && <ListEditor entry={editingEntry} onClose={() => setEditingEntry(null)} onSaved={handleSaved} />}
+      {editingEntry && <ListEditor entry={editingEntry} onClose={() => setEditingEntry(null)} onSave={handleSaved} />}
       {editingProf && profile && <ProfileEditor profile={profile} onClose={() => setEditingProf(false)} onSaved={p => setProfile(p)} />}
     </div>
   );

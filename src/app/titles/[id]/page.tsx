@@ -861,10 +861,166 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   const[source,        setSource]        =useState<string|null>(null);
   const[mounted,       setMounted]       =useState(false);
 
-  // ========== SISTEMA DE RELATIONS ROBUSTO ==========
+  // ========== SISTEMA DE RELATIONS ROBUSTO (CORRIGIDO) ==========
 
   /**
-   * Adiciona uma relação com múltiplas camadas de segurança e fallback
+   * Gera relações automáticas (TMDB) para um filme com coleção
+   */
+  async function getAutoMovieRelations(movieId: number, collectionId: number): Promise<RelationItem[]> {
+    try {
+      const cRes = await fetch(
+  `${TMDB}/collection/${collectionId}?api_key=${API_KEY}&language=en-US&include_image_language=en`
+);
+      if (!cRes.ok) return [];
+      const col: TmdbCollection = await cRes.json();
+      const sorted = [...col.parts].sort(
+        (a, b) =>
+          new Date(a.release_date || '9999').getTime() -
+          new Date(b.release_date || '9999').getTime()
+      );
+      const myIdx = sorted.findIndex((p) => p.id === movieId);
+      const auto: RelationItem[] = [];
+      if (myIdx > 0) {
+        const p = sorted[myIdx - 1];
+        auto.push({
+          slug: `movie-${p.id}`,
+          relationType: 'PREQUEL',
+          title: p.title,
+          poster_path: p.poster_path,
+          kind: 'movie',
+          year: getYear(p.release_date),
+        });
+      }
+      if (myIdx < sorted.length - 1) {
+        const p = sorted[myIdx + 1];
+        auto.push({
+          slug: `movie-${p.id}`,
+          relationType: 'SEQUEL',
+          title: p.title,
+          poster_path: p.poster_path,
+          kind: 'movie',
+          year: getYear(p.release_date),
+        });
+      }
+      return auto;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Gera relações automáticas (TMDB) para uma temporada de série
+   */
+  function getAutoTvRelations(show: TmdbShow, currentSeasonNumber: number): RelationItem[] {
+    const numbered = show.seasons.filter((s) => s.season_number > 0);
+    const prevSeason = numbered.find((s) => s.season_number === currentSeasonNumber - 1);
+    const nextSeason = numbered.find((s) => s.season_number === currentSeasonNumber + 1);
+    const auto: RelationItem[] = [];
+    if (prevSeason) {
+      auto.push({
+        slug: `tv-${show.id}-s${prevSeason.season_number}`,
+        relationType: 'PREQUEL',
+        title: buildSeasonTitle(show.name, prevSeason.season_number),
+        poster_path: prevSeason.poster_path,
+        kind: 'tv',
+        year: getYear(prevSeason.air_date),
+        seasonNumber: prevSeason.season_number,
+      });
+    }
+    if (nextSeason) {
+      auto.push({
+        slug: `tv-${show.id}-s${nextSeason.season_number}`,
+        relationType: 'SEQUEL',
+        title: buildSeasonTitle(show.name, nextSeason.season_number),
+        poster_path: nextSeason.poster_path,
+        kind: 'tv',
+        year: getYear(nextSeason.air_date),
+        seasonNumber: nextSeason.season_number,
+      });
+    }
+    return auto;
+  }
+
+  /**
+   * Mescla relações automáticas e manuais, evitando duplicatas por slug
+   */
+  function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationItem[] {
+    const slugs = new Set<string>();
+    const merged: RelationItem[] = [];
+    // Primeiro adiciona todas as automáticas
+    for (const rel of auto) {
+      if (!slugs.has(rel.slug)) {
+        slugs.add(rel.slug);
+        merged.push(rel);
+      }
+    }
+    // Depois adiciona as manuais que não estejam duplicadas
+    for (const rel of manual) {
+      if (!slugs.has(rel.slug)) {
+        slugs.add(rel.slug);
+        merged.push(rel);
+      }
+    }
+    return merged;
+  }
+
+  /**
+   * Carrega e mescla todas as relações (banco + TMDB) para a entry atual
+   */
+  async function loadAllRelations(): Promise<RelationItem[]> {
+    if (!entry?.id) return [];
+
+    // 1) Carregar manuais do banco
+    let manualRels: RelationItem[] = [];
+    try {
+      const savedRels = await fetchSavedRelations(entry.id);
+      manualRels = savedRels
+        .map(rel => {
+          let slug = '';
+          if (rel.kind === 'movie') {
+            slug = `movie-${rel.targetTmdbId}`;
+          } else {
+            slug = `tv-${rel.targetParentTmdbId || rel.targetTmdbId}-s${rel.targetSeasonNumber || 1}`;
+          }
+          return {
+            slug,
+            relationType: rel.relationType,
+            title: rel.title,
+            poster_path: rel.poster_path,
+            kind: rel.kind as 'movie' | 'tv',
+            year: rel.year || undefined,
+            seasonNumber: rel.seasonNumber || undefined,
+          } as RelationItem;
+        })
+        .filter(r => r !== null);
+    } catch (e) {
+      console.warn('[loadAllRelations] Erro ao buscar manuais:', e);
+    }
+
+    // 2) Carregar automáticas do TMDB (se aplicável)
+    let autoRels: RelationItem[] = [];
+    if (isTV && show) {
+      autoRels = getAutoTvRelations(show, seasonNumber!);
+    } else if (!isTV && movie && movie.belongs_to_collection) {
+      autoRels = await getAutoMovieRelations(movie.id, movie.belongs_to_collection.id);
+    }
+
+    // 3) Mesclar e retornar
+    return mergeRelations(autoRels, manualRels);
+  }
+
+  /**
+   * Atualiza o estado de relations com os dados mesclados
+   */
+  async function refreshRelations() {
+    if (!entry?.id) return;
+    const merged = await loadAllRelations();
+    setRelations(merged);
+    console.log(`[refreshRelations] Mescladas ${merged.length} relações (${merged.filter(r=>!r.slug.startsWith('movie-')||r.relationType==='PREQUEL'||r.relationType==='SEQUEL').length} auto + ${merged.length - merged.filter(r=>r.relationType==='PREQUEL'||r.relationType==='SEQUEL').length} manual)`);
+  }
+
+  /**
+   * Adiciona uma relação (apenas adiciona, sem substituir as automáticas)
    */
   async function addRelation(newRel: RelationItem) {
     if (!entry?.id) {
@@ -899,7 +1055,6 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
             if (sData.id) targetTmdbId = sData.id;
           }
         } catch {
-          // Continua sem o season.id exato - usa targetParentTmdbId
           console.warn('[addRelation] Não conseguiu obter season.id do TMDB, continuando...');
         }
       }
@@ -911,7 +1066,7 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
       return;
     }
 
-    // Salva a relação com retry automático
+    // Salva a relação no banco
     try {
       const relation = await saveRelation({
         sourceEntryId: entry.id,
@@ -930,8 +1085,8 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
 
       if (relation) {
         console.log('✅ Relação salva com sucesso');
-        // Recarrega as relações
-        await refreshRelations(entry.id);
+        // Recarrega as relações (agora mesclando automáticas novamente)
+        await refreshRelations();
       } else {
         throw new Error('Falha ao salvar relação');
       }
@@ -942,42 +1097,7 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   }
 
   /**
-   * Recarrega relações do banco e atualiza o estado local
-   */
-  async function refreshRelations(sourceEntryId: string) {
-    try {
-      const savedRels = await fetchSavedRelations(sourceEntryId);
-
-      const mapped: RelationItem[] = savedRels
-        .map(rel => {
-          let slug = '';
-          if (rel.kind === 'movie') {
-            slug = `movie-${rel.targetTmdbId}`;
-          } else {
-            slug = `tv-${rel.targetParentTmdbId || rel.targetTmdbId}-s${rel.targetSeasonNumber || 1}`;
-          }
-
-          return {
-            slug,
-            relationType: rel.relationType,
-            title: rel.title,
-            poster_path: rel.poster_path,
-            kind: rel.kind as 'movie' | 'tv',
-            year: rel.year || undefined,
-            seasonNumber: rel.seasonNumber || undefined,
-          } as RelationItem;
-        })
-        .filter((r): r is RelationItem => r !== null && r !== undefined);
-
-      setRelations(mapped);
-      console.log(`[refreshRelations] Carregadas ${mapped.length} relações`);
-    } catch (e) {
-      console.error('[refreshRelations] Error:', e);
-    }
-  }
-
-  /**
-   * Remove uma relação com múltiplas tentativas
+   * Remove uma relação (apenas a manual, automáticas permanecem)
    */
   async function removeRelation(relToRemove: RelationItem) {
     if (!entry?.id) return;
@@ -1017,6 +1137,7 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
 
       if (success) {
         console.log('✅ Relação removida');
+        // Atualiza estado local removendo apenas essa relação (automáticas permanecem)
         setRelations(prev => prev.filter(r => r.slug !== relToRemove.slug));
       } else {
         throw new Error('Falha na remoção');
@@ -1038,7 +1159,7 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
     document.head.appendChild(el);
   },[]);
 
-// ─── Fetch de dados (corrigido para carregar relations salvas) ──────────────
+// ─── Fetch de dados (CORRIGIDO: P1#1 sinopse PT-BR e P1#2 relações mescladas) ──
 useEffect(() => {
   let cancelled = false;
   async function load() {
@@ -1077,93 +1198,57 @@ md.title = mdEn.title || md.title;
 md.original_title = mdEn.original_title || md.original_title;
 md.poster_path = mdEn.poster_path || md.poster_path;
 md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
+// ✅ sinopse (md.overview) NÃO é sobrescrita – permanece em pt-BR
         if (cancelled) return;
         setMovie(md);
 
-        // ---------- Relations ----------
-        let initialRels: RelationItem[] = [];
-
-        // 1) Se a entry existe (temos entryId), tenta carregar do banco
-if (entryId) {
-  try {
-    const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
-    if (relRes.ok) {
-      const saved = await relRes.json();
-      console.log(`[Relations] Carregadas ${saved.length} relações do banco para entryId ${entryId}`);
-      if (saved.length) {
-        initialRels = saved.map((r: any) => {
-          const target = r.targetEntry;
-          if (!target) {
-            console.warn('Relação sem targetEntry', r);
-            return null;
-          }
-          let slug = '';
-          if (target.type === 'MOVIE') {
-            slug = `movie-${target.tmdbId}`;
-          } else {
-            slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
-          }
-          return {
-            slug,
-            relationType: r.relationType,
-            title: r.title,
-            poster_path: r.poster_path,
-            kind: r.kind,
-            year: r.year ?? undefined,
-            seasonNumber: r.seasonNumber ?? undefined,
-          };
-        }).filter(Boolean);
-        console.log('[Relations] Mapeadas:', initialRels);
-      }
-    } else {
-      console.error(`Falha ao carregar relações: status ${relRes.status}`);
-    }
-  } catch (e) {
-    console.warn('[Relations] Falha ao carregar do banco', e);
-  }
-}
-
-        // 2) Se não tem relações salvas, gerar automáticas (TMDB)
-        if (initialRels.length === 0 && md.belongs_to_collection) {
+        // ---------- Relations (CORRIGIDO: carrega automáticas + manuais) ----------
+        let manualRels: RelationItem[] = [];
+        // 1) Carregar manuais do banco se entry existe
+        if (entryId) {
           try {
-            const cRes = await fetch(
-              `${TMDB}/collection/${md.belongs_to_collection.id}?api_key=${API_KEY}&language=en-US`
-            );
-            if (cRes.ok) {
-              const col: TmdbCollection = await cRes.json();
-              const sorted = [...col.parts].sort(
-                (a, b) =>
-                  new Date(a.release_date || '9999').getTime() -
-                  new Date(b.release_date || '9999').getTime()
-              );
-              const myIdx = sorted.findIndex((p) => p.id === parsed.movieId);
-              if (myIdx > 0) {
-                const p = sorted[myIdx - 1];
-                initialRels.push({
-                  slug: `movie-${p.id}`,
-                  relationType: 'PREQUEL',
-                  title: p.title,
-                  poster_path: p.poster_path,
-                  kind: 'movie',
-                  year: getYear(p.release_date),
-                });
-              }
-              if (myIdx < sorted.length - 1) {
-                const p = sorted[myIdx + 1];
-                initialRels.push({
-                  slug: `movie-${p.id}`,
-                  relationType: 'SEQUEL',
-                  title: p.title,
-                  poster_path: p.poster_path,
-                  kind: 'movie',
-                  year: getYear(p.release_date),
-                });
-              }
+            const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
+            if (relRes.ok) {
+              const saved = await relRes.json();
+              console.log(`[Relations] Carregadas ${saved.length} relações do banco para entryId ${entryId}`);
+              manualRels = saved.map((r: any) => {
+                const target = r.targetEntry;
+                if (!target) {
+                  console.warn('Relação sem targetEntry', r);
+                  return null;
+                }
+                let slug = '';
+                if (target.type === 'MOVIE') {
+                  slug = `movie-${target.tmdbId}`;
+                } else {
+                  slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+                }
+                return {
+                  slug,
+                  relationType: r.relationType,
+                  title: r.title,
+                  poster_path: r.poster_path,
+                  kind: r.kind,
+                  year: r.year ?? undefined,
+                  seasonNumber: r.seasonNumber ?? undefined,
+                };
+              }).filter(Boolean);
             }
-          } catch {}
+          } catch (e) {
+            console.warn('[Relations] Falha ao carregar do banco', e);
+          }
         }
 
-        if (!cancelled) setRelations(initialRels);
+        // 2) Gerar automáticas do TMDB (SEMPRE, se houver coleção)
+        let autoRels: RelationItem[] = [];
+        if (md.belongs_to_collection) {
+          autoRels = await getAutoMovieRelations(parsed.movieId, md.belongs_to_collection.id);
+        }
+
+        // 3) Mesclar
+        const allRels = mergeRelations(autoRels, manualRels);
+        if (!cancelled) setRelations(allRels);
+        console.log(`[Relations] Total: ${allRels.length} (${autoRels.length} auto + ${manualRels.length} manual)`);
 
         // Source (keywords) – inalterado
         try {
@@ -1187,11 +1272,13 @@ if (entryId) {
         }
       } else if (parsed.kind === 'tv') {
         const { showId, seasonNumber } = parsed;
-        const [eRes, sRes, sdRes, sResEn] = await Promise.all([
+        // ✅ CORREÇÃO P1#1: Buscar a season também em PT-BR para a sinopse
+        const [eRes, sRes, sdResEn, sResEn, sdResPt] = await Promise.all([
   fetch(`/api/entry/tv-${showId}-s${seasonNumber}`),
   fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
   fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=en-US&append_to_response=credits,videos`),
   fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=en-US`),
+  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=pt-BR`),
 ]);
         if (cancelled) return;
         
@@ -1211,81 +1298,60 @@ sd.poster_path = sdEn.poster_path || sd.poster_path;
 sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
         if (cancelled) return;
         setShow(sd);
-        if (sdRes.ok) setSeasonDetail(await sdRes.json());
+        
+        // ✅ CORREÇÃO P1#1: Usar season em en-US para dados técnicos, mas sobrescrever overview com versão pt-BR
+        let seasonData: TmdbSeasonDetail | null = null;
+        if (sdResEn.ok) seasonData = await sdResEn.json();
+        if (sdResPt.ok && seasonData) {
+          const seasonPt = await sdResPt.json();
+          seasonData.overview = seasonPt.overview; // 🔥 sinopse em português
+        } else if (sdResPt.ok && !seasonData) {
+          seasonData = await sdResPt.json();
+        }
+        if (seasonData) setSeasonDetail(seasonData);
 
-        // ---------- Relations ----------
-        let initialRels: RelationItem[] = [];
-
-        // 1) Carregar do banco se entry existe
-if (entryId) {
-  try {
-    const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
-    if (relRes.ok) {
-      const saved = await relRes.json();
-      console.log(`[Relations] Carregadas ${saved.length} relações do banco para entryId ${entryId}`);
-      if (saved.length) {
-        initialRels = saved.map((r: any) => {
-          const target = r.targetEntry;
-          if (!target) {
-            console.warn('Relação sem targetEntry', r);
-            return null;
-          }
-          let slug = '';
-          if (target.type === 'MOVIE') {
-            slug = `movie-${target.tmdbId}`;
-          } else {
-            slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
-          }
-          return {
-            slug,
-            relationType: r.relationType,
-            title: r.title,
-            poster_path: r.poster_path,
-            kind: r.kind,
-            year: r.year ?? undefined,
-            seasonNumber: r.seasonNumber ?? undefined,
-          };
-        }).filter(Boolean);
-        console.log('[Relations] Mapeadas:', initialRels);
-      }
-    } else {
-      console.error(`Falha ao carregar relações: status ${relRes.status}`);
-    }
-  } catch (e) {
-    console.warn('[Relations] Falha ao carregar do banco', e);
-  }
-}
-
-        // 2) Se não há salvas, gerar automáticas (TMDB)
-        if (initialRels.length === 0) {
-          const numbered = sd.seasons.filter((s) => s.season_number > 0);
-          const prevSeason = numbered.find((s) => s.season_number === seasonNumber - 1);
-          const nextSeason = numbered.find((s) => s.season_number === seasonNumber + 1);
-          if (prevSeason) {
-            initialRels.push({
-              slug: `tv-${showId}-s${prevSeason.season_number}`,
-              relationType: 'PREQUEL',
-              title: buildSeasonTitle(sd.name, prevSeason.season_number),
-              poster_path: prevSeason.poster_path,
-              kind: 'tv',
-              year: getYear(prevSeason.air_date),
-              seasonNumber: prevSeason.season_number,
-            });
-          }
-          if (nextSeason) {
-            initialRels.push({
-              slug: `tv-${showId}-s${nextSeason.season_number}`,
-              relationType: 'SEQUEL',
-              title: buildSeasonTitle(sd.name, nextSeason.season_number),
-              poster_path: nextSeason.poster_path,
-              kind: 'tv',
-              year: getYear(nextSeason.air_date),
-              seasonNumber: nextSeason.season_number,
-            });
+        // ---------- Relations (CORRIGIDO: carrega automáticas + manuais) ----------
+        let manualRels: RelationItem[] = [];
+        if (entryId) {
+          try {
+            const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
+            if (relRes.ok) {
+              const saved = await relRes.json();
+              manualRels = saved.map((r: any) => {
+                const target = r.targetEntry;
+                if (!target) return null;
+                let slug = '';
+                if (target.type === 'MOVIE') {
+                  slug = `movie-${target.tmdbId}`;
+                } else {
+                  slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+                }
+                return {
+                  slug,
+                  relationType: r.relationType,
+                  title: r.title,
+                  poster_path: r.poster_path,
+                  kind: r.kind,
+                  year: r.year ?? undefined,
+                  seasonNumber: r.seasonNumber ?? undefined,
+                };
+              }).filter(Boolean);
+            }
+          } catch (e) {
+            console.warn('[Relations] Falha ao carregar do banco', e);
           }
         }
 
-        if (!cancelled) setRelations(initialRels);
+        // 2) Gerar automáticas do TMDB (SEMPRE, baseado nas temporadas)
+        let autoRels: RelationItem[] = [];
+        if (sd) {
+          autoRels = getAutoTvRelations(sd, seasonNumber);
+        }
+
+        // 3) Mesclar
+        const allRels = mergeRelations(autoRels, manualRels);
+        if (!cancelled) setRelations(allRels);
+        console.log(`[Relations] Total: ${allRels.length} (${autoRels.length} auto + ${manualRels.length} manual)`);
 
         // Source (keywords) – inalterado
         try {
@@ -1396,9 +1462,19 @@ if (entryId) {
     ?[...(seasonDetail?.videos?.results??[]),...(show?.videos?.results??[])]
     :(movie?.videos?.results??[]);
   const uniqueVideos=allVids
-    .filter(v=>v.site==='YouTube'&&['Trailer','Teaser','Clip','Featurette'].includes(v.type))
-    .filter((v,i,a)=>a.findIndex(x=>x.key===v.key)===i)
-    .sort((a,b)=>(b.official?1:0)-(a.official?1:0));
+  .filter(v=>v.site==='YouTube'&&['Trailer','Teaser','Clip','Featurette'].includes(v.type))
+  .filter((v,i,a)=>a.findIndex(x=>x.key===v.key)===i)
+  .sort((a,b)=>{
+    // Prioridade 1: Oficial vs não-oficial
+    const aOfficial = a.official ? 1 : 0;
+    const bOfficial = b.official ? 1 : 0;
+    if (aOfficial !== bOfficial) return bOfficial - aOfficial;
+    // Prioridade 2: Legendado em português vs não-legendado
+    const aLegendado = a.name.toLowerCase().includes('legendado') || a.name.toLowerCase().includes('português') ? 1 : 0;
+    const bLegendado = b.name.toLowerCase().includes('legendado') || b.name.toLowerCase().includes('português') ? 1 : 0;
+    if (aLegendado !== bLegendado) return bLegendado - aLegendado;
+    return 0;
+  });
 
   const recommendations:TmdbRec[]=isTV
     ?(show?.recommendations?.results?.slice(0,6)??[])
@@ -1481,7 +1557,7 @@ if (entryId) {
           </div>
         </a>
         {editingRel&&(
-          <button onClick={()=>setRelations(prev=>prev.filter(r=>r.slug!==rel.slug))}
+          <button onClick={()=>onRemove(rel)}
             style={{position:'absolute',top:6,right:6,background:'#e53e3e',color:'white',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>×</button>
         )}
       </div>

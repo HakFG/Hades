@@ -105,12 +105,15 @@ async function expandShow(show: RawShow, includeSpecials = false): Promise<Media
     ]);
     if (!res.ok) return [];
     const detail   = await res.json();
+    // ✅ Série não está em produção? descarta
+    if (!detail.in_production) return [];
     const detailEn = resEn.ok ? await resEn.json() : detail;
     // Nome sempre em inglês para títulos e cards
     const showName = detailEn.name || detail.name;
     const seasons: any[] = detail.seasons ?? [];
     const seriesStatus: string = detail.status ?? '';
     const inProduction: boolean = detail.in_production ?? false;
+
 
     return seasons
       .filter(s => includeSpecials || s.season_number > 0)
@@ -205,7 +208,8 @@ export default function SearchPage() {
   // ─── Gêneros ──────────────────────────────────────────────────────────────
   const loadGenres = useCallback(async () => {
     try {
-      const res = await fetch(`${TMDB}/genre/${mediaType}/list?api_key=${API_KEY}&language=pt-BR`);
+      // ✅ CORRIGIDO: language=en-US
+      const res = await fetch(`${TMDB}/genre/${mediaType}/list?api_key=${API_KEY}&language=en-US`);
       const data = await res.json();
       setGenres(data.genres ?? []);
     } catch (err) { console.error(err); }
@@ -222,34 +226,29 @@ export default function SearchPage() {
       const sortByPop = (a: MediaCard, b: MediaCard) => (b.popularity || 0) - (a.popularity || 0);
 
       if (mediaType === 'tv') {
+        // ✅ CORRIGIDO: todas com language=en-US
         const [trendRes, onAirRes, allTimeRes] = await Promise.all([
-          fetch(`${TMDB}/trending/tv/week?api_key=${API_KEY}&language=pt-BR`),
-          fetch(`${TMDB}/tv/on_the_air?api_key=${API_KEY}&language=pt-BR`),
+          fetch(`${TMDB}/trending/tv/week?api_key=${API_KEY}&language=en-US`),
+          fetch(`${TMDB}/tv/on_the_air?api_key=${API_KEY}&language=en-US`),
           // All Time: discover sorted by vote_count (quantidade de votos = popularidade histórica)
-          fetch(`${TMDB}/discover/tv?api_key=${API_KEY}&language=pt-BR&sort_by=vote_count.desc&vote_count.gte=5000&page=1`),
+          fetch(`${TMDB}/discover/tv?api_key=${API_KEY}&language=en-US&sort_by=vote_count.desc&vote_count.gte=5000&page=1`),
         ]);
         const [trendData, onAirData, allTimeData] = await Promise.all([
           trendRes.json(), onAirRes.json(), allTimeRes.json(),
         ]);
 
-        const expandLatest = async (shows: RawShow[]) => {
+const expandLatest = async (shows: RawShow[]) => {
   const today = new Date().toISOString().split('T')[0];
-
   const cards = await Promise.all(shows.slice(0, 6).map(async show => {
     const seasons = await expandShow(show, false);
     if (!seasons.length) return null;
-
     const sorted = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
-
-    // Tenta encontrar a temporada que está efetivamente airing:
-    // 1. Preferência: temporada airing segundo isSeasonAiring
-    // 2. Fallback: a mais recente por número
     const airingSeasons = sorted.filter(s => s.seasonStatus === 'Airing');
-const chosen = airingSeasons.length > 0 ? airingSeasons[0] : sorted[0];
-
+    // ✅ Se não há temporada airing, descarta este show
+    if (airingSeasons.length === 0) return null;
+    const chosen = airingSeasons[0];
     return { ...chosen, popularity: show.popularity };
   }));
-
   return cards.filter(Boolean) as MediaCard[];
 };
 
@@ -257,11 +256,12 @@ const chosen = airingSeasons.length > 0 ? airingSeasons[0] : sorted[0];
         setPopularNow((await expandLatest(onAirData.results ?? [])).sort(sortByPop));
         setAllTimePopular((await expandLatest(allTimeData.results ?? [])).sort(sortByPop));
       } else {
+        // ✅ CORRIGIDO: todas com language=en-US
         const [trendRes, nowPlayingRes, allTimeRes] = await Promise.all([
-          fetch(`${TMDB}/trending/movie/week?api_key=${API_KEY}&language=pt-BR`),
-          fetch(`${TMDB}/movie/now_playing?api_key=${API_KEY}&language=pt-BR`),
+          fetch(`${TMDB}/trending/movie/week?api_key=${API_KEY}&language=en-US`),
+          fetch(`${TMDB}/movie/now_playing?api_key=${API_KEY}&language=en-US`),
           // All Time movies: vote_count decrescente = mais votados da história
-          fetch(`${TMDB}/discover/movie?api_key=${API_KEY}&language=pt-BR&sort_by=vote_count.desc&vote_count.gte=10000&page=1`),
+          fetch(`${TMDB}/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=vote_count.desc&vote_count.gte=10000&page=1`),
         ]);
         const [trendData, nowPlayingData, allTimeData] = await Promise.all([
           trendRes.json(), nowPlayingRes.json(), allTimeRes.json(),
@@ -287,7 +287,8 @@ const chosen = airingSeasons.length > 0 ? airingSeasons[0] : sorted[0];
   // ─── Busca com filtros ────────────────────────────────────────────────────
   const performSearch = useCallback(async (page: number, resetResults = true) => {
     if (mediaType === 'movie') {
-      let url = `${TMDB}/discover/movie?api_key=${API_KEY}&language=pt-BR&sort_by=popularity.desc&page=${page}`;
+      // ✅ CORRIGIDO: language=en-US
+      let url = `${TMDB}/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=popularity.desc&page=${page}`;
       if (selectedGenre) url += `&with_genres=${selectedGenre}`;
       if (selectedYear) url += `&primary_release_year=${selectedYear}`;
       // Filtro de formato para filmes: short films via runtime
@@ -298,7 +299,8 @@ const chosen = airingSeasons.length > 0 ? airingSeasons[0] : sorted[0];
       if (resetResults) setResults(cards); else setResults(prev => [...prev, ...cards]);
       setHasMore(data.page < data.total_pages);
     } else {
-      let url = `${TMDB}/discover/tv?api_key=${API_KEY}&language=pt-BR&sort_by=popularity.desc&page=${page}`;
+      // ✅ CORRIGIDO: language=en-US
+      let url = `${TMDB}/discover/tv?api_key=${API_KEY}&language=en-US&sort_by=popularity.desc&page=${page}`;
 if (selectedGenre) url += `&with_genres=${selectedGenre}`;
 // Sem filtro de ano aqui — o TMDB filtra pela série pai, não pela temporada.
 // O filtro real é feito por airYear após a expansão.
@@ -360,6 +362,7 @@ const handleTextSearch = async () => {
   setSearching(true);
   setResults([]);
   try {
+    // ✅ JÁ CORRETO: language=en-US
     const res = await fetch(`${TMDB}/search/${mediaType}?api_key=${API_KEY}&language=en-US&query=${encodeURIComponent(query.trim())}`);
     const data = await res.json();
     if (mediaType === 'tv') {
@@ -818,21 +821,35 @@ setResults(allCards);
         </div>
       )}
 
-      {/* ── Modal ListEditor ─────────────────────────────────────────────── */}
-      {editorOpen && (
-        <ListEditor
-          isOpen={editorOpen}
-          onClose={() => setEditorOpen(false)}
-          tmdbId={editorData.tmdbId}
-          parentTmdbId={editorData.parentTmdbId}
-          seasonNumber={editorData.seasonNumber}
-          type={editorData.type}
-          title={editorData.title}
-          poster_path={editorData.poster_path}
-          totalEpisodes={editorData.totalEpisodes}
-          existingData={undefined}
-        />
-      )}
-    </div>
-  );
-}
+            {/* ── Modal ListEditor (versão unificada) ──────────────────────────── */}
+            {editorOpen && (
+              <ListEditor
+                entry={{
+                  id: '', // temporário, será criado novo
+                  tmdbId: editorData.tmdbId,
+                  parentTmdbId: editorData.parentTmdbId ?? undefined,
+                  seasonNumber: editorData.seasonNumber ?? undefined,
+                  title: editorData.title,
+                  type: editorData.type,
+                  status: 'PLANNING',
+                  score: 0,
+                  progress: 0,
+                  totalEpisodes: editorData.totalEpisodes ?? null,
+                  imagePath: editorData.poster_path ?? null,
+                  isFavorite: false,
+                  startDate: null,
+                  finishDate: null,
+                  rewatchCount: 0,
+                  notes: null,
+                  hidden: false,
+                }}
+                onClose={() => setEditorOpen(false)}
+                onSave={() => {
+                  // Recarrega a página para refletir a nova entrada
+                  window.location.reload();
+                }}
+              />
+            )}
+          </div>
+        );
+      }
