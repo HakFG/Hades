@@ -1,16 +1,18 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { buildSeasonTitle } from '@/lib/utils';
 
 const TMDB = 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
-// Helper para buscar dados atualizados do filme no TMDB (sem título)
+// Atualiza filmes – busca apenas o título em inglês
 async function refreshMovie(entry: any) {
   try {
-    const res = await fetch(`${TMDB}/movie/${entry.tmdbId}?api_key=${API_KEY}&language=pt-BR`);
+    const res = await fetch(`${TMDB}/movie/${entry.tmdbId}?api_key=${API_KEY}&language=en-US`);
     if (!res.ok) return null;
     const d = await res.json();
     return {
+      title: d.title,                     // título inglês original
       imagePath: d.poster_path,
       totalEpisodes: 1,
       releaseDate: d.release_date,
@@ -20,21 +22,25 @@ async function refreshMovie(entry: any) {
       rating: d.vote_average,
       popularity: d.popularity,
     };
-  } catch { return null; }
+  } catch (error) {
+    console.error(`[refreshMovie] Erro no filme ${entry.tmdbId}:`, error);
+    return null;
+  }
 }
 
-// Helper para buscar dados atualizados da temporada (série) – sem título
+// Atualiza temporadas de série – busca o nome da série em inglês e monta o título da temporada
 async function refreshTVSeason(entry: any) {
   if (!entry.parentTmdbId || !entry.seasonNumber) return null;
   try {
     const [showRes, seasonRes] = await Promise.all([
-      fetch(`${TMDB}/tv/${entry.parentTmdbId}?api_key=${API_KEY}&language=pt-BR`),
-      fetch(`${TMDB}/tv/${entry.parentTmdbId}/season/${entry.seasonNumber}?api_key=${API_KEY}&language=pt-BR`),
+      fetch(`${TMDB}/tv/${entry.parentTmdbId}?api_key=${API_KEY}&language=en-US`),
+      fetch(`${TMDB}/tv/${entry.parentTmdbId}/season/${entry.seasonNumber}?api_key=${API_KEY}&language=en-US`),
     ]);
     if (!showRes.ok || !seasonRes.ok) return null;
     const showData = await showRes.json();
     const seasonData = await seasonRes.json();
     return {
+      title: buildSeasonTitle(showData.name, entry.seasonNumber), // título da temporada em inglês
       imagePath: seasonData.poster_path ?? showData.poster_path,
       totalEpisodes: seasonData.episodes?.length ?? 0,
       releaseDate: seasonData.air_date,
@@ -44,7 +50,10 @@ async function refreshTVSeason(entry: any) {
       rating: showData.vote_average,
       popularity: showData.popularity,
     };
-  } catch { return null; }
+  } catch (error) {
+    console.error(`[refreshTVSeason] Erro na série ${entry.parentTmdbId} T${entry.seasonNumber}:`, error);
+    return null;
+  }
 }
 
 export async function POST() {
@@ -60,10 +69,12 @@ export async function POST() {
       } else if (entry.type === 'TV_SEASON') {
         freshData = await refreshTVSeason(entry);
       }
+
       if (freshData) {
         await prisma.entry.update({
           where: { id: entry.id },
           data: {
+            title: freshData.title,
             imagePath: freshData.imagePath,
             totalEpisodes: freshData.totalEpisodes,
             releaseDate: freshData.releaseDate,
@@ -72,19 +83,20 @@ export async function POST() {
             bannerPath: freshData.bannerPath,
             rating: freshData.rating,
             popularity: freshData.popularity,
-            // NÃO altera: title, status, score, progress, isFavorite, startDate, finishDate, notes, hidden
           },
         });
         updated++;
+        console.log(`✅ Atualizado: ${freshData.title} (ID ${entry.tmdbId})`);
       } else {
         failed++;
+        console.warn(`❌ Falha ao atualizar entry ${entry.id} (tmdbId: ${entry.tmdbId})`);
       }
-      await new Promise(r => setTimeout(r, 150)); // delay para não sobrecarregar a API
+      await new Promise(r => setTimeout(r, 150)); // respeita o rate limit do TMDB
     }
 
     return NextResponse.json({ success: true, updated, failed });
   } catch (error) {
-    console.error('[refresh-all]', error);
+    console.error('[refresh-all] Erro geral:', error);
     return NextResponse.json({ error: 'Erro ao atualizar' }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { formatScore, scoreColor } from '@/lib/utils';
@@ -31,6 +31,19 @@ interface Entry {
   releaseDate?: string | null;
   format?: string | null;
   updatedAt: string;
+}
+
+interface ActivityLog {
+  id: string;           // uuid único do evento
+  entryId: string;
+  title: string;
+  imagePath?: string | null;
+  type: 'MOVIE' | 'TV_SEASON';
+  status: string;
+  progress: number;
+  score: number;
+  slug: string;
+  createdAt: string;    // ISO timestamp do evento
 }
 
 interface Profile {
@@ -114,16 +127,47 @@ function entryFormat(e: Entry): string {
 
 // ─── EntryCard ─────────────────────────────────────────────────────────────────
 
-function EntryCard({ entry, onEdit, onToggleFav }: {
+function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
   entry: Entry;
   onEdit: (e: Entry) => void;
   onToggleFav: (e: Entry) => void;
+  onUpdateProgress?: (entryId: string, newProgress: number) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const poster = imgUrl(entry.imagePath);
-  const prog = entry.type === 'TV_SEASON'
-    ? `${entry.progress}/${entry.totalEpisodes ?? '?'}`
-    : entry.status === 'COMPLETED' ? 'Watched' : entry.progress > 0 ? 'Watching' : '';
+  
+  // Exibição do progresso: para séries, se completou mostra apenas o total
+  let progressDisplay = '';
+  if (entry.type === 'TV_SEASON') {
+    const total = entry.totalEpisodes ?? '?';
+    if (entry.progress === entry.totalEpisodes) {
+      progressDisplay = `${total}`;
+    } else {
+      progressDisplay = `${entry.progress}/${total}`;
+    }
+  } else {
+    progressDisplay = entry.status === 'COMPLETED' ? 'Watched' : (entry.progress > 0 ? 'Watching' : '');
+  }
+
+const handleIncrement = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (entry.type === 'TV_SEASON' && onUpdateProgress && entry.totalEpisodes) {
+      const newProgress = Math.min(entry.progress + 1, entry.totalEpisodes);
+      if (newProgress !== entry.progress) {
+        onUpdateProgress(entry.id, newProgress);
+      }
+    }
+  };
+
+  const handleDecrement = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (entry.type === 'TV_SEASON' && onUpdateProgress) {
+      const newProgress = Math.max(entry.progress - 1, 0);
+      if (newProgress !== entry.progress) onUpdateProgress(entry.id, newProgress);
+    }
+  };
 
   return (
     <div
@@ -186,18 +230,78 @@ function EntryCard({ entry, onEdit, onToggleFav }: {
           </div>
         </div>
 
+        
+{/* Progresso com botões para séries (visíveis apenas no hover) */}
+        {/* Progresso com botões para séries (visíveis apenas no hover) */}
         <div style={{
-          bottom: 0, left: 0,
+          bottom: 0,
+          left: 0,
           color: '#ff9800',
-          fontSize: '0.8rem',
-          padding: '12px',
+          fontSize: '0.90rem',
           position: 'absolute',
           zIndex: 3,
-          width: '50%',
-          textAlign: 'left',
+          width: '100%',
           whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '3px',
+          paddingLeft: '0px',   // ← aqui você controla a distância da borda esquerda
+          paddingBottom: '9px',
+          boxSizing: 'border-box',
         }}>
-          {prog}
+          {entry.type === 'TV_SEASON' && onUpdateProgress ? (
+            <>
+              <button
+                onClick={handleDecrement}
+                style={{
+                  width: '14px', height: '14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.55)',
+                  fontSize: '11px',
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  opacity: hovered ? 1 : 0,
+                  transition: 'opacity 0.35s ease, color 0.2s ease',
+                  pointerEvents: hovered ? 'auto' : 'none',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.9)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.55)')}
+              >
+                −
+              </button>
+              <span style={{ minWidth: '28px', textAlign: 'left' }}>{progressDisplay}</span>
+              <button
+                onClick={handleIncrement}
+                style={{
+                  width: '14px', height: '14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.55)',
+                  fontSize: '11px',
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  opacity: hovered ? 1 : 0,
+                  transition: 'opacity 0.35s ease, color 0.2s ease',
+                  pointerEvents: hovered ? 'auto' : 'none',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.9)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.55)')}
+              >
+                +
+              </button>
+            </>
+          ) : (
+            <span>{progressDisplay}</span>
+          )}
         </div>
 
         {entry.score > 0 && (
@@ -567,11 +671,12 @@ function ProfileEditor({ profile, onClose, onSaved }: {
 
 // ─── MediaListTab ─────────────────────────────────────────────────────────────
 
-function MediaListTab({ entries, type, onEdit, onToggleFav }: {
+function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: {
   entries: Entry[];
   type: 'TV_SEASON' | 'MOVIE';
   onEdit: (e: Entry) => void;
   onToggleFav: (e: Entry) => void;
+  onUpdateProgress?: (entryId: string, newProgress: number) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<StatusKey | 'ALL'>('ALL');
   const [formatFilter, setFormatFilter] = useState('ALL');
@@ -663,7 +768,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav }: {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>
                 {items.map(e => (
-                  <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} />
+                  <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />
                 ))}
               </div>
             </div>
@@ -758,10 +863,11 @@ function MediaListTab({ entries, type, onEdit, onToggleFav }: {
 
 // ─── Favorites Tab ────────────────────────────────────────────────────────────
 
-function FavoritesTab({ entries, onEdit, onToggleFav }: {
+function FavoritesTab({ entries, onEdit, onToggleFav, onUpdateProgress }: {
   entries: Entry[];
   onEdit: (e: Entry) => void;
   onToggleFav: (e: Entry) => void;
+  onUpdateProgress?: (entryId: string, newProgress: number) => void;
 }) {
   const [favType, setFavType] = useState<'series' | 'films'>('series');
   const favSeries = entries.filter(e => e.isFavorite && e.type === 'TV_SEASON');
@@ -775,8 +881,8 @@ function FavoritesTab({ entries, onEdit, onToggleFav }: {
         <button onClick={() => setFavType('series')} style={{ padding: '10px 20px', background: 'none', border: 'none', borderBottom: favType === 'series' ? '2px solid #3db4f2' : '2px solid transparent', color: favType === 'series' ? '#3db4f2' : '#647380', fontWeight: favType === 'series' ? '700' : '500', fontSize: '13px', cursor: 'pointer', marginBottom: '-1px' }}>Series ({favSeries.length})</button>
         <button onClick={() => setFavType('films')} style={{ padding: '10px 20px', background: 'none', border: 'none', borderBottom: favType === 'films' ? '2px solid #f39c12' : '2px solid transparent', color: favType === 'films' ? '#f39c12' : '#647380', fontWeight: favType === 'films' ? '700' : '500', fontSize: '13px', cursor: 'pointer', marginBottom: '-1px' }}>Films ({favFilms.length})</button>
       </div>
-      {favType === 'series' && (favSeries.length === 0 ? <div style={{ textAlign: 'center', padding: '60px', color: '#647380' }}>No favorite series yet.</div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>{favSeries.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} />)}</div>)}
-      {favType === 'films' && (favFilms.length === 0 ? <div style={{ textAlign: 'center', padding: '60px', color: '#647380' }}>No favorite films yet.</div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>{favFilms.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} />)}</div>)}
+      {favType === 'series' && (favSeries.length === 0 ? <div style={{ textAlign: 'center', padding: '60px', color: '#647380' }}>No favorite series yet.</div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>{favSeries.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />)}</div>)}
+      {favType === 'films' && (favFilms.length === 0 ? <div style={{ textAlign: 'center', padding: '60px', color: '#647380' }}>No favorite films yet.</div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>{favFilms.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />)}</div>)}
     </div>
   );
 }
@@ -988,12 +1094,63 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   );
 }
 
-// ─── Overview Tab ─────────────────────────────────────────────────────────────
+// ─── ActivityItem (componente para cada linha do log) ─────────────────────────
 
-function OverviewTab({ entries, onEdit, onToggleFav }: {
+function ActivityItem({ activity: a, onDelete }: { activity: ActivityLog; onDelete: (id: string) => void }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #2d2d4a', position: 'relative' }}
+    >
+      <Link href={`/titles/${a.slug}`} style={{ flexShrink: 0, width: '36px', height: '52px', borderRadius: '4px', overflow: 'hidden', display: 'block' }}>
+        <div style={{ width: '100%', height: '100%', backgroundImage: imgUrl(a.imagePath) ? `url(${imgUrl(a.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
+      </Link>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '10px', color: STATUS_COLOR[a.status], fontWeight: '700', marginBottom: '2px' }}>
+          {STATUS_LABEL[a.status]}
+          {a.type === 'TV_SEASON' && a.progress > 0 && <span style={{ color: '#647380', fontWeight: '400' }}> · Ep {a.progress}</span>}
+          {a.score > 0 && <span style={{ color: '#64ffda' }}> {formatScore(a.score)}</span>}
+        </div>
+        <Link href={`/titles/${a.slug}`} style={{ textDecoration: 'none' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#e0e4e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+        </Link>
+      </div>
+      <div style={{ fontSize: '10px', color: '#3d3d5c', flexShrink: 0, marginRight: hovered ? '24px' : '0', transition: 'margin 0.2s' }}>
+        {relativeDate(a.createdAt)}
+      </div>
+      <button
+        onClick={() => onDelete(a.id)}
+        title="Delete activity"
+        style={{
+          position: 'absolute', right: 0,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#3d3d5c', fontSize: '13px', padding: '4px',
+          opacity: hovered ? 1 : 0,
+          transition: 'opacity 0.2s ease, color 0.15s ease',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.color = '#e74c3c')}
+        onMouseLeave={e => (e.currentTarget.style.color = '#3d3d5c')}
+      >
+        🗑
+      </button>
+    </div>
+  );
+}
+
+// ─── Overview Tab (versão modificada com activityLog) ──────────────────────────
+
+function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityLog, activityVisible, onLoadMore, onDeleteActivity }: {
   entries: Entry[];
   onEdit: (e: Entry) => void;
   onToggleFav: (e: Entry) => void;
+  onUpdateProgress?: (entryId: string, newProgress: number) => void;
+  activityLog: ActivityLog[];
+  activityVisible: number;
+  onLoadMore: () => void;
+  onDeleteActivity: (id: string) => void;
 }) {
   const series = entries.filter(e => e.type === 'TV_SEASON');
   const films = entries.filter(e => e.type === 'MOVIE');
@@ -1004,7 +1161,9 @@ function OverviewTab({ entries, onEdit, onToggleFav }: {
     const scored = arr.filter(e => e.score > 0);
     return scored.length ? (scored.reduce((a, e) => a + e.score, 0) / scored.length).toFixed(1) : '—';
   };
-  const recent = [...entries].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 15);
+
+  const visibleActivity = activityLog.slice(0, activityVisible);
+  const hasMore = activityLog.length > activityVisible;
 
   return (
     <div style={{ display: 'flex', gap: '28px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -1043,6 +1202,7 @@ function OverviewTab({ entries, onEdit, onToggleFav }: {
         )}
         {favSeries.length===0 && favFilms.length===0 && <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px', textAlign: 'center', fontSize: '12px', color: '#3d3d5c' }}>♡ No favorites yet<br /><span style={{ fontSize: '10px' }}>Hover over cards and click ♡</span></div>}
       </div>
+
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
           {[{ label: 'Series', data: series, accent: '#3db4f2' }, { label: 'Films', data: films, accent: '#f39c12' }].map(({ label, data, accent }) => (
@@ -1067,20 +1227,33 @@ function OverviewTab({ entries, onEdit, onToggleFav }: {
             </div>
           ))}
         </div>
+
+        {/* ── Recent Activity ── */}
         <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '18px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '14px' }}>Recent Activity</div>
-          {recent.length === 0 ? <div style={{ textAlign: 'center', color: '#3d3d5c', padding: '20px' }}>No activity yet.</div> : recent.map(e => (
-            <div key={e.id} style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #2d2d4a' }}>
-              <Link href={`/titles/${entrySlug(e)}`} style={{ flexShrink: 0, width: '36px', height: '52px', borderRadius: '4px', overflow: 'hidden', display: 'block' }}>
-                <div style={{ width: '100%', height: '100%', backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
-              </Link>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '10px', color: STATUS_COLOR[e.status], fontWeight: '700', marginBottom: '2px' }}>{STATUS_LABEL[e.status]}{e.type === 'TV_SEASON' && e.progress > 0 && <span style={{ color: '#647380', fontWeight: '400' }}> · Ep {e.progress}</span>}{e.score > 0 && <span style={{ color: scoreColor(e.score) }}> {formatScore(e.score)}</span>}</div>
-                <Link href={`/titles/${entrySlug(e)}`} style={{ textDecoration: 'none' }}><div style={{ fontSize: '12px', fontWeight: '600', color: '#e0e4e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</div></Link>
-              </div>
-              <div style={{ fontSize: '10px', color: '#3d3d5c', flexShrink: 0 }}>{relativeDate(e.updatedAt)}</div>
-            </div>
-          ))}
+          {visibleActivity.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#3d3d5c', padding: '20px' }}>No activity yet.</div>
+          ) : (
+            visibleActivity.map(a => (
+              <ActivityItem key={a.id} activity={a} onDelete={onDeleteActivity} />
+            ))
+          )}
+          {hasMore && (
+            <button
+              onClick={onLoadMore}
+              style={{
+                display: 'block', width: '100%', marginTop: '12px',
+                padding: '9px', background: 'none',
+                border: '1px solid #2d2d4a', borderRadius: '4px',
+                color: '#647380', fontSize: '12px', fontWeight: '600',
+                cursor: 'pointer', transition: 'color 0.2s, border-color 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#e0e4e8'; e.currentTarget.style.borderColor = '#3d3d5c'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#647380'; e.currentTarget.style.borderColor = '#2d2d4a'; }}
+            >
+              Load more
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1097,6 +1270,10 @@ function ProfileContent() {
   const [tab, setTab] = useState<Tab>('overview');
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingProf, setEditingProf] = useState(false);
+  const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
+  const [activityVisible, setActivityVisible] = useState(15);
+  const recentActivityIds = useRef<Set<string>>(new Set());  // ← adicione esta linha
+  
 
   // Sincronizar aba com a URL
   useEffect(() => {
@@ -1119,14 +1296,64 @@ function ProfileContent() {
 
   useEffect(() => { load(); }, [load]);
 
-function handleSaved(updated: Partial<Entry>) {
-  setEntries(prev => prev.map(e => e.id === editingEntry?.id ? { ...e, ...updated } : e));
+function pushActivity(entry: Entry) {
+  // Evita atividades duplicadas para a mesma ação em um curto intervalo (200ms)
+  const now = Date.now();
+  const key = `${entry.id}-${entry.status}-${entry.progress}-${entry.score}-${Math.floor(now / 200)}`;
+  if (recentActivityIds.current.has(key)) return;
+  recentActivityIds.current.add(key);
+  setTimeout(() => recentActivityIds.current.delete(key), 500);
+
+  const event: ActivityLog = {
+    id: crypto.randomUUID(),
+    entryId: entry.id,
+    title: entry.title,
+    imagePath: entry.imagePath,
+    type: entry.type,
+    status: entry.status,
+    progress: entry.progress,
+    score: entry.score,
+    slug: entrySlug(entry),
+    createdAt: new Date().toISOString(),
+  };
+  setActivityLog(prev => [event, ...prev]);
 }
+
+  function handleSaved(updated: Partial<Entry>) {
+    setEntries(prev => prev.map(e => {
+      if (e.id !== editingEntry?.id) return e;
+      const merged = { ...e, ...updated };
+      pushActivity(merged);
+      return merged;
+    }));
+  }
 
   async function toggleFav(entry: Entry) {
     const next = !entry.isFavorite;
     setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, isFavorite: next } : e));
     await fetch(`/api/entries/${entry.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isFavorite: next }) });
+  }
+
+async function updateProgress(entryId: string, newProgress: number) {
+    try {
+      const entry = entries.find(e => e.id === entryId);
+      const shouldComplete = entry?.type === 'TV_SEASON' && entry.totalEpisodes != null && newProgress === entry.totalEpisodes;
+
+      const res = await fetch(`/api/entries/${entryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progress: newProgress, ...(shouldComplete ? { status: 'COMPLETED' } : {}) }),
+      });
+      if (res.ok) {
+        const updatedEntry = await res.json();
+        setEntries(prev => prev.map(e => e.id === entryId ? updatedEntry : e));
+        pushActivity(updatedEntry);
+      } else {
+        console.error('Erro ao atualizar progresso');
+      }
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#121212', color: '#647380' }}>Loading...</div>;
@@ -1177,10 +1404,21 @@ function handleSaved(updated: Partial<Entry>) {
       </div>
 
       <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '0 20px', paddingBottom: '80px' }}>
-        {tab === 'overview' && <OverviewTab entries={entries} onEdit={setEditingEntry} onToggleFav={toggleFav} />}
-        {tab === 'series' && <MediaListTab entries={entries} type="TV_SEASON" onEdit={setEditingEntry} onToggleFav={toggleFav} />}
-        {tab === 'films' && <MediaListTab entries={entries} type="MOVIE" onEdit={setEditingEntry} onToggleFav={toggleFav} />}
-        {tab === 'favorites' && <FavoritesTab entries={entries} onEdit={setEditingEntry} onToggleFav={toggleFav} />}
+        {tab === 'overview' && (
+          <OverviewTab
+            entries={entries}
+            onEdit={setEditingEntry}
+            onToggleFav={toggleFav}
+            onUpdateProgress={updateProgress}
+            activityLog={activityLog}
+            activityVisible={activityVisible}
+            onLoadMore={() => setActivityVisible(v => v + 15)}
+            onDeleteActivity={(id) => setActivityLog(prev => prev.filter(a => a.id !== id))}
+          />
+        )}
+        {tab === 'series' && <MediaListTab entries={entries} type="TV_SEASON" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
+        {tab === 'films' && <MediaListTab entries={entries} type="MOVIE" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
+        {tab === 'favorites' && <FavoritesTab entries={entries} onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
         {tab === 'stats' && <StatsTab entries={entries} />}
       </div>
 

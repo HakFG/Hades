@@ -3,6 +3,20 @@
 import { useState, useEffect, use, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { getOrdinal, buildSeasonTitle, formatScore, scoreColor } from '@/lib/utils';
+import {
+  fetchTitleData,
+  getAutoRelations,
+  normalizeImageUrl,
+  fetchCustomImage,
+  saveCustomImage,
+} from '@/lib/tmdb-titles';
+import {
+  fetchSavedRelations,
+  saveRelation,
+  removeRelation as removeRelationFromDB,
+  getCombinedRelations,
+  relationToSlug,
+} from '@/lib/relations-manager';
 
 // ─── CSS global ────────────────────────────────────────────────────────────────
 const GLOBAL_CSS = `
@@ -172,8 +186,8 @@ interface EntryData {
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const TMDB    = 'https://api.themoviedb.org/3';
 
-const getYear = (d?:string|null) => d?.split('-')[0] ?? '';
-const tmdbImg = (p:string|null|undefined, size='w342') =>
+const getYear = (d?: string | null) => d?.split('-')[0] ?? '';
+const tmdbImg = (p: string | null | undefined, size = 'w342') =>
   p ? `https://image.tmdb.org/t/p/${size}${p}` : null;
 
 
@@ -263,60 +277,145 @@ function LoadingScreen(){
   );
 }
 
-// ─── Modal: Editar Capa (CORRIGIDO: aceita qualquer URL, inclusive do TMDB) ───
+// ─── Modal: Editar Capa (Sistema Robusto) ─────────────────────────────────────
 function CoverModal({entryId,current,onSaved,onClose}:{
   entryId:string; current:string|null;
   onSaved:(p:string)=>void; onClose:()=>void;
 }){
-  const[url,setUrl]=useState(current && (current.startsWith('http') || current.startsWith('https')) ? current : '');
+  const[url,setUrl]=useState(current && (current.startsWith('http') || current.startsWith('https') || current.startsWith('/t/p/') || current.startsWith('data:')) ? current : '');
   const[saving,setSaving]=useState(false);
   const[preview,setPreview]=useState(url);
+  const[error,setError]=useState('');
+  const[validated,setValidated]=useState(false);
+
   const inp:React.CSSProperties={
     width:'100%',padding:'9px 12px',background:'#1e1c1c',
     border:'1px solid rgba(255,255,255,.08)',borderRadius:4,
     color:TEXT,fontSize:12,boxSizing:'border-box',fontFamily:'Overpass,sans-serif',
   };
+
   useEffect(()=>{
     const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
     document.addEventListener('keydown',h);
     document.body.style.overflow='hidden';
     return()=>{document.removeEventListener('keydown',h);document.body.style.overflow='';};
   },[]);
-  async function save(){
-    if(!url.trim())return;
-    setSaving(true);
-    const res=await fetch(`/api/entries/${entryId}`,{
-      method:'PATCH',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({imagePath:url.trim()}),
-    });
-    setSaving(false);
-    if(res.ok){onSaved(url.trim());}
-    else alert('Erro ao salvar capa. Verifique /api/entries/[id].');
+
+  // Valida URL enquanto digita
+  function validateUrl(testUrl: string) {
+    setError('');
+    if (!testUrl.trim()) {
+      setValidated(true);
+      return true;
+    }
+
+    // Aceita http/https/TMDB paths/data:image
+    if (!/^(https?:\/\/|\/t\/p\/|data:image\/)/.test(testUrl)) {
+      setError('URL deve começar com https://, /t/p/, ou data:image/');
+      setValidated(false);
+      return false;
+    }
+
+    if (testUrl.length > 2048) {
+      setError('URL muito longa (max 2048 caracteres)');
+      setValidated(false);
+      return false;
+    }
+
+    setValidated(true);
+    return true;
   }
+
+  function handleUrlChange(newUrl: string) {
+    setUrl(newUrl);
+    setPreview(newUrl);
+    validateUrl(newUrl);
+  }
+
+  async function save(){
+    if(!url.trim()){
+      alert('Cole uma URL válida ou deixe em branco para remover.');
+      return;
+    }
+
+    if (!validateUrl(url)) {
+      alert('URL inválida. Verifique o formato.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Normaliza a URL antes de salvar
+      const normalizedUrl = normalizeImageUrl(url.trim()) || url.trim();
+
+      const res=await fetch(`/api/update-entry`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          tmdbId: parseInt(entryId, 10) || 0,
+          type: 'MOVIE',
+          title: 'Temp',
+          customImage: normalizedUrl,
+        }),
+      });
+
+      if(res.ok){
+        onSaved(normalizedUrl);
+        onClose();
+      }
+      else {
+        const errData = await res.json().catch(() => ({}));
+        alert('Erro ao salvar capa: ' + (errData.error || res.statusText));
+      }
+    } catch(e) {
+      console.error('Erro ao salvar capa:', e);
+      alert('Erro ao salvar capa. Verifique o console.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:CARD,borderRadius:8,padding:28,width:'100%',maxWidth:440,boxShadow:'0 20px 60px rgba(0,0,0,.65)',animation:'scaleIn .25s ease'}}>
-        <div style={{fontSize:16,fontWeight:700,color:TEXT,marginBottom:20}}>🖼 Alterar Capa</div>
-        <div style={{display:'flex',gap:16,marginBottom:20}}>
-          <div style={{width:88,height:132,borderRadius:4,overflow:'hidden',background:'#1a1a1a',flexShrink:0,border:'1px solid rgba(255,255,255,.06)'}}>
-            {preview
-              ?<img src={preview} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="preview" onError={()=>setPreview('')}/>
-              :<div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:11,textAlign:'center',padding:6}}>Preview</div>}
+      <div onClick={e=>e.stopPropagation()} style={{background:CARD,borderRadius:8,padding:28,width:'100%',maxWidth:480,boxShadow:'0 20px 60px rgba(0,0,0,.65)',animation:'scaleIn .25s ease'}}>
+        <div style={{fontSize:16,fontWeight:700,color:TEXT,marginBottom:24}}>🖼️ Alterar Capa Customizada</div>
+
+        <div style={{display:'flex',gap:18,marginBottom:24}}>
+          <div style={{width:100,height:148,borderRadius:6,overflow:'hidden',background:'#1a1a1a',flexShrink:0,border:'1px solid rgba(255,255,255,.1)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {preview && !error
+              ?<img src={preview} style={{width:'100%',height:'100%',objectFit:'cover'}} alt="preview" onError={()=>{setError('Imagem não conseguiu carregar');setPreview('');}}/>
+              :<div style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:11,textAlign:'center',padding:8}}>
+                {error ? '❌' : '📸'} Preview
+              </div>}
           </div>
-          <div style={{flex:1}}>
-            <label style={{display:'block',fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:8}}>URL da imagem (qualquer domínio)</label>
-            <input value={url} onChange={e=>{setUrl(e.target.value);setPreview(e.target.value);}} placeholder="https://image.tmdb.org/t/p/original/..." style={inp}/>
-            <p style={{fontSize:11,color:MUTED,lineHeight:1.5,marginTop:8}}>
-              Cole a URL completa da imagem (ex: do TMDB ou qualquer outro host). 
-              A capa será salva no banco e refletirá em <strong style={{color:TEXT}}>todo o site</strong>.
-            </p>
+
+          <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+            <div>
+              <label style={{display:'block',fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:10}}>URL da Imagem</label>
+              <textarea
+                value={url}
+                onChange={e=>handleUrlChange(e.target.value)}
+                placeholder="https://image.tmdb.org/t/p/original/...&#10;ou qualquer URL HTTPS&#10;ou /t/p/xxxx (TMDB path)"
+                style={{...inp,minHeight:100,fontFamily:'monospace',fontSize:11,resize:'vertical'}}
+              />
+              {error && <div style={{fontSize:10,color:'#e74c3c',marginTop:6}}>{error}</div>}
+            </div>
+
+            <div style={{fontSize:10,color:MUTED,lineHeight:1.6,marginTop:12}}>
+              <strong>Dicas:</strong><br/>
+              ✓ TMDB: https://image.tmdb.org/t/p/original/...<br/>
+              ✓ Qualquer HTTPS válida<br/>
+              ✓ Salva no banco e persiste em F5
+            </div>
           </div>
         </div>
+
         <div style={{display:'flex',gap:10}}>
-          <button onClick={save} disabled={saving||!url.trim()} style={{flex:1,padding:11,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:14,fontWeight:700,cursor:'pointer',opacity:(!url.trim()||saving)?0.5:1,fontFamily:'Overpass,sans-serif'}}>
-            {saving?'Salvando...':'✓ Salvar no site'}
+          <button onClick={save} disabled={saving || !validated}
+            style={{flex:1,padding:12,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:14,fontWeight:700,cursor:!validated || saving?'not-allowed':'pointer',opacity:(!validated || saving)?0.5:1,fontFamily:'Overpass,sans-serif',transition:'all .2s'}}>
+            {saving?'💾 Salvando...':'✓ Salvar Capa'}
           </button>
-          <button onClick={onClose} style={{flex:1,padding:11,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:4,color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
+          <button onClick={onClose} style={{flex:1,padding:12,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:4,color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
             Cancelar
           </button>
         </div>
@@ -325,7 +424,7 @@ function CoverModal({entryId,current,onSaved,onClose}:{
   );
 }
 
-// ─── Modal: Adicionar Relation ─────────────────────────────────────────────────
+// ─── Modal: Adicionar Relation (Sistema Robusto Multi-Camada) ──────────────────
 function AddRelModal({onAdd,onClose}:{
   onAdd:(r:RelationItem)=>void; onClose:()=>void;
 }){
@@ -336,6 +435,7 @@ function AddRelModal({onAdd,onClose}:{
   const[loading,setLoading]=useState(false);
   const[preview,setPreview]=useState<any>(null);
   const[err,setErr]=useState('');
+  const[searchAttempt,setSearchAttempt]=useState(0);
 
   useEffect(()=>{
     const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
@@ -344,33 +444,124 @@ function AddRelModal({onAdd,onClose}:{
     return()=>{document.removeEventListener('keydown',h);document.body.style.overflow='';};
   },[]);
 
+  // Multi-camada de busca com fallbacks automáticos
   async function search(){
-    const id=parseInt(tmdbId);if(isNaN(id)){setErr('TMDB ID inválido');return;}
+    const id=parseInt(tmdbId);if(isNaN(id) || id <= 0){setErr('TMDB ID deve ser um número válido');return;}
     setLoading(true);setErr('');setPreview(null);
+    setSearchAttempt(a => a + 1);
+
     try{
       if(kind==='movie'){
-        const r=await fetch(`${TMDB}/movie/${id}?api_key=${API_KEY}&language=pt-BR`);
-        const d=await r.json();if(d.status_code)throw new Error('Não encontrado');
-        setPreview({title:d.title,poster:d.poster_path,year:getYear(d.release_date)});
-      }else{
-        const snN=parseInt(sn)||1;
-        const[sr,pr]=await Promise.all([
-          fetch(`${TMDB}/tv/${id}/season/${snN}?api_key=${API_KEY}&language=pt-BR`),
-          fetch(`${TMDB}/tv/${id}?api_key=${API_KEY}&language=pt-BR`),
-        ]);
-        const[sd,pd]=await Promise.all([sr.json(),pr.json()]);
-        setPreview({title:buildSeasonTitle(pd.name,snN),poster:sd.poster_path??pd.poster_path,year:getYear(sd.air_date),snN});
+        // Estratégia para films: tenta en-US primeiro, depois fallback
+        let movieData = null;
+        let err1 = null;
+
+        try {
+          const r = await fetch(`${TMDB}/movie/${id}?api_key=${API_KEY}&language=en-US`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          movieData = await r.json();
+        } catch(e) {
+          err1 = e;
+          // Fallback: tenta sem language
+          try {
+            const r = await fetch(`${TMDB}/movie/${id}?api_key=${API_KEY}`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            movieData = await r.json();
+          } catch {
+            throw err1; // Joga o erro original se ambos falharem
+          }
+        }
+
+        if (movieData.status_code) throw new Error('Filme não encontrado');
+        setPreview({
+          title: movieData.title || movieData.original_title,
+          poster: movieData.poster_path,
+          year: movieData.release_date?.split('-')[0],
+          type: 'movie',
+        });
       }
-    }catch(e:any){setErr(e.message??'Erro ao buscar.');}
+      else {
+        // Estratégia para séries: busca show + season com fallbacks
+        const snN=parseInt(sn)||1;
+        let showData = null, seasonData = null;
+        let showErr = null, seasonErr = null;
+
+        // Busca show em en-US
+        try {
+          const r = await fetch(`${TMDB}/tv/${id}?api_key=${API_KEY}&language=en-US`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          showData = await r.json();
+        } catch(e) {
+          showErr = e;
+          // Fallback: sem language
+          try {
+            const r = await fetch(`${TMDB}/tv/${id}?api_key=${API_KEY}`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            showData = await r.json();
+          } catch { /* ignora */ }
+        }
+
+        if (!showData || showData.status_code) {
+          throw showErr || new Error('Série não encontrada');
+        }
+
+        // Busca season
+        try {
+          const r = await fetch(`${TMDB}/tv/${id}/season/${snN}?api_key=${API_KEY}&language=en-US`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          seasonData = await r.json();
+        } catch(e) {
+          seasonErr = e;
+          // Fallback: sem language
+          try {
+            const r = await fetch(`${TMDB}/tv/${id}/season/${snN}?api_key=${API_KEY}`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            seasonData = await r.json();
+          } catch { /* ignora */ }
+        }
+
+        if (!seasonData) {
+          throw seasonErr || new Error(`Temporada ${snN} não encontrada`);
+        }
+
+        setPreview({
+          title: buildSeasonTitle(showData.name || showData.original_name, snN),
+          poster: seasonData.poster_path ?? showData.poster_path,
+          year: seasonData.air_date?.split('-')[0],
+          snN,
+          type: 'tv',
+        });
+      }
+    }catch(e:any){
+      setErr(e.message || 'Erro ao buscar. Verifique o TMDB ID.');
+      console.error('[AddRelModal] Search error:', e);
+    }
     finally{setLoading(false);}
   }
 
   function confirm(){
-    if(!preview)return;
-    const id=parseInt(tmdbId);const snN=parseInt(sn)||1;
+    if(!preview) return;
+    const id=parseInt(tmdbId);
+    const snN=parseInt(sn)||1;
+
     onAdd(kind==='movie'
-      ?{slug:`movie-${id}`,relationType:relType,title:preview.title,poster_path:preview.poster,kind:'movie',year:preview.year}
-      :{slug:`tv-${id}-s${snN}`,relationType:relType,title:preview.title,poster_path:preview.poster,kind:'tv',year:preview.year,seasonNumber:snN}
+      ?{
+          slug:`movie-${id}`,
+          relationType:relType,
+          title:preview.title,
+          poster_path:preview.poster,
+          kind:'movie',
+          year:preview.year,
+        }
+      :{
+          slug:`tv-${id}-s${snN}`,
+          relationType:relType,
+          title:preview.title,
+          poster_path:preview.poster,
+          kind:'tv',
+          year:preview.year,
+          seasonNumber:snN,
+        }
     );
     onClose();
   }
@@ -383,17 +574,19 @@ function AddRelModal({onAdd,onClose}:{
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.78)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
       <div onClick={e=>e.stopPropagation()} style={{background:CARD,borderRadius:8,padding:26,width:'100%',maxWidth:420,boxShadow:'0 20px 60px rgba(0,0,0,.65)',animation:'scaleIn .25s ease',display:'flex',flexDirection:'column',gap:16}}>
         <div style={{fontSize:16,fontWeight:700,color:TEXT}}>➕ Adicionar Relation</div>
+
         {/* Tipo de mídia */}
         <div>
           <label style={lbl}>Tipo de mídia</label>
           <div style={{display:'flex',gap:8}}>
             {(['tv','movie']as const).map(k=>(
-              <button key={k} onClick={()=>setKind(k)} style={{flex:1,padding:8,background:kind===k?ACCENT:'#1e1c1c',border:'none',borderRadius:4,color:kind===k?'white':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
+              <button key={k} onClick={()=>{setKind(k);setPreview(null);setErr('');}} style={{flex:1,padding:8,background:kind===k?ACCENT:'#1e1c1c',border:'none',borderRadius:4,color:kind===k?'white':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif',transition:'all .15s'}}>
                 {k==='tv'?'📺 Série':'🎬 Filme'}
               </button>
             ))}
           </div>
         </div>
+
         {/* Tipo de relação */}
         <div>
           <label style={lbl}>Tipo de relação</label>
@@ -401,32 +594,50 @@ function AddRelModal({onAdd,onClose}:{
             {ALL_RELS.map(r=><option key={r} value={r}>{REL_LABEL[r]??r}</option>)}
           </select>
         </div>
-        {/* ID */}
+
+        {/* TMDB ID */}
         <div>
-          <label style={lbl}>TMDB ID {kind==='tv'?'(da série pai, ex: 95557)':'(do filme)'}</label>
-          <input value={tmdbId} onChange={e=>setTmdbId(e.target.value)} onKeyDown={e=>e.key==='Enter'&&search()} placeholder="ex: 95557" style={inp}/>
+          <label style={lbl}>TMDB ID {kind==='tv'?'(da série, ex: 95557)':'(do filme)'}</label>
+          <input
+            value={tmdbId}
+            onChange={e=>setTmdbId(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&search()}
+            placeholder={kind==='tv'?'ex: 95557':'ex: 550'}
+            style={inp}
+          />
         </div>
+
         {kind==='tv'&&<div>
           <label style={lbl}>Número da temporada</label>
-          <input value={sn} onChange={e=>setSn(e.target.value)} type="number" min="1" style={inp}/>
+          <input
+            value={sn}
+            onChange={e=>setSn(e.target.value)}
+            type="number"
+            min="1"
+            max="100"
+            style={inp}
+          />
         </div>}
-        {err&&<div style={{fontSize:12,color:'#e74c3c',padding:'6px 10px',background:'rgba(231,76,60,.12)',borderRadius:4}}>{err}</div>}
+
+        {err&&<div style={{fontSize:12,color:'#e74c3c',padding:'8px 12px',background:'rgba(231,76,60,.15)',border:'1px solid rgba(231,76,60,.3)',borderRadius:4,lineHeight:1.5}}>{err}</div>}
+
         {preview&&(
-          <div style={{display:'flex',gap:12,background:'#1e1c1c',borderRadius:4,padding:12,animation:'fadeIn .2s ease'}}>
-            {preview.poster&&<img src={tmdbImg(preview.poster,'w92')!} style={{width:46,height:69,objectFit:'cover',borderRadius:3}} alt="prev"/>}
+          <div style={{display:'flex',gap:12,background:'#1e1c1c',borderRadius:4,padding:12,border:'1px solid rgba(255,255,255,.08)',animation:'fadeIn .2s ease'}}>
+            {preview.poster&&<img src={`https://image.tmdb.org/t/p/w92${preview.poster}`} style={{width:46,height:69,objectFit:'cover',borderRadius:3,flexShrink:0}} alt="prev"/>}
             <div>
-              <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{preview.title}</div>
-              <div style={{fontSize:11,color:MUTED,marginTop:3}}>{preview.year}</div>
-              <div style={{fontSize:11,color:ACCENT,marginTop:4,fontWeight:700}}>{REL_LABEL[relType]??relType}</div>
+              <div style={{fontSize:13,fontWeight:700,color:TEXT,marginBottom:3}}>{preview.title}</div>
+              <div style={{fontSize:11,color:MUTED,marginBottom:4}}>{preview.year}</div>
+              <div style={{fontSize:11,color:ACCENT,fontWeight:700}}>{REL_LABEL[relType]??relType}</div>
             </div>
           </div>
         )}
+
         <div style={{display:'flex',gap:8}}>
-          <button onClick={search} disabled={loading} style={{flex:1,padding:10,background:'#1e1c1c',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:TEXT,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif',fontWeight:600}}>
+          <button onClick={search} disabled={loading || !tmdbId} style={{flex:1,padding:10,background:loading?'#333':'#1e1c1c',border:loading?'1px solid'+ACCENT:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:loading?ACCENT:TEXT,fontSize:13,cursor:loading||!tmdbId?'wait':'pointer',fontFamily:'Overpass,sans-serif',fontWeight:600,transition:'all .15s'}}>
             {loading?'⏳ Buscando...':'🔍 Buscar'}
           </button>
-          {preview&&<button onClick={confirm} style={{flex:1,padding:10,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif',fontWeight:700}}>✓ Confirmar</button>}
-          <button onClick={onClose} style={{padding:'10px 14px',background:'transparent',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:MUTED,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>✕</button>
+          {preview&&<button onClick={confirm} style={{flex:1,padding:10,background:ACCENT,border:'none',borderRadius:4,color:'white',fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif',fontWeight:700,transition:'all .15s'}} onMouseOver={e=>(e.currentTarget.style.opacity='0.9')} onMouseOut={e=>(e.currentTarget.style.opacity='1')}>✓ Confirmar</button>}
+          <button onClick={onClose} style={{padding:'10px 14px',background:'transparent',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:MUTED,fontSize:13,cursor:'pointer',fontFamily:'Overpass,sans-serif',transition:'all .15s'}} onMouseOver={e=>(e.currentTarget.style.borderColor=ACCENT)} onMouseOut={e=>(e.currentTarget.style.borderColor='rgba(255,255,255,.08)')}>✕</button>
         </div>
       </div>
     </div>
@@ -650,222 +861,173 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   const[source,        setSource]        =useState<string|null>(null);
   const[mounted,       setMounted]       =useState(false);
 
-  // ========== NOVAS FUNÇÕES AQUI ==========
-async function addRelation(newRel: RelationItem) {
-  console.log('addRelation chamado', newRel);
+  // ========== SISTEMA DE RELATIONS ROBUSTO ==========
 
-  // 1. Obtém o sourceEntryId — se não está na lista, cria apenas a source entry
-  let sourceEntryId: string | null = entry?.id || null;
-  if (!sourceEntryId) {
-    const addRes = await fetch('/api/add-media', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tmdbId: createTmdbId,
-        parentTmdbId: isTV ? showId : null,
-        seasonNumber: isTV ? seasonNumber : null,
-        type: isTV ? 'TV_SEASON' : 'MOVIE',
-        title: displayTitle,
-        poster_path: rawPosterPath,
-        totalEpisodes: episodeCount ?? null,
-      }),
-    });
-    if (!addRes.ok) {
-      alert('Erro ao adicionar título à lista. Tente novamente.');
+  /**
+   * Adiciona uma relação com múltiplas camadas de segurança e fallback
+   */
+  async function addRelation(newRel: RelationItem) {
+    if (!entry?.id) {
+      alert('Erro: entrada não foi criada no banco ainda.');
       return;
     }
-    const newEntry = await addRes.json();
-    sourceEntryId = newEntry.id;
-    setEntry(newEntry);
-  }
 
-  // 2. Extrai metadados do target pelo slug — SEM criar Entry no banco
-  let targetTmdbId: number | null = null;
-  let targetParentTmdbId: number | null = null;
-  let targetSeasonNumber: number | null = null;
-  let targetType: 'MOVIE' | 'TV_SEASON' | null = null;
+    let targetTmdbId: number | null = null;
+    let targetParentTmdbId: number | null = null;
+    let targetSeasonNumber: number | null = null;
+    let targetType: 'MOVIE' | 'TV_SEASON' | null = null;
 
-  try {
-    if (newRel.slug.startsWith('movie-')) {
-      targetTmdbId = parseInt(newRel.slug.split('-')[1]);
-      targetType = 'MOVIE';
-    } else if (newRel.slug.startsWith('tv-')) {
-      const match = newRel.slug.match(/^tv-(\d+)-s(\d+)$/);
-      if (!match) throw new Error('Slug TV inválido');
-      targetParentTmdbId = parseInt(match[1]);
-      targetSeasonNumber = parseInt(match[2]);
-      targetType = 'TV_SEASON';
-      // Busca o season.id real (tmdbId da temporada, não da série)
-      const sRes = await fetch(
-        `${TMDB}/tv/${targetParentTmdbId}/season/${targetSeasonNumber}?api_key=${API_KEY}&language=pt-BR`
-      );
-      if (!sRes.ok) throw new Error('Temporada não encontrada no TMDB');
-      const sData = await sRes.json();
-      targetTmdbId = sData.id;
-    } else {
-      throw new Error('Slug inválido');
-    }
-  } catch (e) {
-    console.error(e);
-    alert('Erro ao obter dados do título relacionado.');
-    return;
-  }
+    try {
+      // Parse do slug para extrair IDs
+      if (newRel.slug.startsWith('movie-')) {
+        targetTmdbId = parseInt(newRel.slug.split('-')[1]);
+        targetType = 'MOVIE';
+      } else if (newRel.slug.startsWith('tv-')) {
+        const match = newRel.slug.match(/^tv-(\d+)-s(\d+)$/);
+        if (!match) throw new Error('Slug TV inválido');
+        targetParentTmdbId = parseInt(match[1]);
+        targetSeasonNumber = parseInt(match[2]);
+        targetType = 'TV_SEASON';
 
-  if (!targetTmdbId) return;
-
-  // 3. Salva a relação — a API vincula ao targetEntryId automaticamente se já existir
-  const relRes = await fetch('/api/relations', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sourceEntryId,
-      relationType: newRel.relationType,
-      title: newRel.title,
-      poster_path: newRel.poster_path,
-      kind: newRel.kind,
-      year: newRel.year,
-      seasonNumber: newRel.seasonNumber,
-      targetTmdbId,
-      targetParentTmdbId,
-      targetSeasonNumber,
-      targetType,
-    }),
-  });
-
-if (relRes.ok) {
-  console.log('✅ Relação salva');
-
-  // Recarrega as relações do banco
-  try {
-    const refreshRes = await fetch(`/api/relations?sourceId=${sourceEntryId}`);
-    if (refreshRes.ok) {
-      const saved = await refreshRes.json();
-      function mapRelation(r: any): RelationItem | null {
-  // Prioridade: targetEntry (entry já na lista) → campos targetTmdbId (só metadados)
-  let slug = '';
-  if (r.targetEntry) {
-    const t = r.targetEntry;
-    slug = t.type === 'MOVIE'
-      ? `movie-${t.tmdbId}`
-      : `tv-${t.parentTmdbId ?? t.tmdbId}-s${t.seasonNumber ?? 1}`;
-  } else if (r.targetTmdbId) {
-    slug = r.targetType === 'MOVIE'
-      ? `movie-${r.targetTmdbId}`
-      : `tv-${r.targetParentTmdbId ?? r.targetTmdbId}-s${r.targetSeasonNumber ?? 1}`;
-  } else {
-    return null; // sem dados suficientes para montar o slug
-  }
-  return {
-    slug,
-    relationType: r.relationType,
-    title: r.title,
-    poster_path: r.poster_path,
-    kind: r.kind,
-    year: r.year ?? undefined,
-    seasonNumber: r.seasonNumber ?? undefined,
-  };
-}
-      setRelations(saved.map(mapRelation).filter(Boolean) as RelationItem[]);
-    } else {
-      console.error('Falha ao recarregar relações:', refreshRes.status);
-    }
-  } catch (e) {
-    console.error('Erro ao recarregar relações', e);
-  }
-} else {
-  const errorText = await relRes.text();
-  console.error('❌ Falha ao salvar relação:', errorText);
-  alert('Erro ao salvar relação.');
-}
-}
-
-async function fetchRelations(sourceId: string) {
-  try {
-    const res = await fetch(`/api/relations?sourceId=${sourceId}`);
-    if (res.ok) {
-      const saved = await res.json();
-      const mapped = saved.map((r: any) => {
-        const target = r.targetEntry;
-        if (!target) return null;
-        let slug = '';
-        if (target.type === 'MOVIE') {
-          slug = `movie-${target.tmdbId}`;
-        } else {
-          slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+        // Busca o season.id real do TMDB
+        try {
+          const sRes = await fetch(
+            `${TMDB}/tv/${targetParentTmdbId}/season/${targetSeasonNumber}?api_key=${API_KEY}&language=en-US`
+          );
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            if (sData.id) targetTmdbId = sData.id;
+          }
+        } catch {
+          // Continua sem o season.id exato - usa targetParentTmdbId
+          console.warn('[addRelation] Não conseguiu obter season.id do TMDB, continuando...');
         }
-        return {
-          slug,
-          relationType: r.relationType,
-          title: r.title,
-          poster_path: r.poster_path,
-          kind: r.kind,
-          year: r.year ?? undefined,
-          seasonNumber: r.seasonNumber ?? undefined,
-        };
-      }).filter(Boolean);
-      setRelations(mapped);
-    }
-  } catch (e) {
-    console.warn('Erro ao recarregar relações', e);
-  }
-}
-
-async function removeRelation(relToRemove: RelationItem) {
-  if (!entry) return;
-  let targetEntryId: string | null = null;
-
-  try {
-    // Tenta buscar pelo slug (entry pode já estar na lista do usuário)
-    const res = await fetch(`/api/entry/${relToRemove.slug}`);
-    if (res.ok) {
-      const e = await res.json();
-      targetEntryId = e.id;
-    }
-  } catch {}
-
-  // Fallback: se não achou pelo slug, busca direto nas relações salvas no banco
-  // para pegar o targetEntryId correto sem depender de a entry estar na lista
-  if (!targetEntryId) {
-    try {
-      const relRes = await fetch(`/api/relations?sourceId=${entry.id}`);
-      if (relRes.ok) {
-        const saved = await relRes.json();
-        const match = saved.find((r: any) => {
-          const t = r.targetEntry;
-          if (!t) return false;
-          const slug = t.type === 'MOVIE'
-            ? `movie-${t.tmdbId}`
-            : `tv-${t.parentTmdbId ?? t.tmdbId}-s${t.seasonNumber ?? 1}`;
-          return slug === relToRemove.slug;
-        });
-        if (match) targetEntryId = match.targetEntryId;
       }
-    } catch {}
-  }
 
-  if (!targetEntryId) return;
+      if (!targetTmdbId) throw new Error('Não conseguiu extrair IDs do slug');
+    } catch (e) {
+      console.error('[addRelation] Parse error:', e);
+      alert('Erro ao processar relação: ' + String(e));
+      return;
+    }
 
-  // Extrai o targetTmdbId do slug para deletar sem precisar de Entry
-let targetTmdbId: number | null = null;
-if (relToRemove.slug.startsWith('movie-')) {
-  targetTmdbId = parseInt(relToRemove.slug.split('-')[1]);
-} else {
-  const match = relToRemove.slug.match(/^tv-(\d+)-s(\d+)$/);
-  if (match) {
-    const parentId = parseInt(match[1]);
-    const seasonNum = parseInt(match[2]);
+    // Salva a relação com retry automático
     try {
-      const sRes = await fetch(`${TMDB}/tv/${parentId}/season/${seasonNum}?api_key=${API_KEY}&language=pt-BR`);
-      if (sRes.ok) { const sData = await sRes.json(); targetTmdbId = sData.id; }
-    } catch {}
-  }
-}
+      const relation = await saveRelation({
+        sourceEntryId: entry.id,
+        relationType: newRel.relationType,
+        title: newRel.title,
+        poster_path: newRel.poster_path,
+        kind: newRel.kind,
+        year: newRel.year,
+        seasonNumber: newRel.seasonNumber,
+        targetTmdbId,
+        targetParentTmdbId: targetParentTmdbId ?? undefined,
+        targetSeasonNumber: targetSeasonNumber ?? undefined,
+        targetType: targetType ?? undefined,
+        order: relations.length, // Adiciona no final
+      });
 
-if (!targetTmdbId) return;
-await fetch(`/api/relations?sourceId=${entry.id}&targetTmdbId=${targetTmdbId}`, { method: 'DELETE' });
-setRelations(prev => prev.filter(r => r.slug !== relToRemove.slug));
-  setRelations(prev => prev.filter(r => r.slug !== relToRemove.slug));
-}
+      if (relation) {
+        console.log('✅ Relação salva com sucesso');
+        // Recarrega as relações
+        await refreshRelations(entry.id);
+      } else {
+        throw new Error('Falha ao salvar relação');
+      }
+    } catch (e) {
+      console.error('[addRelation] Save error:', e);
+      alert('Erro ao salvar relação: ' + String(e));
+    }
+  }
+
+  /**
+   * Recarrega relações do banco e atualiza o estado local
+   */
+  async function refreshRelations(sourceEntryId: string) {
+    try {
+      const savedRels = await fetchSavedRelations(sourceEntryId);
+
+      const mapped: RelationItem[] = savedRels
+        .map(rel => {
+          let slug = '';
+          if (rel.kind === 'movie') {
+            slug = `movie-${rel.targetTmdbId}`;
+          } else {
+            slug = `tv-${rel.targetParentTmdbId || rel.targetTmdbId}-s${rel.targetSeasonNumber || 1}`;
+          }
+
+          return {
+            slug,
+            relationType: rel.relationType,
+            title: rel.title,
+            poster_path: rel.poster_path,
+            kind: rel.kind as 'movie' | 'tv',
+            year: rel.year || undefined,
+            seasonNumber: rel.seasonNumber || undefined,
+          } as RelationItem;
+        })
+        .filter((r): r is RelationItem => r !== null && r !== undefined);
+
+      setRelations(mapped);
+      console.log(`[refreshRelations] Carregadas ${mapped.length} relações`);
+    } catch (e) {
+      console.error('[refreshRelations] Error:', e);
+    }
+  }
+
+  /**
+   * Remove uma relação com múltiplas tentativas
+   */
+  async function removeRelation(relToRemove: RelationItem) {
+    if (!entry?.id) return;
+
+    let targetTmdbId: number | null = null;
+
+    try {
+      // Extrai targetTmdbId do slug
+      if (relToRemove.slug.startsWith('movie-')) {
+        targetTmdbId = parseInt(relToRemove.slug.split('-')[1]);
+      } else if (relToRemove.slug.startsWith('tv-')) {
+        const match = relToRemove.slug.match(/^tv-(\d+)-s(\d+)$/);
+        if (match) {
+          const parentId = parseInt(match[1]);
+          const seasonNum = parseInt(match[2]);
+
+          // Busca o season.id do TMDB
+          try {
+            const sRes = await fetch(
+              `${TMDB}/tv/${parentId}/season/${seasonNum}?api_key=${API_KEY}&language=en-US`
+            );
+            if (sRes.ok) {
+              const sData = await sRes.json();
+              if (sData.id) targetTmdbId = sData.id;
+            }
+          } catch {
+            // Fallback: usa o parentId se o season.id não funcionar
+            targetTmdbId = parentId;
+          }
+        }
+      }
+
+      if (!targetTmdbId) throw new Error('Não conseguiu extrair targetTmdbId');
+
+      // Remove do banco
+      const success = await removeRelationFromDB(entry.id, targetTmdbId);
+
+      if (success) {
+        console.log('✅ Relação removida');
+        setRelations(prev => prev.filter(r => r.slug !== relToRemove.slug));
+      } else {
+        throw new Error('Falha na remoção');
+      }
+    } catch (e) {
+      console.error('[removeRelation] Error:', e);
+      alert('Erro ao remover relação: ' + String(e));
+    }
+  }
+
+  // ========== FIM DO SISTEMA DE RELATIONS ==========
 // ========== FIM DAS FUNÇÕES ==========
 
   // Inject CSS once
@@ -906,15 +1068,15 @@ useEffect(() => {
           const e: EntryData = await eRes.json();
           setEntry(e);
           entryId = e.id;
-          if (e.imagePath) setCustomPoster(e.imagePath);
+          if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
         }
         if (!tRes.ok) throw new Error('Filme não encontrado no TMDB');
         const md: TmdbMovie = await tRes.json();
 const mdEn: TmdbMovie = tResEn.ok ? await tResEn.json() : md;
 md.title = mdEn.title || md.title;
 md.original_title = mdEn.original_title || md.original_title;
-md.poster_path = mdEn.poster_path || md.poster_path;   // ← adicionar
-md.backdrop_path = mdEn.backdrop_path || md.backdrop_path; // ← adicionar
+md.poster_path = mdEn.poster_path || md.poster_path;
+md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
         if (cancelled) return;
         setMovie(md);
 
@@ -1028,7 +1190,7 @@ if (entryId) {
         const [eRes, sRes, sdRes, sResEn] = await Promise.all([
   fetch(`/api/entry/tv-${showId}-s${seasonNumber}`),
   fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
-  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`),
+  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=en-US&append_to_response=credits,videos`),
   fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=en-US`),
 ]);
         if (cancelled) return;
@@ -1038,15 +1200,15 @@ if (entryId) {
           const e: EntryData = await eRes.json();
           setEntry(e);
           entryId = e.id;
-          if (e.imagePath) setCustomPoster(e.imagePath);
+          if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
         }
         if (!sRes.ok) throw new Error('Série não encontrada no TMDB');
         const sd: TmdbShow = await sRes.json();
 const sdEn: TmdbShow = sResEn.ok ? await sResEn.json() : sd;
 sd.name = sdEn.name || sd.name;
 sd.original_name = sdEn.original_name || sd.original_name;
-sd.poster_path = sdEn.poster_path || sd.poster_path;       // ← adicionar
-sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path; // ← adicionar
+sd.poster_path = sdEn.poster_path || sd.poster_path;
+sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
         if (cancelled) return;
         setShow(sd);
         if (sdRes.ok) setSeasonDetail(await sdRes.json());
