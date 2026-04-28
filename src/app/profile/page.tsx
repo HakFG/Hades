@@ -41,6 +41,8 @@ interface ActivityLog {
   type: 'MOVIE' | 'TV_SEASON';
   status: string;
   progress: number;
+  progressStart?: number;   // ← ADICIONADO
+  progressEnd?: number;     // ← ADICIONADO
   score: number;
   slug: string;
   createdAt: string;    // ISO timestamp do evento
@@ -681,8 +683,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
   const [statusFilter, setStatusFilter] = useState<StatusKey | 'ALL'>('ALL');
   const [formatFilter, setFormatFilter] = useState('ALL');
   const [genreFilter, setGenreFilter] = useState('ALL');
-  const [yearMin, setYearMin] = useState(0);
-  const [yearMax, setYearMax] = useState(0);
+  const [selectedYear, setSelectedYear] = useState(0);   // ← substitui yearMin/yearMax
   const [scoreFilter, setScoreFilter] = useState(0);
   const [sortBy, setSortBy] = useState('updatedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -712,15 +713,14 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
         const fmt = entryFormat(e);
         if (fmt !== formatFilter) return false;
       }
-      if (yearMin > 0 || yearMax > 0) {
+      // Filtro de ano único
+      if (selectedYear > 0) {
         const y = releaseYear(e);
-        if (!y) return false;
-        if (yearMin > 0 && y < yearMin) return false;
-        if (yearMax > 0 && y > yearMax) return false;
+        if (!y || y !== selectedYear) return false;
       }
       return true;
     });
-  }, [mine, search, genreFilter, scoreFilter, formatFilter, yearMin, yearMax]);
+  }, [mine, search, genreFilter, scoreFilter, formatFilter, selectedYear]);
 
   const sortedFiltered = useMemo(() => {
     return [...baseFiltered].sort((a, b) => {
@@ -822,15 +822,24 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
               </select>
             </div>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>Year</div>
-              <div style={{ marginBottom: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#647380', marginBottom: '4px' }}><span>From</span><span style={{ color: yearMin > 0 ? '#3dbbee' : '#647380', fontWeight: 'bold' }}>{yearMin > 0 ? yearMin : 'Any'}</span></div>
-                <input type="range" min={TMDB_MIN_YEAR} max={TMDB_MAX_YEAR} step={1} value={yearMin > 0 ? yearMin : TMDB_MIN_YEAR} onChange={e => setYearMin(Number(e.target.value) === TMDB_MIN_YEAR ? 0 : Number(e.target.value))} style={{ width: '100%', height: '6px', background: '#151f2e', borderRadius: '5px', accentColor: '#3dbbee', cursor: 'pointer' }} />
+              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>
+                Year
               </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#647380', marginBottom: '4px' }}><span>To</span><span style={{ color: yearMax > 0 ? '#3dbbee' : '#647380', fontWeight: 'bold' }}>{yearMax > 0 ? yearMax : 'Any'}</span></div>
-                <input type="range" min={TMDB_MIN_YEAR} max={TMDB_MAX_YEAR} step={1} value={yearMax > 0 ? yearMax : TMDB_MAX_YEAR} onChange={e => setYearMax(Number(e.target.value) === TMDB_MAX_YEAR ? 0 : Number(e.target.value))} style={{ width: '100%', height: '6px', background: '#151f2e', borderRadius: '5px', accentColor: '#3dbbee', cursor: 'pointer' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#647380', marginBottom: '4px' }}>
+                <span>Year</span>
+                <span style={{ color: selectedYear > 0 ? '#3dbbee' : '#647380', fontWeight: 'bold' }}>
+                  {selectedYear > 0 ? selectedYear : 'Any'}
+                </span>
               </div>
+              <input
+                type="range"
+                min={TMDB_MIN_YEAR}
+                max={TMDB_MAX_YEAR}
+                step={1}
+                value={selectedYear > 0 ? selectedYear : TMDB_MIN_YEAR}
+                onChange={e => setSelectedYear(Number(e.target.value) === TMDB_MIN_YEAR ? 0 : Number(e.target.value))}
+                style={{ width: '100%', height: '6px', background: '#151f2e', borderRadius: '5px', accentColor: '#3dbbee', cursor: 'pointer' }}
+              />
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>Score</div>
@@ -846,7 +855,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
                 {sortDir === 'asc' ? '▲ Ascending' : '▼ Descending'}
               </button>
             </div>
-            <button onClick={() => { setStatusFilter('ALL'); setFormatFilter('ALL'); setGenreFilter('ALL'); setYearMin(0); setYearMax(0); setScoreFilter(0); setSearch(''); setSortBy('updatedAt'); setSortDir('desc'); }} style={{ width: '100%', padding: '6px', background: '#3db4f2', border: 'none', borderRadius: '3px', color: 'white', fontSize: '11px', fontWeight: '700', cursor: 'pointer', marginTop: '8px' }}>
+            <button onClick={() => { setStatusFilter('ALL'); setFormatFilter('ALL'); setGenreFilter('ALL'); setSelectedYear(0); setScoreFilter(0); setSearch(''); setSortBy('updatedAt'); setSortDir('desc'); }} style={{ width: '100%', padding: '6px', background: '#3db4f2', border: 'none', borderRadius: '3px', color: 'white', fontSize: '11px', fontWeight: '700', cursor: 'pointer', marginTop: '8px' }}>
               Reset Filters
             </button>
           </div>
@@ -1094,6 +1103,37 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   );
 }
 
+// ─── ActivityDescription (helper) ─────────────────────────────────────────────
+
+function activityDescription(a: ActivityLog): string {
+  if (a.type === 'MOVIE') {
+    if (a.status === 'COMPLETED' || a.status === 'REWATCHING') return `Completed "${a.title}"`;
+    if (a.status === 'WATCHING') return `Started watching "${a.title}"`;
+    if (a.status === 'PLANNING') return `Added "${a.title}" to list`;
+    if (a.status === 'PAUSED') return `Paused "${a.title}"`;
+    if (a.status === 'DROPPED') return `Dropped "${a.title}"`;
+    return `Updated "${a.title}"`;
+  }
+
+  // TV_SEASON
+  if (a.status === 'PLANNING') return `Added "${a.title}" to list`;
+  if (a.status === 'PAUSED') return `Paused "${a.title}"`;
+  if (a.status === 'DROPPED') return `Dropped "${a.title}"`;
+  if (a.status === 'COMPLETED') return `Completed "${a.title}"`;
+  if (a.status === 'REWATCHING') {
+    if (a.progressEnd && a.progressStart && a.progressEnd > a.progressStart)
+      return `Rewatched episodes ${a.progressStart}–${a.progressEnd} of "${a.title}"`;
+    return `Rewatched ep. ${a.progress} of "${a.title}"`;
+  }
+
+  // WATCHING com agrupamento
+  if (a.progressEnd !== undefined && a.progressStart !== undefined && a.progressEnd > a.progressStart) {
+    return `Watched episodes ${a.progressStart}–${a.progressEnd} of "${a.title}"`;
+  }
+  if (a.progress === 1) return `Started watching "${a.title}"`;
+  return `Watched ep. ${a.progress} of "${a.title}"`;
+}
+
 // ─── ActivityItem (componente para cada linha do log) ─────────────────────────
 
 function ActivityItem({ activity: a, onDelete }: { activity: ActivityLog; onDelete: (id: string) => void }) {
@@ -1109,10 +1149,9 @@ function ActivityItem({ activity: a, onDelete }: { activity: ActivityLog; onDele
         <div style={{ width: '100%', height: '100%', backgroundImage: imgUrl(a.imagePath) ? `url(${imgUrl(a.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
       </Link>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '10px', color: STATUS_COLOR[a.status], fontWeight: '700', marginBottom: '2px' }}>
-          {STATUS_LABEL[a.status]}
-          {a.type === 'TV_SEASON' && a.progress > 0 && <span style={{ color: '#647380', fontWeight: '400' }}> · Ep {a.progress}</span>}
-          {a.score > 0 && <span style={{ color: '#64ffda' }}> {formatScore(a.score)}</span>}
+        <div style={{ fontSize: '11px', color: '#647380', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {activityDescription(a)}
+          {a.score > 0 && <span style={{ color: '#64ffda', marginLeft: '6px' }}>{formatScore(a.score)}</span>}
         </div>
         <Link href={`/titles/${a.slug}`} style={{ textDecoration: 'none' }}>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#e0e4e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
@@ -1272,8 +1311,7 @@ function ProfileContent() {
   const [editingProf, setEditingProf] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
   const [activityVisible, setActivityVisible] = useState(15);
-  const recentActivityIds = useRef<Set<string>>(new Set());  // ← adicione esta linha
-  
+  const recentActivityIds = useRef<Set<string>>(new Set());
 
   // Sincronizar aba com a URL
   useEffect(() => {
@@ -1296,28 +1334,63 @@ function ProfileContent() {
 
   useEffect(() => { load(); }, [load]);
 
-function pushActivity(entry: Entry) {
-  // Evita atividades duplicadas para a mesma ação em um curto intervalo (200ms)
-  const now = Date.now();
-  const key = `${entry.id}-${entry.status}-${entry.progress}-${entry.score}-${Math.floor(now / 200)}`;
-  if (recentActivityIds.current.has(key)) return;
-  recentActivityIds.current.add(key);
-  setTimeout(() => recentActivityIds.current.delete(key), 500);
+  function pushActivity(entry: Entry) {
+    const now = Date.now();
+    const key = `${entry.id}-${entry.status}-${entry.progress}-${entry.score}-${Math.floor(now / 200)}`;
+    if (recentActivityIds.current.has(key)) return;
+    recentActivityIds.current.add(key);
+    setTimeout(() => recentActivityIds.current.delete(key), 500);
 
-  const event: ActivityLog = {
-    id: crypto.randomUUID(),
-    entryId: entry.id,
-    title: entry.title,
-    imagePath: entry.imagePath,
-    type: entry.type,
-    status: entry.status,
-    progress: entry.progress,
-    score: entry.score,
-    slug: entrySlug(entry),
-    createdAt: new Date().toISOString(),
-  };
-  setActivityLog(prev => [event, ...prev]);
-}
+    if (entry.type === 'TV_SEASON' && entry.status === 'WATCHING') {
+      setActivityLog(prev => {
+        // Verifica se o último evento é do mesmo entryId e é progress consecutivo
+        const last = prev[0];
+        if (
+          last &&
+          last.entryId === entry.id &&
+          last.status === entry.status &&
+          (last.progressEnd ?? last.progress) === entry.progress - 1
+        ) {
+          // Agrupa: atualiza progressEnd do último evento
+          return [
+            { ...last, progressEnd: entry.progress },
+            ...prev.slice(1),
+          ];
+        }
+        // Novo evento
+        const event: ActivityLog = {
+          id: crypto.randomUUID(),
+          entryId: entry.id,
+          title: entry.title,
+          imagePath: entry.imagePath,
+          type: entry.type,
+          status: entry.status,
+          progress: entry.progress,
+          progressStart: entry.progress,
+          progressEnd: entry.progress,
+          score: entry.score,
+          slug: entrySlug(entry),
+          createdAt: new Date().toISOString(),
+        };
+        return [event, ...prev];
+      });
+      return;
+    }
+
+    const event: ActivityLog = {
+      id: crypto.randomUUID(),
+      entryId: entry.id,
+      title: entry.title,
+      imagePath: entry.imagePath,
+      type: entry.type,
+      status: entry.status,
+      progress: entry.progress,
+      score: entry.score,
+      slug: entrySlug(entry),
+      createdAt: new Date().toISOString(),
+    };
+    setActivityLog(prev => [event, ...prev]);
+  }
 
   function handleSaved(updated: Partial<Entry>) {
     setEntries(prev => prev.map(e => {
@@ -1334,7 +1407,7 @@ function pushActivity(entry: Entry) {
     await fetch(`/api/entries/${entry.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isFavorite: next }) });
   }
 
-async function updateProgress(entryId: string, newProgress: number) {
+  async function updateProgress(entryId: string, newProgress: number) {
     try {
       const entry = entries.find(e => e.id === entryId);
       const shouldComplete = entry?.type === 'TV_SEASON' && entry.totalEpisodes != null && newProgress === entry.totalEpisodes;
@@ -1376,7 +1449,10 @@ async function updateProgress(entryId: string, newProgress: number) {
             background: profile?.avatarUrl ? 'transparent' : (profile?.avatarColor ?? '#3db4f2'),
             boxShadow: '0 0 10px rgba(0,0,0,0.5)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px'
           }}>
-            {profile?.avatarUrl ? <img src={profile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="avatar" /> : '🎬'}
+            {profile?.avatarUrl
+              ? <img src={profile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="avatar" />
+              : <span style={{ fontSize: '64px' }}>🎬</span>
+            }
           </div>
           <div style={{ paddingBottom: '10px' }}>
             <h1 style={{ color: '#fff', fontSize: '2.2rem', fontWeight: 800, filter: 'drop-shadow(0px 0px 6px black)', margin: 0 }}>{profile?.username ?? 'My Profile'}</h1>
