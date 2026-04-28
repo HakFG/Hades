@@ -913,6 +913,8 @@ useEffect(() => {
 const mdEn: TmdbMovie = tResEn.ok ? await tResEn.json() : md;
 md.title = mdEn.title || md.title;
 md.original_title = mdEn.original_title || md.original_title;
+md.poster_path = mdEn.poster_path || md.poster_path;   // ← adicionar
+md.backdrop_path = mdEn.backdrop_path || md.backdrop_path; // ← adicionar
         if (cancelled) return;
         setMovie(md);
 
@@ -963,7 +965,7 @@ if (entryId) {
         if (initialRels.length === 0 && md.belongs_to_collection) {
           try {
             const cRes = await fetch(
-              `${TMDB}/collection/${md.belongs_to_collection.id}?api_key=${API_KEY}&language=pt-BR`
+              `${TMDB}/collection/${md.belongs_to_collection.id}?api_key=${API_KEY}&language=en-US`
             );
             if (cRes.ok) {
               const col: TmdbCollection = await cRes.json();
