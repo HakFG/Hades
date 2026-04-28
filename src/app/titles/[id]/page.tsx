@@ -1045,6 +1045,8 @@ if (entryId) {
 const sdEn: TmdbShow = sResEn.ok ? await sResEn.json() : sd;
 sd.name = sdEn.name || sd.name;
 sd.original_name = sdEn.original_name || sd.original_name;
+sd.poster_path = sdEn.poster_path || sd.poster_path;       // ← adicionar
+sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path; // ← adicionar
         if (cancelled) return;
         setShow(sd);
         if (sdRes.ok) setSeasonDetail(await sdRes.json());
