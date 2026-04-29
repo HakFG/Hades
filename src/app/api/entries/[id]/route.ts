@@ -62,8 +62,17 @@ export async function PATCH(
       data: updateData,
     });
 
-    // Retorna o objeto atualizado com os campos que o front-end espera
-    return NextResponse.json(entry);
+    // Normaliza datas para YYYY-MM-DD antes de retornar ao front-end
+    const formatted = {
+      ...entry,
+      startDate: entry.startDate
+        ? (entry.startDate as Date).toISOString().split('T')[0]
+        : null,
+      finishDate: entry.finishDate
+        ? (entry.finishDate as Date).toISOString().split('T')[0]
+        : null,
+    };
+    return NextResponse.json(formatted);
   } catch (error) {
     console.error('[PATCH /api/entries/:id] Erro:', error);
     return NextResponse.json(

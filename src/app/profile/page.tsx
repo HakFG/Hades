@@ -127,7 +127,7 @@ function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
   const poster = imgUrl(entry.imagePath);
   
   // Exibição do progresso: para séries, se completou mostra apenas o total
-  let progressDisplay = '';
+  let progressDisplay = ''
   if (entry.type === 'TV_SEASON') {
     const total = entry.totalEpisodes ?? '?';
     if (entry.progress === entry.totalEpisodes) {
@@ -136,7 +136,14 @@ function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
       progressDisplay = `${entry.progress}/${total}`;
     }
   } else {
-    progressDisplay = entry.status === 'COMPLETED' ? 'Watched' : (entry.progress > 0 ? 'Watching' : '');
+    // MOVIE: exibe 1 se assistido (COMPLETED), 0/1 se não assistiu ainda, vazio se planning/sem progresso
+    if (entry.status === 'COMPLETED') {
+      progressDisplay = '1';
+    } else if (entry.status === 'WATCHING' || entry.status === 'PAUSED' || entry.status === 'DROPPED') {
+      progressDisplay = '0/1';
+    } else {
+      progressDisplay = '';
+    }
   }
 
 const handleIncrement = (e: React.MouseEvent) => {
@@ -221,7 +228,6 @@ const handleIncrement = (e: React.MouseEvent) => {
         </div>
 
         
-{/* Progresso com botões para séries (visíveis apenas no hover) */}
         {/* Progresso com botões para séries (visíveis apenas no hover) */}
         <div style={{
           bottom: 0,
@@ -234,8 +240,9 @@ const handleIncrement = (e: React.MouseEvent) => {
           whiteSpace: 'nowrap',
           display: 'flex',
           alignItems: 'center',
-          gap: '3px',
-          paddingLeft: '0px',   // ← aqui você controla a distância da borda esquerda
+          gap: '0px',
+          paddingLeft: entry.type === 'TV_SEASON' ? '0px' : '12px',
+        marginLeft: entry.type === 'TV_SEASON' ? '-6px' : '0px', // ← aqui você controla a distância da borda esquerda
           paddingBottom: '9px',
           boxSizing: 'border-box',
         }}>
@@ -255,6 +262,8 @@ const handleIncrement = (e: React.MouseEvent) => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: 0,
+                  marginLeft: '2px', // ← distância entre − e o número
+                  marginRight: '2px', // ← distância entre o número e +
                   opacity: hovered ? 1 : 0,
                   transition: 'opacity 0.35s ease, color 0.2s ease',
                   pointerEvents: hovered ? 'auto' : 'none',
@@ -1213,7 +1222,11 @@ const pushActivity = useCallback(async (entry: Entry) => {
 }, []); // sem dependências — usa ref
 
   function handleSaved(updated: Entry) {
-    setEntries(prev => prev.map(e => e.id === updated.id ? updated : e));
+    setEntries(prev => prev.map(e =>
+      e.id === updated.id
+        ? { ...e, ...updated }   // preserva campos que a API omitir (ex: startDate/finishDate)
+        : e
+    ));
     pushActivity(updated);
     setEditingEntry(null);
   }
