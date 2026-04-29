@@ -12,6 +12,7 @@ export async function GET() {
       ...entry,
       startDate: entry.startDate?.toISOString().split('T')[0] ?? null,
       finishDate: entry.finishDate?.toISOString().split('T')[0] ?? null,
+      createdAt: entry.createdAt.toISOString(),
       updatedAt: entry.updatedAt.toISOString(),
     }));
     return NextResponse.json(serialized);

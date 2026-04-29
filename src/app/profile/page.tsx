@@ -20,18 +20,39 @@ interface Entry {
   score: number;
   progress: number;
   totalEpisodes?: number | null;
+  
+  // ─── Imagens ───
   imagePath?: string | null;
+  bannerPath?: string | null;
+  customImage?: string | null;
+  
+  // ─── Flags & Ranking ───
   isFavorite: boolean;
+  hidden: boolean;
+  private?: boolean;
+  favoriteRank?: number | null;
+  
+  // ─── Datas ───
   startDate?: string | null;
   finishDate?: string | null;
+  releaseDate?: string | null;
+  endDate?: string | null;
+  createdAt?: string;
+  updatedAt: string;
+  
+  // ─── Conteúdo ───
   rewatchCount: number;
   notes?: string | null;
-  hidden: boolean;
+  synopsis?: string | null;
+  
+  // ─── Metadados TMDB ───
   genres?: string | null;
-  runtime?: number | null;
-  releaseDate?: string | null;
+  rating?: number | null;
+  popularity?: number;
+  studio?: string | null;
   format?: string | null;
-  updatedAt: string;
+  runtime?: number | null;
+  staff?: any;
 }
 
 interface ActivityLog {
@@ -724,17 +745,100 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Exporta um backup COMPLETO incluindo:
+   * - Todas as entries com 100% dos campos
+   * - Relações entre entries
+   * - Log de atividades
+   * - Perfil do usuário
+   */
+  const handleFullExport = async () => {
+    try {
+      const res = await fetch('/api/backup/full-export');
+      if (!res.ok) throw new Error('Falha ao exportar');
+      
+      const backup = await res.json();
+      const data = JSON.stringify(backup, null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `hades-complete-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      alert('✅ Backup completo exportado com sucesso!');
+    } catch (err) {
+      alert('❌ Erro ao exportar backup: ' + err);
+      console.error(err);
+    }
+  };
+
+  /**
+   * Importa um backup COMPLETO (gerado por handleFullExport).
+   * Restaura: entries, relações, atividades e perfil.
+   */
+  const handleFullImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!confirm('⚠️ Isso vai RESTAURAR O BACKUP COMPLETO:\n\n✓ Todas as entries\n✓ Relações entre títulos\n✓ Histórico de atividades\n✓ Configurações do perfil\n\nEntradas existentes com o mesmo ID serão sobrescritas.\n\nContinuar?')) {
+      e.target.value = '';
+      return;
+    }
+    
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      
+      // Valida estrutura básica
+      if (!backup || typeof backup !== 'object') {
+        throw new Error('Formato de backup inválido');
+      }
+
+      const res = await fetch('/api/backup/full-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backup),
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        alert(
+          `✅ Backup restaurado com sucesso!\n\n` +
+          `📚 Entries: ${result.entriesRestored}\n` +
+          `🔗 Relações: ${result.relationsRestored}\n` +
+          `📊 Atividades: ${result.activitiesRestored}\n` +
+          `👤 Perfil: ${result.profileRestored ? 'Sim' : 'Não'}` +
+          (result.errors.length > 0 ? `\n\n⚠️ Avisos: ${result.errors.length}` : '')
+        );
+        onImport?.();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('❌ Erro na importação: ' + (err.error ?? 'Erro desconhecido'));
+      }
+    } catch (err) {
+      alert('❌ Arquivo inválido ou corrompido.');
+      console.error(err);
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
+
+  // Legacy export (só entries) para compatibilidade
   const handleExport = () => {
     const data = JSON.stringify(entries, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `backup-entries-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
+  // Legacy import (só entries) para compatibilidade
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -768,6 +872,7 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
       e.target.value = '';
     }
   };
+
   const series = entries.filter(e => e.type === 'TV_SEASON');
   const films = entries.filter(e => e.type === 'MOVIE');
   const scored = entries.filter(e => e.score > 0);
@@ -849,11 +954,56 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
             ref={importInputRef}
             type="file"
             accept=".json"
-            onChange={handleImport}
+            onChange={handleFullImport}
             style={{ display: 'none' }}
           />
           <button
             onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: importing ? '#4a4a5a' : '#9b59b6',
+              border: 'none', borderRadius: '20px',
+              padding: '6px 14px', color: 'white',
+              fontSize: '11px', fontWeight: '700',
+              cursor: importing ? 'wait' : 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: importing ? 'none' : '0 1px 4px rgba(0,0,0,0.2)',
+            }}
+            onMouseEnter={e => { if (!importing) e.currentTarget.style.background = '#8e44ad'; }}
+            onMouseLeave={e => { if (!importing) e.currentTarget.style.background = '#9b59b6'; }}
+            title="Importa TUDO: entries, relações, atividades e perfil"
+          >
+            ⬆️ {importing ? 'Importando...' : 'Restaurar'}
+          </button>
+          <button
+            onClick={handleFullExport}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: '#e74c3c',
+              border: 'none', borderRadius: '20px',
+              padding: '6px 14px', color: 'white',
+              fontSize: '11px', fontWeight: '700',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#c0392b'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#e74c3c'; }}
+            title="Exporta TUDO: entries, relações, atividades e perfil"
+          >
+            ⬇️ Backup
+          </button>
+          <div style={{ width: '1px', height: '24px', background: '#444', margin: '0 4px' }} />
+          <input
+            type="file"
+            accept=".json"
+            onChange={handleImport}
+            style={{ display: 'none' }}
+            id="legacy-import"
+          />
+          <button
+            onClick={() => (document.getElementById('legacy-import') as HTMLInputElement)?.click()}
             disabled={importing}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
@@ -867,8 +1017,9 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
             }}
             onMouseEnter={e => { if (!importing) e.currentTarget.style.background = '#27ae60'; }}
             onMouseLeave={e => { if (!importing) e.currentTarget.style.background = '#2ecc71'; }}
+            title="Importa só entries (compatível com backups antigos)"
           >
-            ↑ {importing ? 'Importando...' : 'Importar'}
+            ↑ {importing ? 'Importando...' : 'Entradas'}
           </button>
           <button
             onClick={handleExport}
@@ -884,8 +1035,9 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
             }}
             onMouseEnter={e => { e.currentTarget.style.background = '#d68910'; }}
             onMouseLeave={e => { e.currentTarget.style.background = '#f39c12'; }}
+            title="Exporta só entries (compatível com backups antigos)"
           >
-            ↓ Exportar
+            ↓ Entradas
           </button>
           <button
             onClick={syncAll}
@@ -907,9 +1059,10 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
             }}
             onMouseEnter={e => { if (!syncing) (e.currentTarget.style.background = '#2c8bc0'); }}
             onMouseLeave={e => { if (!syncing) (e.currentTarget.style.background = '#3db4f2'); }}
+            title="Sincroniza metadados TMDB"
           >
             <span style={{ display: 'inline-block', animation: syncing ? 'spin 0.8s linear infinite' : 'none', fontSize: '12px' }}>↻</span>
-            {syncing ? 'Sincronizando...' : 'Sincronizar dados'}
+            {syncing ? 'Sincronizando...' : 'Sincronizar'}
           </button>
         </div>
       </div>
