@@ -25,3 +25,16 @@ export function scoreColor(s: number): string {
   if (s >= 5) return '#f39c12';
   return '#e74c3c';
 }
+
+export function imgUrl(p?: string | null): string {
+  if (!p) return '';
+  if (p.startsWith('http')) return p;
+  if (p.startsWith('data:image')) return p;
+  return `https://image.tmdb.org/t/p/w300${p}`;
+}
+
+export function entrySlug(e: { type: string; tmdbId: number; parentTmdbId?: number | null; seasonNumber?: number | null }): string {
+  if (e.type === 'MOVIE') return `movie-${e.tmdbId}`;
+  if (e.parentTmdbId && e.seasonNumber) return `tv-${e.parentTmdbId}-s${e.seasonNumber}`;
+  return `movie-${e.tmdbId}`;
+}

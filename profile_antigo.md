@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { formatScore, scoreColor, imgUrl, entrySlug } from '@/lib/utils';
+import { formatScore, scoreColor } from '@/lib/utils';
 import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
 
@@ -41,12 +41,13 @@ interface ActivityLog {
   imagePath?: string | null;
   type: 'MOVIE' | 'TV_SEASON';
   status: string;
+  progress: number;
   progressStart?: number;
   progressEnd?: number;
   score: number;
   slug: string;
   createdAt: string;
-  lastUpdatedAt: string;
+  lastUpdatedAt?: string;   // ← NOVO
 }
 
 interface Profile {
@@ -87,6 +88,19 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const ALL_STATUSES: StatusKey[] = ['WATCHING', 'COMPLETED', 'PAUSED', 'DROPPED', 'PLANNING', 'REWATCHING', 'UPCOMING'];
+
+function imgUrl(p?: string | null): string {
+  if (!p) return '';
+  if (p.startsWith('http')) return p;
+  if (p.startsWith('data:image')) return p;
+  return `https://image.tmdb.org/t/p/w300${p}`;
+}
+
+function entrySlug(e: Entry): string {
+  if (e.type === 'MOVIE') return `movie-${e.tmdbId}`;
+  if (e.parentTmdbId && e.seasonNumber) return `tv-${e.parentTmdbId}-s${e.seasonNumber}`;
+  return `movie-${e.tmdbId}`;
+}
 
 function relativeDate(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -915,65 +929,78 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   );
 }
 
-// ─── Sistema de Activity Log ──────────────────────────────────────────────────
+// ─── ActivityDescription (helper) ─────────────────────────────────────────────
 
 function activityDescription(a: ActivityLog): string {
   if (a.type === 'MOVIE') {
-    if (a.status === 'COMPLETED') return `Completed`;
-    if (a.status === 'WATCHING') return `Started watching`;
-    if (a.status === 'PLANNING') return `Added to list`;
-    if (a.status === 'PAUSED') return `Paused`;
-    if (a.status === 'DROPPED') return `Dropped`;
-    return `Updated`;
+    if (a.status === 'COMPLETED' || a.status === 'REWATCHING') return `Completed "${a.title}"`;
+    if (a.status === 'WATCHING') return `Started watching "${a.title}"`;
+    if (a.status === 'PLANNING') return `Added "${a.title}" to list`;
+    if (a.status === 'PAUSED') return `Paused "${a.title}"`;
+    if (a.status === 'DROPPED') return `Dropped "${a.title}"`;
+    return `Updated "${a.title}"`;
   }
+
   // TV_SEASON
-  if (a.status === 'PLANNING') return `Added to list`;
-  if (a.status === 'PAUSED') return `Paused`;
-  if (a.status === 'DROPPED') return `Dropped`;
-  if (a.status === 'COMPLETED') return `Completed`;
-  if (a.status === 'REWATCHING') return `Rewatching`;
-  if (a.status === 'WATCHING') {
-    const start = a.progressStart;
-    const end = a.progressEnd;
-    if (start !== undefined && end !== undefined) {
-      if (start === end) return `Watched ep. ${end}`;
-      return `Watched ep. ${start}–${end}`;
-    }
-    if (end !== undefined) return `Watched ep. ${end}`;
-    return `Watching`;
+  if (a.status === 'PLANNING') return `Added "${a.title}" to list`;
+  if (a.status === 'PAUSED') return `Paused "${a.title}"`;
+  if (a.status === 'DROPPED') return `Dropped "${a.title}"`;
+  if (a.status === 'COMPLETED') return `Completed "${a.title}"`;
+  if (a.status === 'REWATCHING') {
+    if (a.progressEnd && a.progressStart && a.progressEnd > a.progressStart)
+      return `Rewatched episodes ${a.progressStart}–${a.progressEnd} of "${a.title}"`;
+    return `Rewatched ep. ${a.progress} of "${a.title}"`;
   }
-  return `Updated`;
+
+  // WATCHING com agrupamento
+  if (a.progressEnd !== undefined && a.progressStart !== undefined && a.progressEnd > a.progressStart) {
+    return `Watched episodes ${a.progressStart}–${a.progressEnd} of "${a.title}"`;
+  }
+  if (a.progress === 1) return `Started watching "${a.title}"`;
+  return `Watched ep. ${a.progress} of "${a.title}"`;
 }
 
-function ActivityItemEntry({ activity, onDelete }: { activity: ActivityLog; onDelete: (id: string) => void }) {
+// ─── ActivityItem (componente para cada linha do log) ─────────────────────────
+
+function ActivityItem({ activity: a, onDelete }: { activity: ActivityLog; onDelete: (id: string) => void }) {
   const [hovered, setHovered] = useState(false);
+
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #2d2d4a', position: 'relative' }}
     >
-      <Link href={`/titles/${activity.slug}`} style={{ flexShrink: 0, width: '36px', height: '52px', borderRadius: '4px', overflow: 'hidden', display: 'block' }}>
-        <div style={{ width: '100%', height: '100%', backgroundImage: activity.imagePath ? `url(${imgUrl(activity.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
+      <Link href={`/titles/${a.slug}`} style={{ flexShrink: 0, width: '36px', height: '52px', borderRadius: '4px', overflow: 'hidden', display: 'block' }}>
+        <div style={{ width: '100%', height: '100%', backgroundImage: imgUrl(a.imagePath) ? `url(${imgUrl(a.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
       </Link>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '11px', color: '#647380', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {activityDescription(activity)}
-          {activity.score > 0 && <span style={{ color: '#64ffda', marginLeft: '6px' }}>{formatScore(activity.score)}</span>}
+          {activityDescription(a)}
+          {a.score > 0 && <span style={{ color: '#64ffda', marginLeft: '6px' }}>{formatScore(a.score)}</span>}
         </div>
-        <Link href={`/titles/${activity.slug}`} style={{ textDecoration: 'none' }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: '#e0e4e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.title}</div>
+        <Link href={`/titles/${a.slug}`} style={{ textDecoration: 'none' }}>
+          <div style={{ fontSize: '12px', fontWeight: '600', color: '#e0e4e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
         </Link>
       </div>
       <div style={{ fontSize: '10px', color: '#3d3d5c', flexShrink: 0, marginRight: hovered ? '24px' : '0', transition: 'margin 0.2s' }}>
-        {relativeDate(activity.createdAt)}
+        {relativeDate(a.createdAt)}
       </div>
       <button
-        onClick={() => onDelete(activity.id)}
-        style={{ position: 'absolute', right: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#3d3d5c', fontSize: '13px', padding: '4px', opacity: hovered ? 1 : 0, transition: 'opacity 0.2s ease, color 0.15s ease' }}
+        onClick={() => onDelete(a.id)}
+        title="Delete activity"
+        style={{
+          position: 'absolute', right: 0,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#3d3d5c', fontSize: '13px', padding: '4px',
+          opacity: hovered ? 1 : 0,
+          transition: 'opacity 0.2s ease, color 0.15s ease',
+        }}
         onMouseEnter={e => (e.currentTarget.style.color = '#e74c3c')}
         onMouseLeave={e => (e.currentTarget.style.color = '#3d3d5c')}
-      >🗑</button>
+      >
+        🗑
+      </button>
     </div>
   );
 }
@@ -1000,7 +1027,7 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
     return scored.length ? (scored.reduce((a, e) => a + e.score, 0) / scored.length).toFixed(1) : '—';
   };
 
-  const visibleActivities = activityLog.slice(0, activityVisible);
+  const visibleActivity = activityLog.slice(0, activityVisible);
   const hasMore = activityLog.length > activityVisible;
 
   return (
@@ -1069,11 +1096,11 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
         {/* ── Recent Activity ── */}
         <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '18px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '14px' }}>Recent Activity</div>
-          {visibleActivities.length === 0 ? (
+          {visibleActivity.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#3d3d5c', padding: '20px' }}>No activity yet.</div>
           ) : (
-            visibleActivities.map(a => (
-              <ActivityItemEntry key={a.id} activity={a} onDelete={onDeleteActivity} />
+            visibleActivity.map(a => (
+              <ActivityItem key={a.id} activity={a} onDelete={onDeleteActivity} />
             ))
           )}
           {hasMore && (
@@ -1108,114 +1135,93 @@ function ProfileContent() {
   const [tab, setTab] = useState<Tab>('overview');
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingProf, setEditingProf] = useState(false);
+  const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
   const [activityVisible, setActivityVisible] = useState(15);
-const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
-const activityLogRef = useRef<ActivityLog[]>([]);
-const recentActivityIds = useRef<Set<string>>(new Set());
+  const recentActivityIds = useRef<Set<string>>(new Set());
 
-// Mantém ref sempre em sync com o estado
-useEffect(() => {
-  activityLogRef.current = activityLog;
-}, [activityLog]);
-
-const load = useCallback(async () => {
-  setLoading(true);
-  try {
-    const [eRes, pRes, aRes] = await Promise.all([
-      fetch('/api/entries'),
-      fetch('/api/profile'),
-      fetch('/api/activity'),
-    ]);
-    if (eRes.ok) setEntries(await eRes.json());
-    if (pRes.ok) setProfile(await pRes.json());
-    if (aRes.ok) setActivityLog(await aRes.json());
-  } catch (err) { console.error(err); } finally { setLoading(false); }
-}, []);
-
-// Refresh silencioso: atualiza dados sem mostrar loading (usado ao voltar para a aba)
-const silentRefresh = useCallback(async () => {
-  try {
-    const [eRes, pRes] = await Promise.all([fetch('/api/entries'), fetch('/api/profile')]);
-    if (eRes.ok) setEntries(await eRes.json());
-    if (pRes.ok) setProfile(await pRes.json());
-  } catch (err) { console.error(err); }
-}, []);
-
-useEffect(() => { load(); }, [load]);
-
-// Recarrega dados ao voltar para a aba (ex: após editar em /titles) — sem efeito de F5
-useEffect(() => {
-  const handleVisibility = () => {
-    if (document.visibilityState === 'visible') {
-      silentRefresh();
+  // Sincronizar aba com a URL
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['overview', 'series', 'films', 'favorites', 'stats'].includes(tabParam)) {
+      setTab(tabParam as Tab);
+    } else {
+      setTab('overview');
     }
-  };
-  document.addEventListener('visibilitychange', handleVisibility);
-  return () => document.removeEventListener('visibilitychange', handleVisibility);
-}, [silentRefresh]);
+  }, [searchParams]);
 
-const pushActivity = useCallback(async (entry: Entry) => {
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [eRes, pRes] = await Promise.all([fetch('/api/entries'), fetch('/api/profile')]);
+      if (eRes.ok) setEntries(await eRes.json());
+      if (pRes.ok) setProfile(await pRes.json());
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+function pushActivity(entry: Entry) {
+  // Evita duplicatas muito rápidas (mesmo milésimo de segundo)
   const now = Date.now();
-  const key = `${entry.id}-${entry.status}-${entry.progress}-${Math.floor(now / 200)}`;
+  const key = `${entry.id}-${entry.status}-${entry.progress}-${entry.score}-${Math.floor(now / 200)}`;
   if (recentActivityIds.current.has(key)) return;
   recentActivityIds.current.add(key);
   setTimeout(() => recentActivityIds.current.delete(key), 500);
 
-  const shouldGroup = entry.type === 'TV_SEASON' &&
-    (entry.status === 'WATCHING' || entry.status === 'REWATCHING');
+  // Apenas séries com progresso incremental devem ser agrupadas
+  const shouldGroup = entry.type === 'TV_SEASON' && 
+                      (entry.status === 'WATCHING' || entry.status === 'REWATCHING');
 
-  const last = activityLogRef.current[0]; // ← ref, nunca stale
+  setActivityLog(prev => {
+    const last = prev[0];
+    const nowISO = new Date().toISOString();
 
-  if (shouldGroup && last && last.entryId === entry.id && last.status === entry.status) {
-    const lastTime = new Date(last.lastUpdatedAt).getTime();
-    const hoursDiff = (now - lastTime) / (1000 * 60 * 60);
-    const isConsecutive = (last.progressEnd ?? 0) === entry.progress - 1;
+    // Verifica se podemos mesclar com o último log
+    if (shouldGroup && last && last.entryId === entry.id && last.status === entry.status) {
+      const lastTime = new Date(last.lastUpdatedAt || last.createdAt);
+      const hoursDiff = (now - lastTime.getTime()) / (1000 * 60 * 60);
+      const isConsecutive = (last.progressEnd ?? last.progress) === entry.progress - 1;
 
-    if (hoursDiff <= 24 && isConsecutive) {
-      const res = await fetch(`/api/activity/${last.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ progressEnd: entry.progress }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        // Atualiza ref imediatamente, antes do re-render
-        activityLogRef.current = [updated, ...activityLogRef.current.slice(1)];
-        setActivityLog(activityLogRef.current);
+      if (hoursDiff <= 24 && isConsecutive) {
+        // Mescla: atualiza progressEnd e lastUpdatedAt
+        return [
+          {
+            ...last,
+            progressEnd: entry.progress,
+            lastUpdatedAt: nowISO,
+          },
+          ...prev.slice(1),
+        ];
       }
-      return;
     }
-  }
 
-  const payload = {
-    entryId: entry.id,
-    title: entry.title,
-    imagePath: entry.imagePath ?? null,
-    type: entry.type,
-    status: entry.status,
-    progressStart: shouldGroup ? entry.progress : null,
-    progressEnd: shouldGroup ? entry.progress : null,
-    score: entry.score,
-    slug: entrySlug(entry),
-  };
-
-  const res = await fetch('/api/activity', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    // Cria um novo log
+    const newLog: ActivityLog = {
+      id: crypto.randomUUID(),
+      entryId: entry.id,
+      title: entry.title,
+      imagePath: entry.imagePath,
+      type: entry.type,
+      status: entry.status,
+      progress: entry.progress,
+      progressStart: shouldGroup ? entry.progress : undefined,
+      progressEnd: shouldGroup ? entry.progress : undefined,
+      score: entry.score,
+      slug: entrySlug(entry),
+      createdAt: nowISO,
+      lastUpdatedAt: nowISO,
+    };
+    return [newLog, ...prev];
   });
-  if (res.ok) {
-    const newLog = await res.json();
-    // Atualiza ref imediatamente, antes do re-render
-    activityLogRef.current = [newLog, ...activityLogRef.current];
-    setActivityLog(activityLogRef.current);
-  }
-}, []); // sem dependências — usa ref
+}
 
-  function handleSaved(updated: Entry) {
-    setEntries(prev => prev.map(e => e.id === updated.id ? updated : e));
-    pushActivity(updated);
-    setEditingEntry(null);
+  function handleSaved(updated: Partial<Entry>) {
+    setEntries(prev => prev.map(e => {
+      if (e.id !== editingEntry?.id) return e;
+      const merged = { ...e, ...updated };
+      pushActivity(merged);
+      return merged;
+    }));
   }
 
   async function toggleFav(entry: Entry) {
@@ -1308,12 +1314,7 @@ const pushActivity = useCallback(async (entry: Entry) => {
             activityLog={activityLog}
             activityVisible={activityVisible}
             onLoadMore={() => setActivityVisible(v => v + 15)}
-            onDeleteActivity={async (id) => {
-  await fetch(`/api/activity/${id}`, { method: 'DELETE' });
-  const filtered = activityLogRef.current.filter(a => a.id !== id);
-  activityLogRef.current = filtered;
-  setActivityLog(filtered);
-}}
+            onDeleteActivity={(id) => setActivityLog(prev => prev.filter(a => a.id !== id))}
           />
         )}
         {tab === 'series' && <MediaListTab entries={entries} type="TV_SEASON" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
@@ -1322,17 +1323,7 @@ const pushActivity = useCallback(async (entry: Entry) => {
         {tab === 'stats' && <StatsTab entries={entries} />}
       </div>
 
-      {editingEntry && (
-        <ListEditor
-          entry={editingEntry}
-          onClose={() => setEditingEntry(null)}
-          onSave={handleSaved}
-          onDelete={() => {
-            setEntries(prev => prev.filter(e => e.id !== editingEntry.id));
-            setEditingEntry(null);
-          }}
-        />
-      )}
+      {editingEntry && <ListEditor entry={editingEntry} onClose={() => setEditingEntry(null)} onSave={handleSaved} />}
       {editingProf && profile && <ProfileEditor profile={profile} onClose={() => setEditingProf(false)} onSaved={p => setProfile(p)} />}
     </div>
   );

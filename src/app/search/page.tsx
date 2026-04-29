@@ -106,7 +106,7 @@ async function expandShow(show: RawShow, includeSpecials = false, onlyInProducti
     if (!res.ok) return [];
     const detail   = await res.json();
     // ✅ Série não está em produção? descarta
-    if (!detail.in_production) return [];
+    if (onlyInProduction && !detail.in_production) return [];
     const detailEn = resEn.ok ? await resEn.json() : detail;
     // Nome sempre em inglês para títulos e cards
     const showName = detailEn.name || detail.name;
@@ -237,24 +237,30 @@ export default function SearchPage() {
           trendRes.json(), onAirRes.json(), allTimeRes.json(),
         ]);
 
-const expandLatest = async (shows: RawShow[]) => {
-  const today = new Date().toISOString().split('T')[0];
-  const cards = await Promise.all(shows.slice(0, 6).map(async show => {
-    const seasons = await expandShow(show, false, true);
-    if (!seasons.length) return null;
+const expandLatest = async (shows: RawShow[], requireAiring: boolean) => {
+  const collected: MediaCard[] = [];
+  for (const show of shows.slice(0, 20)) {
+    if (collected.length >= 6) break;
+    // requireAiring=true → passa onlyInProduction=true (Trending e Popular Now)
+    // requireAiring=false → passa onlyInProduction=false (All Time Popular)
+    const seasons = await expandShow(show, false, requireAiring);
+    if (!seasons.length) continue;
     const sorted = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
-    const airingSeasons = sorted.filter(s => s.seasonStatus === 'Airing');
-    // ✅ Se não há temporada airing, descarta este show
-    if (airingSeasons.length === 0) return null;
-    const chosen = airingSeasons[0];
-    return { ...chosen, popularity: show.popularity };
-  }));
-  return cards.filter(Boolean) as MediaCard[];
+    if (requireAiring) {
+      const airingSeasons = sorted.filter(s => s.seasonStatus === 'Airing');
+      if (airingSeasons.length === 0) continue;
+      collected.push({ ...airingSeasons[0], popularity: show.popularity });
+    } else {
+      // All Time: pega a temporada mais recente independente de status
+      collected.push({ ...sorted[0], popularity: show.popularity });
+    }
+  }
+  return collected;
 };
 
-        setTrending((await expandLatest(trendData.results ?? [])).sort(sortByPop));
-        setPopularNow((await expandLatest(onAirData.results ?? [])).sort(sortByPop));
-        setAllTimePopular((await expandLatest(allTimeData.results ?? [])).sort(sortByPop));
+setTrending((await expandLatest(trendData.results ?? [], true)).sort(sortByPop));
+setPopularNow((await expandLatest(onAirData.results ?? [], true)).sort(sortByPop));
+setAllTimePopular((await expandLatest(allTimeData.results ?? [], false)).sort(sortByPop));
       } else {
         // ✅ CORRIGIDO: todas com language=en-US
         const [trendRes, nowPlayingRes, allTimeRes] = await Promise.all([
@@ -409,22 +415,62 @@ setResults(allCards);
   }, [hasMore, loadingMore, searching, results.length, isFilterActive, query, performSearch, scrollPage]);
 
   // ─── Card component ───────────────────────────────────────────────────────
-  function MediaCardComponent({ item }: { item: MediaCard }) {
-    const [hov, setHov] = useState(false);
-    const displayTitle = item.title || 'Sem título';
+function MediaCardComponent({ item }: { item: MediaCard }) {
+  const hov = hoveredCard === item.tmdbId;
+  const displayTitle = item.title || 'Sem título';
 
-    const openEditor = () => {
-      setEditorData({
-        tmdbId: item.tmdbId,
-        parentTmdbId: item.parentTmdbId ?? null,
-        seasonNumber: item.season_number ?? null,
-        type: item.type,
-        title: item.title,
-        poster_path: item.poster_path,
-        totalEpisodes: item.episode_count ?? undefined,
+    const openEditor = async () => {
+  // Busca entry existente no banco pelo slug
+  const slug = item.linkSlug;
+  let existingEntry = null;
+  try {
+    const r = await fetch(`/api/entry/${slug}`);
+    if (r.ok) existingEntry = await r.json();
+  } catch {}
+
+  if (existingEntry) {
+    // Entry já existe: abre o editor com os dados reais
+    setEditorData({
+      ...existingEntry,
+      poster_path: item.poster_path,
+      totalEpisodes: item.episode_count ?? existingEntry.totalEpisodes ?? null,
+    });
+  } else {
+    // Entry não existe: cria via add-media antes de abrir
+    try {
+      const r = await fetch('/api/add-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tmdbId: item.tmdbId,
+          parentTmdbId: item.parentTmdbId ?? null,
+          seasonNumber: item.season_number ?? null,
+          type: item.type,
+          title: item.title,
+          poster_path: item.poster_path,
+          totalEpisodes: item.episode_count ?? null,
+          status: 'PLANNING',
+          score: 0,
+          progress: 0,
+        }),
       });
-      setEditorOpen(true);
-    };
+      if (r.ok) existingEntry = await r.json();
+    } catch {}
+
+    if (!existingEntry) {
+      alert('Erro ao preparar entrada. Tente novamente.');
+      return;
+    }
+
+    setEditorData({
+      ...existingEntry,
+      poster_path: item.poster_path,
+      totalEpisodes: item.episode_count ?? existingEntry.totalEpisodes ?? null,
+    });
+  }
+
+  setEditorOpen(true);
+};
 
     return (
       <div style={{ position: 'relative' }}>
@@ -436,15 +482,16 @@ setResults(allCards);
               transform: hov ? 'translateY(-6px) scale(1.03)' : 'none',
               transition: 'all 0.25s cubic-bezier(0.34,1.56,0.64,1)',
             }}
-            onMouseEnter={() => setHov(true)}
-            onMouseLeave={() => setHov(false)}
+            onMouseEnter={() => setHoveredCard(item.tmdbId)}
+onMouseLeave={() => setHoveredCard(null)}
           >
             {item.poster_path ? (
               <img
-                src={`https://image.tmdb.org/t/p/w300${item.poster_path}`}
-                style={{ width: '100%', display: 'block', aspectRatio: '2/3', objectFit: 'cover' }}
-                alt={displayTitle}
-              />
+  src={`https://image.tmdb.org/t/p/w300${item.poster_path}`}
+  style={{ width: '100%', display: 'block', aspectRatio: '2/3', objectFit: 'cover' }}
+  alt={displayTitle}
+  loading="lazy"
+/>
             ) : (
               <div style={{ width: '100%', aspectRatio: '2/3', background: 'rgb(58,55,55)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8ba2b9', fontSize: '32px' }}>
                 🎬
@@ -825,29 +872,34 @@ setResults(allCards);
             {editorOpen && (
               <ListEditor
                 entry={{
-                  id: '', // temporário, será criado novo
-                  tmdbId: editorData.tmdbId,
-                  parentTmdbId: editorData.parentTmdbId ?? undefined,
-                  seasonNumber: editorData.seasonNumber ?? undefined,
-                  title: editorData.title,
-                  type: editorData.type,
-                  status: 'PLANNING',
-                  score: 0,
-                  progress: 0,
-                  totalEpisodes: editorData.totalEpisodes ?? null,
-                  imagePath: editorData.poster_path ?? null,
-                  isFavorite: false,
-                  startDate: null,
-                  finishDate: null,
-                  rewatchCount: 0,
-                  notes: null,
-                  hidden: false,
-                }}
+  id: '', // temporário, será criado novo
+  tmdbId: editorData.tmdbId,
+  parentTmdbId: editorData.parentTmdbId ?? undefined,
+  seasonNumber: editorData.seasonNumber ?? undefined,
+  title: editorData.title,
+  type: editorData.type,
+  status: 'PLANNING',
+  score: 0,
+  progress: 0,
+  totalEpisodes: editorData.totalEpisodes ?? null,
+  imagePath: editorData.poster_path ?? null,
+  isFavorite: false,
+  startDate: null,
+  finishDate: null,
+  rewatchCount: 0,
+  notes: null,
+  hidden: false,
+  updatedAt: new Date().toISOString(),
+}}
                 onClose={() => setEditorOpen(false)}
-                onSave={() => {
-                  // Recarrega a página para refletir a nova entrada
-                  window.location.reload();
-                }}
+                onSave={(updatedEntry) => {
+  setResults(prev => prev.map(card =>
+    card.tmdbId === updatedEntry.tmdbId
+      ? { ...card, status: updatedEntry.status, score: updatedEntry.score, progress: updatedEntry.progress }
+      : card
+  ));
+  setEditorOpen(false);
+}}
               />
             )}
           </div>

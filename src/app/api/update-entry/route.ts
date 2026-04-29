@@ -103,10 +103,10 @@ export async function POST(req: Request) {
     // Valida e converte score
     let scoreInt: number | undefined;
     if (score !== undefined && score !== null) {
-      if (typeof score !== 'number' || score < 0 || score > 100) {
-        return NextResponse.json({ error: 'Score deve ser um número entre 0 e 100' }, { status: 400 });
-      }
-      scoreInt = Math.floor(score);
+if (typeof score !== 'number' || score < 0 || score > 10) {
+  return NextResponse.json({ error: 'Score deve ser um número entre 0 e 10' }, { status: 400 });
+}
+scoreInt = score;
     }
 
     // Valida e converte progress

@@ -115,7 +115,7 @@ async function fetchSeriesExtra(showId: number): Promise<{
   networks:   string;
 }> {
   try {
-    const res = await fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR`);
+    const res = await fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=en-US`);
     if (!res.ok) throw new Error('series fetch failed');
     const d = await res.json();
     return {
@@ -136,7 +136,7 @@ async function fetchSeriesExtra(showId: number): Promise<{
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { tmdbId, parentTmdbId, type, title, poster_path, totalEpisodes, seasonNumber } = body;
+    const { tmdbId, parentTmdbId, type, title, poster_path, totalEpisodes, seasonNumber, status, score, progress, startDate, finishDate, rewatchCount, notes, hidden } = body;
 
     // ── Validação básica ───────────────────────────────────────────────────
     if (!tmdbId || typeof tmdbId !== 'number') {
@@ -255,23 +255,30 @@ const englishTitle = seriesEnName
           rating:        extra.rating     ?? undefined,
           popularity:    extra.popularity,
         },
-        create: {
-          tmdbId,
-          parentTmdbId,
-          seasonNumber:  seasonNumber ?? null,
-          title:         title.trim(),
-          type:          'TV_SEASON',
-          status:        'PLANNING',
-          totalEpisodes: totalEpisodes ?? 0,
-          imagePath:     poster_path ?? null,
-          releaseDate,
-          endDate,
-          genres:        extra.genres     || null,
-          studio:        extra.studio     ?? null,
-          bannerPath:    extra.bannerPath ?? null,
-          rating:        extra.rating     ?? null,
-          popularity:    extra.popularity,
-        },
+create: {
+  tmdbId,
+  parentTmdbId,
+  seasonNumber:  seasonNumber ?? null,
+  title:         title.trim(),
+  type:          'TV_SEASON',
+  status:        (status as any) || 'PLANNING',
+  score:         typeof score === 'number' ? score : 0,
+  progress:      typeof progress === 'number' ? progress : 0,
+  startDate:     startDate ? new Date(startDate) : null,
+finishDate:    finishDate ? new Date(finishDate) : null,
+  rewatchCount:  typeof rewatchCount === 'number' ? rewatchCount : 0,
+  notes:         notes ?? null,
+  hidden:        hidden ?? false,
+  totalEpisodes: totalEpisodes ?? 0,
+  imagePath:     poster_path ?? null,
+  releaseDate,
+  endDate,
+  genres:        extra.genres     || null,
+  studio:        extra.studio     ?? null,
+  bannerPath:    extra.bannerPath ?? null,
+  rating:        extra.rating     ?? null,
+  popularity:    extra.popularity,
+},
       });
 
       return NextResponse.json(entry);
@@ -319,20 +326,27 @@ genres      = (d.genres ?? []).map((g: any) => g.name).join(', ');
           rating:        rating     ?? undefined,
           popularity,
         },
-        create: {
-          tmdbId,
-          title:         title.trim(),
-          type:          'MOVIE',
-          status:        'PLANNING',
-          totalEpisodes: 1,
-          imagePath:     poster_path ?? null,
-          releaseDate,
-          genres:        genres  || null,
-          studio,
-          bannerPath:    bannerPath ?? null,
-          rating:        rating     ?? null,
-          popularity,
-        },
+create: {
+  tmdbId,
+  title:         title.trim(),
+  type:          'MOVIE',
+  status:        (status as any) || 'PLANNING',
+  score:         typeof score === 'number' ? score : 0,
+  progress:      typeof progress === 'number' ? progress : 0,
+startDate:     startDate ? new Date(startDate) : null,
+finishDate:    finishDate ? new Date(finishDate) : null,
+  rewatchCount:  typeof rewatchCount === 'number' ? rewatchCount : 0,
+  notes:         notes ?? null,
+  hidden:        hidden ?? false,
+  totalEpisodes: 1,
+  imagePath:     poster_path ?? null,
+  releaseDate,
+  genres:        genres  || null,
+  studio,
+  bannerPath:    bannerPath ?? null,
+  rating:        rating     ?? null,
+  popularity,
+},
       });
 
       return NextResponse.json(entry);

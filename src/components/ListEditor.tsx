@@ -21,6 +21,7 @@ interface Entry {
   rewatchCount: number;
   notes?: string | null;
   hidden: boolean;
+  updatedAt: string;
   // ... outros campos opcionais
 }
 
@@ -121,7 +122,7 @@ export default function ListEditor({ entry, onClose, onSave, onDelete }: ListEdi
     try {
       const payload = {
         status,
-        score: score > 0 ? Math.round(score * 10) : 0,
+        score: score > 0 ? score : 0,
         progress,
         startDate: startDate || null,
         finishDate: finishDate || null,

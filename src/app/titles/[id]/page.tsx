@@ -1,5 +1,5 @@
 'use client';
-
+import { recordActivity } from '@/lib/activity';
 import { useState, useEffect, use, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { getOrdinal, buildSeasonTitle, formatScore, scoreColor } from '@/lib/utils';
@@ -687,35 +687,77 @@ function ListEditorModal({entry,isTV,showId,seasonNumber,displayTitle,posterPath
   const STATUS_OPTS=['WATCHING','PLANNING','COMPLETED','REWATCHING','PAUSED','DROPPED','UPCOMING'];
   const maxEp=episodeCount??9999;
 
-  async function save(){
-    setSaving(true);
-    try{
-      const payload={score,status,progress,startDate:startDate||null,finishDate:finishDate||null,rewatchCount,notes:notes||null,hidden};
-      let res:Response;
-      if(entry){
-        res=await fetch(`/api/entries/${entry.id}`,{
-          method:'PATCH',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify(payload),
-        });
-      }else{
-        res=await fetch('/api/add-media',{
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            tmdbId: (entry as EntryData | null)?.tmdbId ?? tmdbId ?? null,
-            parentTmdbId: isTV ? showId : null,
-            seasonNumber: isTV ? seasonNumber : null,
-            type: isTV ? 'TV_SEASON' : 'MOVIE',
-            title: displayTitle,
-            poster_path: posterPath,
-            totalEpisodes: episodeCount ?? null,
-            ...payload,
-          }),
-        });
-      }
-      if(res.ok){onSaved(payload);onClose();}
-      else alert('Erro ao salvar.');
-    }finally{setSaving(false);}
+// inside ListEditorModal
+async function save() {
+  setSaving(true);
+  try {
+    const payload = {
+      status,
+      score: score > 0 ? score : 0,
+      progress,
+      startDate: startDate || null,
+      finishDate: finishDate || null,
+      rewatchCount,
+      notes: notes || null,
+      hidden,
+    };
+    
+    let res;
+    let savedEntry;
+    
+    if (entry) {
+      // Atualização de entry existente
+      res = await fetch(`/api/entries/${entry.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      // Criação de nova entry
+      res = await fetch('/api/add-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tmdbId: tmdbId ?? null,
+          parentTmdbId: isTV ? showId : null,
+          seasonNumber: isTV ? seasonNumber : null,
+          type: isTV ? 'TV_SEASON' : 'MOVIE',
+          title: displayTitle,
+          poster_path: posterPath,
+          totalEpisodes: episodeCount ?? null,
+          ...payload,
+        }),
+      });
+    }
+
+    if (res.ok) {
+      savedEntry = await res.json();
+      // ✅ Registra a atividade no banco de dados
+      await recordActivity({
+        id: savedEntry.id,
+        title: savedEntry.title,
+        imagePath: savedEntry.imagePath ?? posterPath,
+        type: savedEntry.type,
+        status: savedEntry.status,
+        progress: savedEntry.progress,
+        score: savedEntry.score,
+        parentTmdbId: savedEntry.parentTmdbId,
+        seasonNumber: savedEntry.seasonNumber,
+        tmdbId: savedEntry.tmdbId,
+      });
+      onSaved(savedEntry);
+      onClose();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert('Erro ao salvar: ' + (err.error ?? 'Erro desconhecido'));
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Erro de rede ao salvar');
+  } finally {
+    setSaving(false);
   }
+}
 
   const inp:React.CSSProperties={width:'100%',padding:'9px 12px',background:'#1e1c1c',border:'1px solid rgba(255,255,255,.08)',borderRadius:4,color:TEXT,fontSize:13,boxSizing:'border-box',fontFamily:'Overpass,sans-serif'};
   const lbl:React.CSSProperties={display:'block',fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:7};
@@ -862,6 +904,28 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   const[mounted,       setMounted]       =useState(false);
 
   // ========== SISTEMA DE RELATIONS ROBUSTO (CORRIGIDO) ==========
+
+  async function createEntryIfNeeded(): Promise<boolean> {
+  if (entry) return true;
+  if (!createTmdbId) { alert('Erro: ID do título não encontrado.'); return false; }
+  const addRes = await fetch('/api/add-media', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      tmdbId: createTmdbId,
+      parentTmdbId: isTV ? showId : null,
+      seasonNumber: isTV ? seasonNumber : null,
+      type: isTV ? 'TV_SEASON' : 'MOVIE',
+      title: displayTitle,
+      poster_path: rawPosterPath,
+      totalEpisodes: episodeCount ?? null,
+    }),
+  });
+  if (!addRes.ok) { alert('Erro ao adicionar título à lista. Tente novamente.'); return false; }
+  const newEntry = await addRes.json();
+  setEntry(newEntry);
+  return true;
+}
 
   /**
    * Gera relações automáticas (TMDB) para um filme com coleção
@@ -1624,65 +1688,21 @@ manualRels = saved.map((r: any) => {
       <span>Relations</span>
       <button
         onClick={async () => {
-          if (!entry) {
-            if (!createTmdbId) { alert('Erro: ID do título não encontrado.'); return; }
-            const addRes = await fetch('/api/add-media', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                tmdbId: createTmdbId,
-                parentTmdbId: isTV ? showId : null,
-                seasonNumber: isTV ? seasonNumber : null,
-                type: isTV ? 'TV_SEASON' : 'MOVIE',
-                title: displayTitle,
-                poster_path: rawPosterPath,
-                totalEpisodes: episodeCount ?? null,
-              }),
-            });
-            if (addRes.ok) {
-              const newEntry = await addRes.json();
-              setEntry(newEntry);
-              setEditingRel(true);
-            } else {
-              alert('Erro ao adicionar título à lista. Tente novamente.');
-            }
-          } else {
-            setEditingRel(v => !v);
-          }
-        }}
+  if (await createEntryIfNeeded()) {
+    setEditingRel(v => !v);
+  }
+}}
         style={{marginLeft:'auto', background:editingRel?'#e53e3e':'rgba(230,125,153,.18)', color:editingRel?'white':ACCENT, border:`1px solid ${editingRel?'#e53e3e':ACCENT}`, borderRadius:3, padding:'3px 10px', fontSize:11, cursor:'pointer', fontWeight:700}}
       >
         {editingRel ? 'Cancelar' : 'Editar'}
       </button>
       {editingRel && (
         <button
-          onClick={async () => {
-            if (!entry) {
-              if (!createTmdbId) { alert('Erro: ID do título não encontrado.'); return; }
-              const addRes = await fetch('/api/add-media', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  tmdbId: createTmdbId,
-                  parentTmdbId: isTV ? showId : null,
-                  seasonNumber: isTV ? seasonNumber : null,
-                  type: isTV ? 'TV_SEASON' : 'MOVIE',
-                  title: displayTitle,
-                  poster_path: rawPosterPath,
-                  totalEpisodes: episodeCount ?? null,
-                }),
-              });
-              if (addRes.ok) {
-                const newEntry = await addRes.json();
-                setEntry(newEntry);
-                setShowAddRel(true);
-              } else {
-                alert('Erro ao adicionar título à lista. Tente novamente.');
-              }
-            } else {
-              setShowAddRel(true);
-            }
-          }}
+onClick={async () => {
+  if (await createEntryIfNeeded()) {
+    setShowAddRel(true);
+  }
+}}
           style={{background:'#2ecc71', color:'white', border:'none', borderRadius:3, padding:'3px 10px', fontSize:11, cursor:'pointer', fontWeight:700}}
         >
           + Adicionar

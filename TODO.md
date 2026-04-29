@@ -1,4 +1,4 @@
-# 🔧 HADES - Correções e Melhorias Pendentes
+# 🔧 HADES - Correções, Features e Melhorias Pendentes
 
 > **📌 Instruções para IA / Desenvolvedor**
 > - Leia todo o contexto antes de começar.
@@ -37,722 +37,506 @@ src/
 │       ├── entries/[id]/route.ts         ← PATCH/DELETE entry específica
 │       ├── entry/[id]/route.ts           ← GET por slug
 │       ├── entry/by-slug/[slug]/route.ts ← GET por slug custom
+│       ├── notifications/route.ts        ← GET notificações [NOVO]
 │       ├── profile/route.ts              ← GET/PATCH perfil
 │       ├── relations/route.ts            ← GET/POST/DELETE/PATCH relações
 │       ├── update-entry/route.ts         ← POST atualizar (com customImage)
 │       └── refresh-all/route.ts          ← POST sincronizar todos dados
 ├── components/
-│   └── ListEditor.tsx                    ← Modal de edição (usado em 2 páginas)
+│   ├── ListEditor.tsx                    ← Modal de edição (usado em 2 páginas)
+│   └── NotificationPanel.tsx            ← Painel de notificações [NOVO]
 └── lib/
     ├── prisma.ts                         ← Cliente Prisma singleton
     ├── tmdb.ts                           ← Fetching com retry automático
     ├── tmdb-titles.ts                    ← Busca especializada de títulos
     ├── tmdb-airing.ts                    ← Status de episódios
+    ├── notifications.ts                  ← Lógica de notificações [NOVO]
     ├── relations-manager.ts              ← Gerenciamento de relações
     └── utils.ts                          ← Helpers: getOrdinal, buildSeasonTitle, formatScore
 ```
 
 ---
 
-## 🐛 BUGS E ERROS — P1 (CRÍTICOS)
+## 🐛 BUGS ATIVOS — P1 (CRÍTICOS)
 
 ---
 
-### ✅ P1 · #1 — Relações: adicionar apaga as automáticas e não persiste após F5
+### 🔴 P1 · #1 — profile/page.tsx: reload ao voltar da página (comportamento de F5)
 
 - **Prioridade:** P1 — CRÍTICO
-- **Status:** ⏳ Pendente
+- **Arquivo:** `src/app/profile/page.tsx`
+- **Estimativa:** 1–2h
+
+#### Descrição
+
+Ao sair da página `/profile` para qualquer outra rota (ex: `/search`) e depois voltar, o perfil recarrega completamente como se um F5 tivesse sido disparado. Isso causa perda de estado local, animações reiniciadas e uma experiência de navegação brusca. O problema não ocorre em outras páginas (ex: `/search`, `/titles`).
+
+#### Causa Provável
+
+Uso de `useEffect` com dependência que força recarga desnecessária, como um `visibilitychange` ou `focus` que chama `load()` sem verificar se os dados realmente mudaram. Também pode ser efeito colateral do `router.push` com `reload` implícito.
+
+#### Solução Esperada
+
+Remover ou modificar o listener de visibilidade/foco que recarrega os dados ao reentrar na página. Em vez disso, confiar apenas no carregamento inicial e em atualizações via API quando houver mudanças concretas (ex: salvar uma entrada). Manter o estado `entries` para evitar refetch desnecessário.
+
+#### Critério de Aceitação
+
+- [ ] Navegar para outra página e voltar ao perfil **não** deve disparar nenhum `fetch('/api/entries')` ou `fetch('/api/profile')` a menos que os dados tenham sido explicitamente modificados em outra aba.
+
+---
+
+### 🔴 P1 · #2 — profile/page.tsx: Recent Activity desaparece após F5 ou saída da página
+
+- **Prioridade:** P1 — CRÍTICO
+- **Arquivo:** `src/app/profile/page.tsx`
+- **Estimativa:** 2–4h
+
+#### Descrição
+
+A aba "Recent Activity" (dentro do Overview) perde todas as entradas ao recarregar a página (F5) ou ao sair e voltar para o perfil. As atividades que foram geradas durante a sessão somem como se nunca tivessem sido registradas. O problema não afeta outras partes do perfil (listas, favoritos, estatísticas).
+
+#### Causa Provável
+
+O `activityLog` é mantido apenas em memória (`useState`) e não é persistido em `localStorage` ou no banco de dados. Ao recarregar a página, o estado é reiniciado, e nenhuma atividade é carregada de uma fonte persistente.
+
+#### Solução Esperada
+
+1. Persistir `activityLog` no `localStorage` a cada atualização e recarregar do `localStorage` na inicialização.
+2. (Alternativa mais robusta) Criar uma tabela `Activity` no banco de dados e gravar cada ação (via API) para que as atividades persistam entre sessões e dispositivos.
+3. Verificar o código mais antigo salvo no GitHub para resgatar a implementação original que já persistia as atividades corretamente (se existia).
+
+#### Critério de Aceitação
+
+- [ ] Após F5, as atividades geradas antes do recarregamento continuam visíveis.
+- [ ] Sair do perfil e voltar mantém as atividades da sessão anterior.
+- [ ] Atividades não somem mais ao navegar entre abas/rotas.
+
+---
+
+### 🔴 P1 · #3 — profile/page.tsx: label "Watched" deve exibir somente contagem (0/1 ou 1)
+
+- **Prioridade:** P1 — CRÍTICO
+- **Arquivo:** `src/app/profile/page.tsx`
+- **Estimativa:** 30min
+
+#### Descrição
+
+Nos cards ou na listagem do profile, o label "Watched" deve ser substituído por uma exibição numérica simples: `0` se o título ainda não foi completado, `1` se foi. Sem texto "Watched", apenas o número.
+
+#### Solução Esperada
+
+```typescript
+// ANTES:
+<span>{entry.status === 'COMPLETED' ? 'Watched' : 'Not Watched'}</span>
+
+// DEPOIS:
+<span style={{ fontVariantNumeric: 'tabular-nums' }}>
+  {entry.status === 'COMPLETED' ? '1' : '0'}
+</span>
+```
+
+Para filmes (type: MOVIE), o valor máximo é sempre `1`. Para séries, pode-se manter `episodesWatched/totalEpisodes` ou simplificar para `0/1` baseado no status da temporada.
+
+#### Critério de Aceitação
+
+- [ ] Label "Watched" não aparece mais nos cards do profile.
+- [ ] Filmes completados exibem `1`; os demais exibem `0/1`.
+- [ ] Sem quebra de layout nos cards.
+
+---
+
+## ✨ FEATURES NOVAS
+
+---
+
+### 🚀 FEAT · #F1 — app/page.tsx: Seção "In Progress" na sidebar
+
+- **Prioridade:** P2
+- **Arquivo:** `src/app/page.tsx`
+- **Estimativa:** 2–3h
+
+#### Descrição
+
+Adicionar uma nova seção na coluna direita da Home, abaixo de "Airing Now", chamada **"In Progress"**. Ela deve listar tanto **filmes** quanto **séries** que o usuário está atualmente assistindo (status `WATCHING`).
+
+#### Ideia de Implementação
+
+```typescript
+// getHomeData() — buscar entries WATCHING de qualquer tipo
+const inProgress = await prisma.entry.findMany({
+  where: { status: 'WATCHING' },
+  orderBy: { updatedAt: 'desc' },
+  take: 6,
+});
+```
+
+O card deve exibir:
+- Poster do título
+- Título
+- Progresso atual: para séries `Ep X/Total`, para filmes uma barra de progresso (se houver minutagem registrada) ou apenas o ícone de "em andamento"
+- Badge de tipo: 🎬 Filme ou 📺 Série
+
+Layout: grid 2 colunas, igual ao "Airing Now", com o mesmo visual de `airing-card`.
+
+#### Critério de Aceitação
+
+- [ ] Seção "In Progress" aparece abaixo de "Airing Now" na sidebar direita.
+- [ ] Lista filmes e séries com status WATCHING.
+- [ ] Exibe progresso quando disponível.
+- [ ] Máximo de 6 itens, ordenados por `updatedAt` decrescente.
+- [ ] Link funcional para `/titles/[slug]`.
+
+---
+
+### 🚀 FEAT · #F2 — app/layout.tsx: Ícone de notificações (sino) com painel
+
+- **Prioridade:** P2
+- **Arquivos:** `src/app/layout.tsx`, `src/components/NotificationPanel.tsx` (novo), `src/app/api/notifications/route.ts` (novo), `src/lib/notifications.ts` (novo)
+- **Estimativa:** 6–10h
+
+#### Descrição
+
+Adicionar na navbar, ao lado do ícone de perfil, um **ícone de sino** que ao ser clicado abre um painel lateral/dropdown de notificações. As notificações são geradas automaticamente consultando a API do TMDB com base na biblioteca do usuário.
+
+#### Tipos de Notificação
+
+**Tipo 1 — Novo episódio de série que estou assistindo:**
+```
+🎬 Episódio 5 de "The Bear" saiu!
+```
+- Condição: entry com `status = WATCHING` e `type = TV_SEASON`; TMDB retorna `next_episode_to_air` com `air_date <= hoje`
+
+**Tipo 2 — Estreia de filme ou temporada na minha lista:**
+```
+🎉 "Dune: Part Three" estreiou hoje!
+```
+- Condição: entry com `status = PLAN_TO_WATCH`; `release_date` ou `first_air_date` == hoje
+
+**Tipo 3 — Novo título relacionado adicionado ao TMDB:**
+```
+✨ "Severance Season 3" foi recém adicionado ao site!
+```
+- Condição: qualquer título nas listas do usuário tem um `similar` ou `recommendation` no TMDB que foi adicionado/descoberto recentemente (verificar via `/movie/changes` ou `/tv/changes`)
+
+#### Arquitetura Sugerida
+
+```typescript
+// src/lib/notifications.ts
+export interface Notification {
+  id: string;
+  type: 'NEW_EPISODE' | 'PREMIERE' | 'RELATED_ADDED';
+  title: string;
+  message: string;
+  tmdbId: number;
+  mediaType: 'movie' | 'tv';
+  createdAt: string;
+  read: boolean;
+  slug: string;
+}
+
+export async function generateNotifications(userId: string): Promise<Notification[]>
+```
+
+```typescript
+// src/app/api/notifications/route.ts
+// GET — retorna notificações não lidas
+// POST — marca como lida ({ id })
+```
+
+```typescript
+// src/components/NotificationPanel.tsx
+// Dropdown com lista de Notification[]
+// Badge vermelho no sino com contagem de não lidas
+// Cada notificação clicável leva ao título
+// Botão "Mark all as read"
+```
+
+#### Estratégia de Cache
+
+As notificações devem ser **geradas no servidor** e cacheadas por 30–60 minutos (`revalidate: 1800`) para não sobrecarregar a API do TMDB a cada clique.
+
+#### Critério de Aceitação
+
+- [ ] Ícone de sino aparece na navbar ao lado do perfil.
+- [ ] Badge vermelho com contagem de não lidas aparece quando há notificações.
+- [ ] Ao clicar, abre painel com lista de notificações.
+- [ ] Notificação de novo episódio aparece quando série WATCHING tem episódio recente.
+- [ ] Notificação de estreia aparece quando título da lista estreia hoje.
+- [ ] Notificação de relacionado aparece quando novo título semelhante é adicionado ao TMDB.
+- [ ] Clicar numa notificação navega para o título correto.
+- [ ] "Mark all as read" limpa o badge.
+- [ ] Painel fecha ao clicar fora.
+
+---
+
+### 🚀 FEAT · #F3 — search/page.tsx: Filtros avançados estilo AniList
+
+- **Prioridade:** P2
+- **Arquivo:** `src/app/search/page.tsx`
 - **Estimativa:** 4–6h
 
 #### Descrição
 
-Ao adicionar uma relação manualmente na página de detalhe de um título:
+Expandir o sistema de filtros da busca para ser muito mais robusto e granular, inspirado na interface de filtros do AniList Browser. Os filtros devem ser combinados (AND) e aplicados em tempo real ou via botão "Apply".
 
-1. As relações automáticas (vindas do TMDB via `getAutoRelations`) desaparecem imediatamente da UI.
-2. Após pressionar F5, a relação manual também some (não persiste visualmente mesmo estando salva no banco).
+#### Novos Filtros a Adicionar
 
-A tabela `Relation` já existe no schema Prisma e a API (`/api/relations`) está funcional. O problema está **inteiramente na gestão de estado e no `useEffect` da página de detalhe**.
+| Filtro | Tipo | Fonte |
+|--------|------|-------|
+| Gênero | Multi-select (chips) | TMDB `/genre/movie/list` e `/genre/tv/list` |
+| Ano de lançamento | Range slider (ex: 1990–2024) | Campo `release_date` / `first_air_date` |
+| Score mínimo | Slider (0–10) | Campo `vote_average` |
+| Status | Select (Em andamento / Finalizada / Cancelada) | Campo `status` TMDB |
+| Número de temporadas | Range (mín/máx) | Campo `number_of_seasons` |
+| Duração do episódio | Range em minutos | Campo `episode_run_time` |
+| País de origem | Select com busca | Campo `origin_country` |
+| Idioma original | Select com busca | Campo `original_language` |
+| Plataforma de streaming | Multi-select | TMDB `/watch/providers` |
+| Ordenação | Select (Popularidade, Score, Data, A-Z) | `sort_by` no `/discover` |
+| Formato (apenas filmes) | Select (Feature Film / Short / Documentary) | — |
 
-#### Causa Raiz (verificada na análise)
+#### Layout Sugerido (estilo AniList)
 
-**Problema 1 — Estado único sobrescrevendo tudo:**
-
-```typescript
-// src/app/titles/[id]/page.tsx (linhas ~1800–1850)
-useEffect(() => {
-  const loadRelations = async () => {
-    const saved = await fetchSavedRelations(entryId);
-    const auto  = await getAutoRelations(tmdbId, isTV, fetchResult);
-    const combined = await getCombinedRelations(saved, auto);
-    setRelations(combined.all); // ← Um único array substitui tudo
-  };
-  loadRelations();
-}, [entryId]);
+```
+[Gênero: Action, Drama ×]  [Ano: 2015–2024]  [Score: ≥7.5]  [Status: Returning]
+[Plataforma: Netflix, HBO]  [País: US, JP]  [Ordenar por: Popularidade ▼]
+                                                              [Clear Filters] [Apply]
 ```
 
-Se `getAutoRelations()` falha (timeout, erro TMDB), retorna `[]` e `combined.all` fica apenas com as salvas (ou vazio). O F5 reexecuta esse fluxo, descartando o que estava visível.
+Filtros selecionados aparecem como **chips removíveis** no topo, com botão "Clear All".
 
-**Problema 2 — `addRelation()` não isola o estado salvo:**
+#### Integração com `/discover`
 
-```typescript
-// Linha ~1613 ou ~1646
-const newRelation = await saveRelation(relation);
-setRelations(prev => [...prev, newRelation]); // ← Adiciona ao array geral
-// Mas no próximo reload, useEffect sobrescreve tudo novamente
-```
-
-**Problema 3 — Chamada dupla desnecessária a `/api/relations`:**
-
-A rota GET `/api/relations` é chamada 2x (linhas ~1210 e ~1317), desperdiçando banda e aumentando chance de race condition.
-
-#### Arquivos Envolvidos
-
-| Arquivo | Linhas Aproximadas | O que alterar |
-|---|---|---|
-| `src/app/titles/[id]/page.tsx` | 1800–1850 | Separar estados; corrigir `useEffect` |
-| `src/app/titles/[id]/page.tsx` | ~1613, ~1646 | Corrigir `addRelation` e `removeRelation` |
-| `src/app/titles/[id]/page.tsx` | ~1210, ~1317 | Eliminar chamada dupla ao GET relations |
-| `src/lib/relations-manager.ts` | `getCombinedRelations()` | Garantir merge correto sem duplicatas |
-| `src/lib/tmdb-titles.ts` | `getAutoRelations()` | Garantir fallback sem retornar erro silencioso |
-| `src/app/api/relations/route.ts` | POST, DELETE, GET | Verificar se handlers respondem corretamente |
-
-#### Solução Esperada (passo a passo)
-
-**Passo 1 — Separar os dois estados:**
+Ao aplicar filtros, substituir a busca textual pelo endpoint `/discover/movie` ou `/discover/tv` com os parâmetros correspondentes:
 
 ```typescript
-// titles/[id]/page.tsx
-const [savedRelations, setSavedRelations] = useState<SavedRelation[]>([]);
-const [autoRelations,  setAutoRelations]  = useState<AutoRelation[]>([]);
-
-// Derivado: nunca um estado único sobrescrevendo o outro
-const allRelations = useMemo(
-  () => [...savedRelations, ...autoRelations],
-  [savedRelations, autoRelations]
-);
-```
-
-**Passo 2 — Corrigir o `useEffect` para não sobrescrever em caso de falha:**
-
-```typescript
-useEffect(() => {
-  const loadRelations = async () => {
-    // Salvas: sempre busca do banco
-    const saved = await fetchSavedRelations(entryId);
-    setSavedRelations(saved);
-
-    // Auto: tenta buscar; falha não apaga as salvas
-    try {
-      const auto = await getAutoRelations(tmdbId, isTV, fetchResult);
-      setAutoRelations(auto);
-    } catch (err) {
-      console.warn('[titles] Falha ao carregar relações automáticas:', err);
-      // Estado anterior de autoRelations permanece intacto
-    }
-  };
-  loadRelations();
-}, [entryId]);
-```
-
-**Passo 3 — Corrigir `addRelation`:**
-
-```typescript
-const addRelation = async (relation: NewRelation) => {
-  const newRelation = await saveRelation(relation); // POST /api/relations
-  if (newRelation) {
-    setSavedRelations(prev => [...prev, newRelation]); // Apenas salvas
-    // Auto relations não são tocadas
-  }
-};
-```
-
-**Passo 4 — Corrigir `removeRelation`:**
-
-```typescript
-const removeRelation = async (targetTmdbId: number) => {
-  await fetch(`/api/relations?sourceId=${entryId}&targetTmdbId=${targetTmdbId}`, {
-    method: 'DELETE'
-  });
-  setSavedRelations(prev => prev.filter(r => r.targetTmdbId !== targetTmdbId));
-  // Auto relations não são tocadas
-};
-```
-
-**Passo 5 — Eliminar chamada GET duplicada:**
-
-Cachear o resultado da primeira chamada a `/api/relations` e reusar. Remover a segunda ocorrência (linha ~1317).
-
-#### Critério de Aceitação
-
-- [ ] Relações automáticas (TMDB) e manuais convivem lado a lado na UI.
-- [ ] Adicionar uma relação não remove as demais.
-- [ ] Após F5, relações automáticas recarregam do TMDB e manuais persistem do banco.
-- [ ] Remover uma relação manual remove apenas ela.
-- [ ] Falha no TMDB ao buscar auto-relations não apaga as salvas.
-
-#### Teste Manual
-
-1. Acessar `/titles/movie-550` (Fight Club — tem coleção e recomendações automáticas).
-2. Anotar quantas relações automáticas estão visíveis.
-3. Adicionar uma relação manual (ex: SEQUEL para outro filme). Confirmar que as automáticas **não desapareceram**.
-4. Pressionar F5. Confirmar que tanto as automáticas quanto a manual continuam visíveis.
-5. Remover a relação manual. Confirmar que apenas ela sumiu.
-6. Pressionar F5 novamente. Confirmar que automáticas voltaram e manual não está mais lá.
-
----
-
-## 🐛 BUGS E ERROS — P2 (IMPORTANTES)
-
----
-
-### ✅ P2 · #2 — "Popular Now" exibe séries finalizadas
-
-- **Prioridade:** P2 — IMPORTANTE
-- **Status:** ⏳ Pendente
-- **Estimativa:** 1–2h
-
-#### Descrição
-
-Na seção "Popular Now" (aba TV Shows em `/search`), séries que já foram encerradas continuam aparecendo, mesmo sem estar mais no ar.
-
-#### Causa Raiz (verificada na análise)
-
-**Em `src/app/search/page.tsx` (linhas ~295–315), função `expandLatest()`:**
-
-```typescript
-async function expandLatest(shows: RawShow[]) {
-  const cards = await Promise.all(shows.slice(0, 6).map(async show => {
-    const seasons = await expandShow(show, false);
-    if (!seasons.length) return null;
-    const sorted = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
-    const airingSeasons = sorted.filter(s => s.seasonStatus === 'Airing');
-    if (airingSeasons.length === 0) return null; // ✅ Descarta corretamente
-    // ...
-  }));
-}
-```
-
-O problema está em `expandShow()` (linhas ~100–125): quando `in_production === false`, a função retorna `[]` **para qualquer tipo de busca**, inclusive buscas textuais. Isso é correto para "Popular Now", mas **incorreto para busca textual** (ver BUG #3).
-
-O filtro de `Popular Now` funciona, mas pode ser complementado: séries recentemente encerradas que o TMDB ainda entrega via `/tv/on_the_air` às vezes escapam.
-
-#### Arquivos Envolvidos
-
-| Arquivo | Linhas Aproximadas | O que alterar |
-|---|---|---|
-| `src/app/search/page.tsx` | ~295–315 | Função `expandLatest()` |
-| `src/app/search/page.tsx` | ~100–125 | Função `expandShow()` — adicionar parâmetro `includeFinished` |
-
-#### Solução Esperada
-
-Adicionar verificação explícita na `expandLatest()` usando o campo `in_production` **antes** de chamar `expandShow()`, adicionando um filtro adicional por `air_date` da última temporada:
-
-```typescript
-// Adicionar na expandLatest():
-const today = new Date().toISOString().split('T')[0];
-
-// Filtro extra: só processar shows que ainda estão em produção
-// ou cuja última temporada tenha air_date nos últimos 60 dias / futuro
-const activeShows = shows.filter(show => {
-  return show.in_production === true;
-  // Alternativa mais robusta: verificar last_air_date
+const params = new URLSearchParams({
+  api_key: apiKey,
+  sort_by: sortBy,
+  'vote_average.gte': minScore,
+  'first_air_date.gte': `${yearMin}-01-01`,
+  'first_air_date.lte': `${yearMax}-12-31`,
+  with_genres: selectedGenres.join(','),
+  with_watch_providers: selectedProviders.join('|'),
+  watch_region: 'US',
+  // ...
 });
-const cards = await Promise.all(activeShows.slice(0, 6).map(...));
 ```
 
 #### Critério de Aceitação
 
-- [ ] "Popular Now" exibe somente séries com `in_production === true`.
-- [ ] Séries como "Breaking Bad" ou "Game of Thrones" **não** aparecem em "Popular Now".
-- [ ] Séries como "The Bear" ou outras ativas **aparecem** normalmente.
-
-#### Teste Manual
-
-1. Abrir `/search?tab=tv`.
-2. Localizar a seção "Popular Now".
-3. Verificar que nenhuma série conhecida como encerrada (Breaking Bad, Avatar 2005, etc.) está na lista.
-
----
-
-### ✅ P2 · #3 — Buscas textuais não retornam séries finalizadas
-
-- **Prioridade:** P2 — IMPORTANTE
-- **Status:** ⏳ Pendente
-- **Estimativa:** 1–2h
-- **Dependência:** Relacionado ao BUG #2 — mesma função `expandShow()` envolvida
-
-#### Descrição
-
-Ao pesquisar por séries conhecidas e encerradas ("Avatar: The Last Airbender", "Breaking Bad", "Friends"), os resultados não aparecem ou aparecem incompletos.
-
-#### Causa Raiz (verificada na análise)
-
-**Em `src/app/search/page.tsx` (linhas ~570–585), função `handleTextSearch()`:**
-
-```typescript
-const handleTextSearch = async () => {
-  // ...
-  if (mediaType === 'tv') {
-    const expanded = await Promise.all(
-      (data.results ?? []).map((show: RawShow) => expandShow(show, false))
-      //                                                              ↑
-      //  expandShow() checa in_production — séries finalizadas retornam []
-    );
-    let allCards: MediaCard[] = expanded.flat(); // ← Avatar vira [] e some
-    setResults(allCards);
-  }
-};
-```
-
-**Em `expandShow()` (linhas ~100–125):**
-
-```typescript
-if (!detail.in_production) return []; // ← BLOQUEIA SÉRIES FINALIZADAS NA BUSCA
-```
-
-Este filtro faz sentido para "Popular Now", mas não para buscas textuais onde o usuário quer ver a série independente do status.
-
-#### Arquivos Envolvidos
-
-| Arquivo | Linhas Aproximadas | O que alterar |
-|---|---|---|
-| `src/app/search/page.tsx` | ~100–125 | Função `expandShow()` — adicionar parâmetro |
-| `src/app/search/page.tsx` | ~570–585 | Função `handleTextSearch()` — passar `includeFinished = true` |
-
-#### Solução Esperada
-
-**Passo 1 — Adicionar parâmetro `includeFinished` em `expandShow()`:**
-
-```typescript
-async function expandShow(show: RawShow, includeSpecials = false, onlyInProduction = false): Promise<MediaCard[]> {
-  try {
-    const [res, resEn] = await Promise.all([
-      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
-      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
-    ]);
-    if (!res.ok) return [];
-    const detail   = await res.json();
-    // Só descarta série finalizada se for seção que exige produção ativa (ex: Popular Now)
-    if (onlyInProduction && !detail.in_production) return [];
-
-  // Para buscas normais: inclui tudo
-  // ...
-}
-```
-
-**Passo 2 — Atualizar chamadas:**
-
-```typescript
-// Em handleTextSearch() — busca textual: incluir finalizadas
-expandShow(show, false, true)  // includeFinished = true
-
-// Em expandLatest() — seção "Popular Now": excluir finalizadas
-expandShow(show, false, false) // includeFinished = false
-```
-
-#### Critério de Aceitação
-
-- [ ] Buscar "Avatar: The Last Airbender" retorna a série nos resultados.
-- [ ] Buscar "Breaking Bad" retorna a série.
-- [ ] Buscar "Friends" retorna a série.
-- [ ] Seção "Popular Now" continua mostrando apenas séries ativas (não regrediu).
-
-#### Teste Manual
-
-1. Abrir `/search?tab=tv`.
-2. Digitar "Avatar: The Last Airbender" → deve aparecer.
-3. Digitar "Breaking Bad" → deve aparecer.
-4. Verificar que "Popular Now" ainda não exibe séries encerradas.
+- [ ] Painel de filtros expandível (não ocupa espaço quando fechado).
+- [ ] Multi-select de gêneros com chips visuais.
+- [ ] Range de ano funcional.
+- [ ] Filtro de score mínimo funcional.
+- [ ] Filtros combinados funcionam corretamente via `/discover`.
+- [ ] Chips de filtros ativos aparecem no topo com botão de remoção individual.
+- [ ] "Clear All" remove todos os filtros.
+- [ ] Sem regressão na busca textual simples.
 
 ---
 
-### ✅ P2 · #4 — ListEditor não atualiza a UI de resultados após salvar (Search)
-
-- **Prioridade:** P2 — IMPORTANTE
-- **Status:** ⏳ Pendente
-- **Estimativa:** 1–2h
-
-#### Descrição
-
-Ao salvar uma entrada via ListEditor modal na página `/search`, o modal fecha mas os cards de resultado **não são atualizados**. O usuário não recebe nenhum feedback visual de que a entrada foi salva com sucesso.
-
-#### Causa Raiz (verificada na análise)
-
-**Em `src/app/search/page.tsx` (linhas ~840–850):**
-
-```typescript
-const openEditor = () => {
-  setEditorData({...});
-  setEditorOpen(true);
-};
-
-// O modal só fecha; não há callback de sucesso:
-<ListEditor
-  onClose={() => setEditorOpen(false)}
-  // ← Falta: onSave={(entry) => handleEditorSave(entry)}
-/>
-```
-
-#### Arquivos Envolvidos
-
-| Arquivo | Linhas Aproximadas | O que alterar |
-|---|---|---|
-| `src/app/search/page.tsx` | ~840–870 | Adicionar `handleEditorSave` callback |
-| `src/components/ListEditor.tsx` | — | Verificar se já expõe `onSave` prop; adicionar se necessário |
-
-#### Solução Esperada
-
-```typescript
-// Em search/page.tsx — criar callback de save:
-const handleEditorSave = (savedEntry: Entry) => {
-  setResults(prev => prev.map(card => {
-    if (card.tmdbId === savedEntry.tmdbId) {
-      return {
-        ...card,
-        entryId: savedEntry.id,
-        status: savedEntry.status,
-        score: savedEntry.score,
-        progress: savedEntry.progress,
-      };
-    }
-    return card;
-  }));
-  setEditorOpen(false);
-};
-
-// Passar para o modal:
-<ListEditor
-  onClose={() => setEditorOpen(false)}
-  onSave={handleEditorSave}  // ← Novo
-/>
-```
-
-Verificar se `ListEditor.tsx` já suporta `onSave` prop. Caso não, adicionar o callback após a chamada bem-sucedida da API.
-
-#### Critério de Aceitação
-
-- [ ] Após salvar via ListEditor em `/search`, o card correspondente atualiza visualmente (ex: ícone de status, nota).
-- [ ] O modal fecha normalmente após salvar.
-- [ ] Sem reload de página.
-
-#### Teste Manual
-
-1. Abrir `/search`, buscar "Inception".
-2. Clicar no ícone de edição (✎) do card.
-3. Definir status "WATCHED", score "9.0".
-4. Salvar.
-5. Confirmar que o card atualiza com o novo status visualmente, sem precisar de F5.
+## 🎨 MELHORIAS DE DESIGN
 
 ---
 
-### ✅ P2 · #5 — Score multiplicado por 10 no ListEditor (dados corrompidos)
+### 🎨 DESIGN · #D1 — profile/page.tsx: Redesign de Favoritos, Overview, Stats e Tabs
 
-- **Prioridade:** P2 — IMPORTANTE (dados corrompidos no banco)
-- **Status:** ⏳ Pendente
-- **Estimativa:** 30min–1h
+- **Prioridade:** P2
+- **Arquivo:** `src/app/profile/page.tsx`
+- **Estimativa:** 6–10h
 
-#### Descrição
-
-O score enviado via `ListEditor` é multiplicado por 10 antes de ser enviado à API, mas na página `titles/[id]` o score é enviado diretamente como decimal. A API armazena ambos como recebidos, gerando dados inconsistentes no banco.
-
-Exemplos de impacto:
-- Nota "8.0" salva via ListEditor → banco armazena `80`
-- Nota "8.0" salva via titles/[id] → banco armazena `8.0`
-- Exibição fica incoerente
-
-#### Causa Raiz (verificada na análise)
-
-**Em `src/components/ListEditor.tsx` (linha 271):**
-```typescript
-score: score > 0 ? Math.round(score * 10) : 0  // ← MULTIPLICA POR 10 (errado)
-```
-
-**Em `src/app/titles/[id]/page.tsx` (linha ~828):**
-```typescript
-score,  // ← DECIMAL DIRETO (correto)
-```
-
-**Em `src/app/api/entries/[id]/route.ts` (linha ~26):**
-```typescript
-// Espera decimal 0.0–10.0 (correto)
-const scoreNum = typeof body.score === 'number' ? body.score : parseFloat(body.score);
-```
-
-#### Arquivos Envolvidos
-
-| Arquivo | Linha | O que alterar |
-|---|---|---|
-| `src/components/ListEditor.tsx` | 271 | Remover `Math.round(score * 10)` → usar `score` direto |
-| `src/app/titles/[id]/page.tsx` | ~828 | Confirmar que já envia decimal (não alterar) |
-| `src/app/api/entries/[id]/route.ts` | ~26 | Confirmar que aceita decimal (não alterar) |
-
-#### Solução Esperada
-
-```typescript
-// ListEditor.tsx linha 271 — ANTES:
-score: score > 0 ? Math.round(score * 10) : 0,
-
-// DEPOIS:
-score: score > 0 ? score : 0,
-```
-
-> ⚠️ **Atenção:** Verificar se há entradas antigas no banco com score > 10 (fruto da multiplicação). Se houver, executar uma migration de dados para dividir esses valores por 10.
-
-#### Critério de Aceitação
-
-- [ ] Score "7.3" salvo via ListEditor é armazenado como `7.3` no banco.
-- [ ] Score salvo via `titles/[id]` também é `7.3`.
-- [ ] Exibição é consistente entre as duas formas de edição.
-- [ ] Nenhum valor de score > 10 é inserido no banco.
-
-#### Teste Manual
-
-1. Ir a `/profile?tab=films`, editar uma entrada e definir score "7.3" via ListEditor.
-2. Salvar.
-3. Acessar a rota `/titles/[id]` desse mesmo título.
-4. Abrir o editor novamente e verificar que o score exibido é "7.3" (não "73").
-5. Alterar para "8.0" via `titles/[id]`, salvar, e confirmar persistência.
+> ⚠️ **Preservar sem alteração:** cards das listas (SeriesList, FilmList), banner do perfil, avatar/ícone do usuário. Alterar apenas as partes descritas abaixo.
 
 ---
 
-### ✅ P2 · #6 — `update-entry/route.ts` usa tmdbId como ID do banco (possível crash)
+#### D1.1 — Tabs de Navegação (Overview / Series List / Film List / Favourites / Stats)
 
-- **Prioridade:** P2 — IMPORTANTE (pode causar falha silenciosa)
-- **Status:** ⏳ Pendente
-- **Estimativa:** 30min
-
-#### Descrição
-
-Em `/api/update-entry/route.ts`, o `entryId` recebido é tratado como um número inteiro (tmdbId), mas os IDs do banco são CUIDs (strings UUID). Se um CUID for passado, `parseInt()` retorna `0` ou `NaN`, quebrando a operação silenciosamente.
-
-#### Causa Raiz (verificada na análise)
-
-**Em `src/app/api/update-entry/route.ts` (linha ~33):**
-
-```typescript
-const payload = {
-  tmdbId: parseInt(entryId, 10) || 0,  // ← ERRADO se entryId for CUID
-};
-```
-
-**Schema Prisma:**
-```prisma
-model Entry {
-  id     String @id @default(cuid())  // ← CUID (string)
-  tmdbId Int    @unique               // ← TMDB ID (número)
-}
-```
-
-#### Arquivos Envolvidos
-
-| Arquivo | Linha | O que alterar |
-|---|---|---|
-| `src/app/api/update-entry/route.ts` | ~33 | Usar `id` (CUID) diretamente em vez de `parseInt` |
-
-#### Solução Esperada
-
-```typescript
-// ANTES:
-const payload = { tmdbId: parseInt(entryId, 10) || 0 };
-await prisma.entry.update({ where: { tmdbId: payload.tmdbId }, data: ... });
-
-// DEPOIS:
-// Se entryId é o CUID da DB:
-await prisma.entry.update({ where: { id: entryId }, data: ... });
-
-// Se entryId é o tmdbId numérico:
-await prisma.entry.update({ where: { tmdbId: parseInt(entryId, 10) }, data: ... });
-```
-
-Verificar qual tipo de ID é passado pelo cliente para definir o `where` correto.
-
-#### Critério de Aceitação
-
-- [ ] Chamada a `/api/update-entry` com um CUID válido atualiza a entrada corretamente.
-- [ ] Nenhum erro silencioso de `parseInt` em IDs string.
-
----
-
-## 🔧 MELHORIAS — P3 (NICE-TO-HAVE)
-
----
-
-### 🟢 P3 · #7 — Funções duplicadas: `imgUrl()` e `entrySlug()` em dois arquivos
-
-- **Prioridade:** P3
-- **Estimativa:** 30min
-
-#### Descrição
-
-As funções `imgUrl()` e `entrySlug()` existem duplicadas em `profile/page.tsx` e `search/page.tsx`. O código é idêntico em ambos os lugares.
-
-#### Arquivos Envolvidos
-
-| Arquivo | Linhas Aprox. | Ação |
-|---|---|---|
-| `src/app/profile/page.tsx` | ~92, ~99 | Remover funções locais, importar de utils |
-| `src/app/search/page.tsx` | ~135, ~140 | Remover funções locais, importar de utils |
-| `src/lib/utils.ts` | — | Adicionar e exportar `imgUrl()` e `entrySlug()` |
-
-#### Solução Esperada
-
-```typescript
-// src/lib/utils.ts — adicionar:
-export function imgUrl(path: string | null, size = 'w300'): string {
-  return path ? `https://image.tmdb.org/t/p/${size}${path}` : '';
-}
-
-export function entrySlug(type: 'movie' | 'tv', tmdbId: number, seasonNumber?: number): string {
-  return type === 'movie' ? `movie-${tmdbId}` : `tv-${tmdbId}-s${seasonNumber}`;
-}
-```
-
----
-
-### 🟢 P3 · #8 — Language inconsistente em `add-media/route.ts`
-
-- **Prioridade:** P3
-- **Estimativa:** 5min
-
-#### Descrição
-
-Em `src/app/api/add-media/route.ts` (linha ~105), uma busca de séries extras usa `language=pt-BR` quando deveria usar `language=en-US` para consistência com o restante.
-
-#### Arquivo Envolvido
-
-| Arquivo | Linha | O que alterar |
-|---|---|---|
-| `src/app/api/add-media/route.ts` | ~105 | Mudar `language=pt-BR` → `language=en-US` |
-
----
-
-### 🟢 P3 · #9 — Re-renderizações desnecessárias em `MediaCardComponent`
-
-- **Prioridade:** P3
-- **Estimativa:** 1–2h
-
-#### Descrição
-
-`MediaCardComponent` em `search/page.tsx` usa `useState` para hover, causando re-render do card inteiro a cada mouse event. Com 50 cards em grid, são 50 re-renders simultâneos por hover.
-
-#### Arquivos Envolvidos
-
-| Arquivo | O que alterar |
-|---|---|
-| `src/app/search/page.tsx` | Usar CSS `:hover` no lugar de `useState(hov)` |
-| `src/app/profile/page.tsx` | Mover inline styles de `EntryCard` para classes CSS |
-
-#### Solução Esperada
-
-Substituir `onMouseEnter/Leave` por CSS puro:
+**Objetivo:** Visual mais grego/elegante, com rosa como cor ativa.
 
 ```css
-/* Trocar lógica de hover JS por: */
-.media-card:hover .overlay { opacity: 1; }
+/* Tab ativa */
+.profile-tab.active {
+  color: rgb(232, 105, 144);               /* rosa já usado no projeto */
+  border-bottom: 2px solid rgb(232, 105, 144);
+  text-shadow: 0 0 12px rgba(232,105,144,0.4);
+}
+
+/* Tab inativa */
+.profile-tab {
+  color: rgba(220,210,215,0.5);
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+}
 ```
+
+Adicionar uma linha horizontal fina abaixo das tabs com gradiente `rgba(232,105,144,0.15)`.
 
 ---
 
-### 🟢 P3 · #10 — Lazy loading de imagens ausente
+#### D1.2 — Seção Overview: Estatísticas Rápidas
 
-- **Prioridade:** P3
-- **Estimativa:** 15min
+**Objetivo:** Cards de estatística animados com números que "contam" ao entrar na tela (CountUp animation).
 
-#### Descrição
-
-As tags `<img>` de posters em `search/page.tsx` e `profile/page.tsx` não possuem `loading="lazy"`, o que força o browser a carregar todas as imagens imediatamente, prejudicando o LCP (Largest Contentful Paint).
-
-#### Arquivos Envolvidos
-
-| Arquivo | Ação |
-|---|---|
-| `src/app/search/page.tsx` | Adicionar `loading="lazy"` em `<img>` de posters |
-| `src/app/profile/page.tsx` | Adicionar `loading="lazy"` em `<img>` de posters |
+Layout sugerido: 4 cards em linha horizontal
+```
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│   142        │ │   38         │ │   7.4        │ │   320h       │
+│  Titles      │ │  Completed   │ │  Avg Score   │ │  Watch Time  │
+└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+```
 
 ```typescript
-// ANTES:
-<img src={`https://image.tmdb.org/t/p/w300${item.poster_path}`} alt={displayTitle} />
-
-// DEPOIS:
-<img src={`https://image.tmdb.org/t/p/w300${item.poster_path}`} alt={displayTitle} loading="lazy" />
+// Animação CountUp
+function AnimatedNumber({ value }: { value: number }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    let start = 0;
+    const step = value / 40;
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= value) { setDisplay(value); clearInterval(timer); }
+      else setDisplay(Math.floor(start));
+    }, 20);
+    return () => clearInterval(timer);
+  }, [value]);
+  return <span>{display}</span>;
+}
 ```
 
----
-
-### 🟢 P3 · #11 — Extrair função `createEntry()` (dois POSTs similares)
-
-- **Prioridade:** P3
-- **Estimativa:** 30min
-
-#### Descrição
-
-Em `src/app/titles/[id]/page.tsx` existem dois blocos quase idênticos de `POST /api/add-media` (linhas ~1613 e ~1646). Devem ser extraídos para uma função reutilizável `createEntry()`.
-
-#### Arquivo Envolvido
-
-| Arquivo | Linhas | O que alterar |
-|---|---|---|
-| `src/app/titles/[id]/page.tsx` | ~1613, ~1646 | Extrair para função `createEntry(payload)` |
+Cards com borda sutil rosa (`border: 1px solid rgba(232,105,144,0.15)`) e micro-glow no hover.
 
 ---
 
-## 📊 RESUMO DE PRIORIDADES
+#### D1.3 — Seção Favourites
 
-| # | Issue | Prioridade | Arquivo Principal | Impacto | Esforço Est. |
-|---|-------|-----------|-------------------|---------|-------------|
-| 1 | Relações desaparecem após F5 / add apaga automáticas | **P1** | `titles/[id]/page.tsx` | Alto | 4–6h |
-| 2 | "Popular Now" exibe séries encerradas | **P2** | `search/page.tsx` | Médio | 1–2h |
-| 3 | Buscas textuais não retornam séries finalizadas | **P2** | `search/page.tsx` | Alto | 1–2h |
-| 4 | ListEditor não atualiza UI de resultados após salvar | **P2** | `search/page.tsx` | Médio | 1–2h |
-| 5 | Score multiplicado por 10 no ListEditor | **P2** | `ListEditor.tsx` | Alto | 30min |
-| 6 | `update-entry` usa tmdbId como ID do banco | **P2** | `update-entry/route.ts` | Médio | 30min |
-| 7 | Funções `imgUrl()` / `entrySlug()` duplicadas | **P3** | `utils.ts` | Baixo | 30min |
-| 8 | Language inconsistente em `add-media` | **P3** | `add-media/route.ts` | Baixo | 5min |
-| 9 | Re-renders desnecessários em MediaCard | **P3** | `search/page.tsx` | Baixo | 1–2h |
-| 10 | Lazy loading de imagens ausente | **P3** | múltiplos | Baixo | 15min |
-| 11 | Dois POSTs similares sem função reutilizável | **P3** | `titles/[id]/page.tsx` | Baixo | 30min |
+**Objetivo:** Grid de posters com animação de entrada em cascata (stagger) e hover elegante.
+
+- Layout: grid de 6 colunas (igual a outras seções do projeto)
+- Cada card tem animação `fadeInUp` com delay escalonado:
+
+```css
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fav-card:nth-child(1) { animation: fadeInUp 0.4s ease 0.05s both; }
+.fav-card:nth-child(2) { animation: fadeInUp 0.4s ease 0.10s both; }
+/* ... até nth-child(6) com delay 0.30s */
+```
+
+- Hover: `transform: scale(1.04)` + `box-shadow: 0 8px 24px rgba(232,105,144,0.2)` + overlay com ícone de coração rosa
+- Borda arredondada: `border-radius: 10px`
+- Remoção de favorito: botão de coração no hover com confirmação discreta
+
+---
+
+#### D1.4 — Seção Stats: Redesign completo com animações
+
+**Objetivo:** Aba de estatísticas visualmente deslumbrante com gráficos animados e estética elegante.
+
+**Componentes a incluir:**
+
+**a) Gráfico de Distribuição de Scores (barras verticais animadas):**
+```
+Score:  1  2  3  4  5  6  7  8  9  10
+Bars:   ▁  ▁  ▂  ▃  ▅  ▇  █  ▇  ▅  ▂
+```
+Barras crescem de baixo para cima com `scaleY` animation ao entrar na tela.
+Cor: gradiente rosa `rgb(232,105,144)` → `rgb(180,70,110)`.
+
+**b) Gêneros mais assistidos (barras horizontais animadas):**
+```
+Action    ████████████████░░░░  80%
+Drama     ████████████░░░░░░░░  60%
+Sci-Fi    ████████░░░░░░░░░░░░  40%
+```
+Barras preenchem da esquerda para direita com `scaleX` animation.
+
+**c) Atividade por mês (mini heatmap ou barras):**
+Grid de 12 meses com intensidade de cor baseada em títulos adicionados/completados.
+
+**d) Cards de recordes pessoais:**
+```
+┌──────────────────────┐  ┌──────────────────────┐
+│ 🏆 Highest Rated     │  │ 📅 Most Active Month  │
+│ The Wire — 10/10     │  │ March 2024 — 12 titles│
+└──────────────────────┘  └──────────────────────┘
+```
+
+**Estilo geral da aba Stats:**
+- Background de cada card: `rgb(48,44,44)` com borda `rgba(232,105,144,0.12)`
+- Títulos de seção: uppercase, `letter-spacing: 0.1em`, cor rosa
+- Número destacados: fonte maior, peso 800, cor `rgb(220,210,215)`
+- Separadores entre seções: linha com gradiente rosa
+
+#### Critério de Aceitação (D1 geral)
+
+- [ ] Tabs com visual grego/elegante; rosa como cor ativa.
+- [ ] Stats rápidos na Overview animam com CountUp ao carregar.
+- [ ] Favoritos entram com stagger animation; hover com glow rosa.
+- [ ] Aba Stats tem gráfico de distribuição de scores animado.
+- [ ] Aba Stats tem gêneros mais assistidos com barras animadas.
+- [ ] Cards e banner do perfil **não foram alterados**.
+- [ ] SeriesList e FilmList **não foram alteradas**.
+- [ ] Todas as animações respeitam `prefers-reduced-motion`.
+
+---
+
+## 📊 RESUMO DE PRIORIDADES ATUALIZADO
+
+| # | Issue / Feature | Tipo | Prioridade | Arquivo Principal | Impacto | Esforço |
+|---|-----------------|------|-----------|-------------------|---------|---------|
+| 1 | Relações desaparecem após F5 | Bug | **P1** | `titles/[id]/page.tsx` | Alto | 4–6h |
+| 2 | Trending TV: menos de 6 títulos | Bug | **P1** | `search/page.tsx` | Alto | 1–2h |
+| 3 | All Time Popular TV: loading infinito | Bug | **P1** | `search/page.tsx` | Alto | 1–3h |
+| 4 | ListEditor não conecta ao Activity | Bug | **P1** | `ListEditor.tsx` | Alto | 2–4h |
+| 5 | "Watched" → exibir 0/1 no profile | Bug | **P1** | `profile/page.tsx` | Médio | 30min |
+| 6 | Popular Now exibe séries encerradas | Bug | **P2** | `search/page.tsx` | Médio | 1–2h |
+| 7 | Busca textual exclui séries finalizadas | Bug | **P2** | `search/page.tsx` | Alto | 1–2h |
+| 8 | ListEditor sem feedback visual ao salvar | Bug | **P2** | `search/page.tsx` | Médio | 1–2h |
+| 9 | Score multiplicado por 10 | Bug | **P2** | `ListEditor.tsx` | Alto | 30min |
+| 10 | update-entry usa tmdbId como ID | Bug | **P2** | `update-entry/route.ts` | Médio | 30min |
+| F1 | Seção "In Progress" na Home | Feature | **P2** | `app/page.tsx` | Alto | 2–3h |
+| F2 | Notificações (sino) na navbar | Feature | **P2** | `layout.tsx` + novos | Alto | 6–10h |
+| F3 | Filtros avançados estilo AniList | Feature | **P2** | `search/page.tsx` | Alto | 4–6h |
+| D1 | Redesign profile: tabs, stats, favs | Design | **P2** | `profile/page.tsx` | Alto | 6–10h |
+| 11 | imgUrl/entrySlug duplicadas | Refactor | **P3** | `utils.ts` | Baixo | 30min |
+| 12 | Language inconsistente add-media | Refactor | **P3** | `add-media/route.ts` | Baixo | 5min |
+| 13 | Re-renders desnecessários MediaCard | Perf | **P3** | `search/page.tsx` | Baixo | 1–2h |
+| 14 | Lazy loading ausente | Perf | **P3** | múltiplos | Baixo | 15min |
+| 15 | Dois POSTs sem função reutilizável | Refactor | **P3** | `titles/[id]/page.tsx` | Baixo | 30min |
 
 ---
 
 ## 📋 CHECKLIST DE TESTES MANUAIS
 
-### Teste 1 — Relações (P1 · #1)
-- [ ] Acessar `/titles/movie-550` (Fight Club — tem coleção automática).
-- [ ] Anotar relações automáticas visíveis.
-- [ ] Adicionar relação manual (ex: SEQUEL). Confirmar que automáticas **não desapareceram**.
-- [ ] Pressionar F5. Confirmar que todas as relações continuam visíveis.
-- [ ] Remover a relação manual. Confirmar que apenas ela sumiu.
+### Testes de Bugs
 
-### Teste 2 — Popular Now (P2 · #2)
-- [ ] Abrir `/search?tab=tv`.
-- [ ] Verificar seção "Popular Now": nenhuma série encerrada deve aparecer.
-- [ ] Confirmar que Breaking Bad, Game of Thrones não estão na lista.
+- [ ] **#2** — `/search?tab=tv` → Trending exibe exatamente 6 itens.
+- [ ] **#3** — `/search?tab=tv` → "All Time Popular" carrega sem ficar infinito.
+- [ ] **#4** — Editar via ListEditor → Activity Feed do profile atualiza.
+- [ ] **#5** — Cards do profile exibem `1` (completado) ou `0` (não completado), sem texto "Watched".
+- [ ] **#6** — "Popular Now" TV não exibe Breaking Bad, Game of Thrones.
+- [ ] **#7** — Busca por "Breaking Bad" retorna resultado.
+- [ ] **#8** — Salvar via ListEditor atualiza card visualmente sem F5.
+- [ ] **#9** — Score "7.3" não vira "73" no ListEditor.
 
-### Teste 3 — Busca Textual de Séries (P2 · #3)
-- [ ] Abrir `/search?tab=tv`.
-- [ ] Buscar "Avatar: The Last Airbender" → deve aparecer.
-- [ ] Buscar "Breaking Bad" → deve aparecer.
-- [ ] "Popular Now" ainda não exibe séries encerradas (sem regressão).
+### Testes de Features
 
-### Teste 4 — ListEditor Feedback Visual (P2 · #4)
-- [ ] Buscar "Inception" em `/search`.
-- [ ] Abrir ListEditor (✎), definir status "WATCHED" e score "9.0".
-- [ ] Salvar → o card deve atualizar visualmente sem F5.
+- [ ] **F1** — Home exibe seção "In Progress" abaixo de "Airing Now" com filmes e séries WATCHING.
+- [ ] **F2** — Sino na navbar com badge; painel abre com notificações corretas; "mark all read" funciona.
+- [ ] **F3** — Filtros avançados: gênero, ano, score, status combinados funcionam via `/discover`.
 
-### Teste 5 — Score Consistente (P2 · #5)
-- [ ] Em `/profile`, editar uma entrada via ListEditor → score "7.3".
-- [ ] Acessar `/titles/[id]` do mesmo título.
-- [ ] Abrir editor: score deve aparecer como "7.3" (não "73").
-- [ ] Editar score para "8.0" via `titles/[id]`, salvar. Verificar persistência.
+### Testes de Design
 
-### Teste 6 — Entrada Normal
-- [ ] Ir a `/search?tab=tv` → buscar "Breaking Bad".
-- [ ] Clicar ✎, definir status "WATCHING", score "9.5", progress "5/62".
-- [ ] Salvar. Confirmar em `/profile`.
-
-### Teste 7 — Edge Cases
-- [ ] Buscar "xyzabc123" → mensagem amigável, sem crash.
-- [ ] Desconectar internet → retry automático e mensagem de timeout após 3x.
+- [ ] **D1** — Tabs rosa ao clicar; overview com CountUp animado; favoritos com stagger; stats com gráficos animados.
+- [ ] **D1** — Banner, avatar, cards de SeriesList e FilmList **não foram alterados**.
 
 ---
 
@@ -765,9 +549,25 @@ Em `src/app/titles/[id]/page.tsx` existem dois blocos quase idênticos de `POST 
 - ✅ Validações de dados completas nas rotas de API
 - ✅ Todos os imports corretos (nenhum import quebrado identificado)
 - ✅ Tratamento de erros robusto em operações TMDB
-- ⚠️ 1 bug crítico em fluxo de relações (P1 · #1)
-- ⚠️ 1 inconsistência crítica de dados de score (P2 · #5)
-- ⚠️ 2 problemas de busca de séries (P2 · #2 e #3)
+- 🔴 2 bugs P1 novos em `search/page.tsx` (TV Trending + All Time Popular)
+- 🔴 ListEditor desconectado do Activity (P1)
+- ⚠️ Score inconsistente (P2 · #9)
+- ⚠️ 2 problemas de busca de séries (P2 · #6 e #7)
+
+### Dependências entre Tasks
+
+```
+F2 (Notificações) depende de:
+  → Prisma schema: nova tabela Notification (ou armazenar em memória/cache)
+  → API TMDB: /tv/{id} para next_episode_to_air
+  → lib/notifications.ts (novo arquivo)
+
+D1 (Redesign Profile) NÃO depende de outras tasks.
+  → Pode ser desenvolvida em paralelo.
+
+F3 (Filtros Avançados) depende de:
+  → Verificar se #6 e #7 foram corrigidos primeiro para não conflitar.
+```
 
 ### Comandos Úteis para Debug
 
@@ -786,9 +586,13 @@ grep -rn "useState\|useEffect" src/app/titles --include="*.tsx"
 
 # Verificar scores inconsistentes no banco (rodar via Prisma Studio ou query direta)
 # SELECT id, score FROM "Entry" WHERE score > 10;
+
+# Listar entries com status WATCHING (para testar In Progress + Notificações)
+# SELECT id, title, type, status, updatedAt FROM "Entry" WHERE status = 'WATCHING' ORDER BY updatedAt DESC;
 ```
 
 ---
 
-*Documento gerado com base em análise estática completa do projeto HADES.*
-*Referência: `ANALISE_CONEXOES.md` — 28 de Abril de 2026*
+*Documento atualizado com base em análise e revisão do projeto HADES.*
+*Referência anterior: `ANALISE_CONEXOES.md` — 28 de Abril de 2026*
+*Atualização: 29 de Abril de 2026*

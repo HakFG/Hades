@@ -80,8 +80,17 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    await prisma.entry.delete({ where: { id } });
-    return NextResponse.json({ success: true });
+
+// targetEntry usa SetNull (não Cascade), então limpa manualmente
+await prisma.relation.updateMany({
+  where: { targetEntryId: id },
+  data: { targetEntryId: null },
+});
+
+// sourceEntry tem onDelete: Cascade — as relações são deletadas automaticamente
+await prisma.entry.delete({ where: { id } });
+
+return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[DELETE /api/entries/:id] Erro:', error);
     return NextResponse.json(
