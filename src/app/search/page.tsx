@@ -97,7 +97,7 @@ function resolveSeasonStatus(
   return season.season_number === maxSeasonNumber ? 'Airing' : 'Finished';
 }
 
-async function expandShow(show: RawShow, includeSpecials = false): Promise<MediaCard[]> {
+async function expandShow(show: RawShow, includeSpecials = false, onlyInProduction = false): Promise<MediaCard[]> {
   try {
     const [res, resEn] = await Promise.all([
       fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
@@ -240,7 +240,7 @@ export default function SearchPage() {
 const expandLatest = async (shows: RawShow[]) => {
   const today = new Date().toISOString().split('T')[0];
   const cards = await Promise.all(shows.slice(0, 6).map(async show => {
-    const seasons = await expandShow(show, false);
+    const seasons = await expandShow(show, false, true);
     if (!seasons.length) return null;
     const sorted = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
     const airingSeasons = sorted.filter(s => s.seasonStatus === 'Airing');

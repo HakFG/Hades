@@ -324,15 +324,16 @@ Este filtro faz sentido para "Popular Now", mas não para buscas textuais onde o
 **Passo 1 — Adicionar parâmetro `includeFinished` em `expandShow()`:**
 
 ```typescript
-async function expandShow(
-  show: RawShow,
-  includeSpecials = false,
-  includeFinished = true  // ← NOVO parâmetro (padrão: inclui finalizadas)
-): Promise<MediaCard[]> {
-  const detail = await res.json();
-
-  // Apenas bloqueia se for explicitamente pedido (ex: Popular Now)
-  if (!includeFinished && !detail.in_production) return [];
+async function expandShow(show: RawShow, includeSpecials = false, onlyInProduction = false): Promise<MediaCard[]> {
+  try {
+    const [res, resEn] = await Promise.all([
+      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
+      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
+    ]);
+    if (!res.ok) return [];
+    const detail   = await res.json();
+    // Só descarta série finalizada se for seção que exige produção ativa (ex: Popular Now)
+    if (onlyInProduction && !detail.in_production) return [];
 
   // Para buscas normais: inclui tudo
   // ...
