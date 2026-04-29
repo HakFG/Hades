@@ -719,8 +719,55 @@ function FavoritesTab({ entries, onEdit, onToggleFav, onUpdateProgress }: {
 
 // ─── Stats Tab (com botão de sincronização reposicionado) ───────────────────────
 
-function StatsTab({ entries }: { entries: Entry[] }) {
+function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => void }) {
   const [syncing, setSyncing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = () => {
+    const data = JSON.stringify(entries, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!confirm('Isso vai restaurar os títulos do backup. Entradas existentes com o mesmo ID serão sobrescritas. Continuar?')) {
+      e.target.value = '';
+      return;
+    }
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error('Formato inválido');
+      const res = await fetch('/api/entries/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        alert(`✅ Importação concluída!\nRestaurados: ${result.restored} títulos`);
+        onImport?.();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert('❌ Erro na importação: ' + (err.error ?? 'Erro desconhecido'));
+      }
+    } catch (err) {
+      alert('❌ Arquivo inválido ou corrompido.');
+      console.error(err);
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
   const series = entries.filter(e => e.type === 'TV_SEASON');
   const films = entries.filter(e => e.type === 'MOVIE');
   const scored = entries.filter(e => e.score > 0);
@@ -785,7 +832,7 @@ function StatsTab({ entries }: { entries: Entry[] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* Cabeçalho da seção Stats com título e botão alinhados */}
-      <div style={{ position: 'relative', marginBottom: '8px' }}>
+<div style={{ position: 'relative', marginBottom: '8px' }}>
         <h2 style={{
           fontSize: '18px',
           fontWeight: '700',
@@ -797,7 +844,49 @@ function StatsTab({ entries }: { entries: Entry[] }) {
         }}>
           Estatísticas
         </h2>
-        <div style={{ position: 'absolute', top: 0, right: 0 }}>
+        <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleImport}
+            style={{ display: 'none' }}
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: importing ? '#4a4a5a' : '#2ecc71',
+              border: 'none', borderRadius: '20px',
+              padding: '6px 14px', color: 'white',
+              fontSize: '11px', fontWeight: '600',
+              cursor: importing ? 'wait' : 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: importing ? 'none' : '0 1px 4px rgba(0,0,0,0.2)',
+            }}
+            onMouseEnter={e => { if (!importing) e.currentTarget.style.background = '#27ae60'; }}
+            onMouseLeave={e => { if (!importing) e.currentTarget.style.background = '#2ecc71'; }}
+          >
+            ↑ {importing ? 'Importando...' : 'Importar'}
+          </button>
+          <button
+            onClick={handleExport}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              background: '#f39c12',
+              border: 'none', borderRadius: '20px',
+              padding: '6px 14px', color: 'white',
+              fontSize: '11px', fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#d68910'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#f39c12'; }}
+          >
+            ↓ Exportar
+          </button>
           <button
             onClick={syncAll}
             disabled={syncing}
@@ -1332,7 +1421,7 @@ const pushActivity = useCallback(async (entry: Entry) => {
         {tab === 'series' && <MediaListTab entries={entries} type="TV_SEASON" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
         {tab === 'films' && <MediaListTab entries={entries} type="MOVIE" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
         {tab === 'favorites' && <FavoritesTab entries={entries} onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
-        {tab === 'stats' && <StatsTab entries={entries} />}
+        {tab === 'stats' && <StatsTab entries={entries} onImport={load} />}
       </div>
 
       {editingEntry && (
