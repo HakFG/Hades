@@ -944,25 +944,25 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   /**
    * Mescla relações automáticas e manuais, evitando duplicatas por slug
    */
-  function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationItem[] {
-    const slugs = new Set<string>();
-    const merged: RelationItem[] = [];
-    // Primeiro adiciona todas as automáticas
-    for (const rel of auto) {
-      if (!slugs.has(rel.slug)) {
-        slugs.add(rel.slug);
-        merged.push(rel);
-      }
+function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationItem[] {
+  const slugs = new Set<string>();
+  const merged: RelationItem[] = [];
+  // Manuais primeiro: têm prioridade sobre as automáticas
+  for (const rel of manual) {
+    if (!slugs.has(rel.slug)) {
+      slugs.add(rel.slug);
+      merged.push(rel);
     }
-    // Depois adiciona as manuais que não estejam duplicadas
-    for (const rel of manual) {
-      if (!slugs.has(rel.slug)) {
-        slugs.add(rel.slug);
-        merged.push(rel);
-      }
-    }
-    return merged;
   }
+  // Automáticas depois: só entram se não há manual com o mesmo slug
+  for (const rel of auto) {
+    if (!slugs.has(rel.slug)) {
+      slugs.add(rel.slug);
+      merged.push(rel);
+    }
+  }
+  return merged;
+}
 
   /**
    * Carrega e mescla todas as relações (banco + TMDB) para a entry atual
@@ -1211,28 +1211,35 @@ md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
             if (relRes.ok) {
               const saved = await relRes.json();
               console.log(`[Relations] Carregadas ${saved.length} relações do banco para entryId ${entryId}`);
-              manualRels = saved.map((r: any) => {
-                const target = r.targetEntry;
-                if (!target) {
-                  console.warn('Relação sem targetEntry', r);
-                  return null;
-                }
-                let slug = '';
-                if (target.type === 'MOVIE') {
-                  slug = `movie-${target.tmdbId}`;
-                } else {
-                  slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
-                }
-                return {
-                  slug,
-                  relationType: r.relationType,
-                  title: r.title,
-                  poster_path: r.poster_path,
-                  kind: r.kind,
-                  year: r.year ?? undefined,
-                  seasonNumber: r.seasonNumber ?? undefined,
-                };
-              }).filter(Boolean);
+manualRels = saved.map((r: any) => {
+  let slug = '';
+  // Usa targetEntry se disponível; senão constrói o slug a partir dos campos diretos da relação
+  if (r.targetEntry) {
+    const target = r.targetEntry;
+    if (target.type === 'MOVIE') {
+      slug = `movie-${target.tmdbId}`;
+    } else {
+      slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+    }
+  } else if (r.kind === 'movie') {
+    slug = `movie-${r.targetTmdbId}`;
+  } else {
+    slug = `tv-${r.targetParentTmdbId ?? r.targetTmdbId}-s${r.targetSeasonNumber ?? r.seasonNumber ?? 1}`;
+  }
+  if (!slug) {
+    console.warn('[Relations] Relação sem slug válido, ignorando:', r);
+    return null;
+  }
+  return {
+    slug,
+    relationType: r.relationType,
+    title: r.title,
+    poster_path: r.poster_path,
+    kind: r.kind,
+    year: r.year ?? undefined,
+    seasonNumber: r.seasonNumber ?? undefined,
+  };
+}).filter(Boolean);
             }
           } catch (e) {
             console.warn('[Relations] Falha ao carregar do banco', e);
@@ -1317,25 +1324,34 @@ sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
             const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
             if (relRes.ok) {
               const saved = await relRes.json();
-              manualRels = saved.map((r: any) => {
-                const target = r.targetEntry;
-                if (!target) return null;
-                let slug = '';
-                if (target.type === 'MOVIE') {
-                  slug = `movie-${target.tmdbId}`;
-                } else {
-                  slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
-                }
-                return {
-                  slug,
-                  relationType: r.relationType,
-                  title: r.title,
-                  poster_path: r.poster_path,
-                  kind: r.kind,
-                  year: r.year ?? undefined,
-                  seasonNumber: r.seasonNumber ?? undefined,
-                };
-              }).filter(Boolean);
+manualRels = saved.map((r: any) => {
+  let slug = '';
+  if (r.targetEntry) {
+    const target = r.targetEntry;
+    if (target.type === 'MOVIE') {
+      slug = `movie-${target.tmdbId}`;
+    } else {
+      slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
+    }
+  } else if (r.kind === 'movie') {
+    slug = `movie-${r.targetTmdbId}`;
+  } else {
+    slug = `tv-${r.targetParentTmdbId ?? r.targetTmdbId}-s${r.targetSeasonNumber ?? r.seasonNumber ?? 1}`;
+  }
+  if (!slug) {
+    console.warn('[Relations] Relação sem slug válido, ignorando:', r);
+    return null;
+  }
+  return {
+    slug,
+    relationType: r.relationType,
+    title: r.title,
+    poster_path: r.poster_path,
+    kind: r.kind,
+    year: r.year ?? undefined,
+    seasonNumber: r.seasonNumber ?? undefined,
+  };
+}).filter(Boolean);
             }
           } catch (e) {
             console.warn('[Relations] Falha ao carregar do banco', e);
