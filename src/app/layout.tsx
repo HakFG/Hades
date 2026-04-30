@@ -2,6 +2,8 @@
 import './globals.css';
 import Link from 'next/link';
 import NotificationPanel from '@/components/NotificationPanel';
+import XPProgressBar from '@/components/XPProgressBar';
+import XPToastHost from '@/components/XPToastHost';
 
 interface NavLinkProps {
   href: string;
@@ -105,6 +107,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
             {/* ── Notifications + Avatar ── */}
             <div className="navbar-user" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <XPProgressBar />
               <NotificationPanel />
               <Link href="/profile?tab=overview" className="avatar-link" title="Ir ao Perfil">
                 <div className="avatar-circle">
@@ -119,6 +122,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="main-content">
           {children}
         </main>
+        <XPToastHost />
 
       </body>
     </html>

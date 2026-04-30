@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { awardXP, type AwardXPResult } from '@/lib/gamification';
 
 // Helper para converter string de data para Date ou null
 function parseDate(dateStr: string | null | undefined): Date | null {
@@ -16,6 +17,14 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
+    const previousEntry = await prisma.entry.findUnique({ where: { id } });
+
+    if (!previousEntry) {
+      return NextResponse.json(
+        { error: 'Entrada nao encontrada' },
+        { status: 404 }
+      );
+    }
 
     const updateData: any = {};
 
@@ -62,6 +71,105 @@ export async function PATCH(
       data: updateData,
     });
 
+    const gamification: AwardXPResult[] = [];
+    const pushAward = async (award: Promise<AwardXPResult>) => {
+      const result = await award;
+      if (result.xpGained > 0) gamification.push(result);
+    };
+
+    const progressDelta = entry.progress - previousEntry.progress;
+    if (entry.type === 'TV_SEASON' && progressDelta > 0) {
+      await pushAward(awardXP({
+        action: 'complete_episode',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+          score: entry.score,
+          episodeCount: progressDelta,
+          progressStart: previousEntry.progress,
+          progressEnd: entry.progress,
+        },
+      }));
+    }
+
+    if (previousEntry.status !== 'COMPLETED' && entry.status === 'COMPLETED') {
+      await pushAward(awardXP({
+        action: entry.type === 'MOVIE' ? 'complete_movie' : 'complete_season',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+          score: entry.score,
+          totalEpisodes: entry.totalEpisodes,
+        },
+      }));
+    }
+
+    if (previousEntry.status === 'PLANNING' && entry.status !== 'PLANNING') {
+      await pushAward(awardXP({
+        action: 'planning_cleanup',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+          fromStatus: previousEntry.status,
+          toStatus: entry.status,
+        },
+      }));
+    }
+
+    if (entry.score > 0 && entry.score !== previousEntry.score) {
+      await pushAward(awardXP({
+        action: 'rate_title',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+          previousScore: previousEntry.score,
+          score: entry.score,
+        },
+      }));
+    }
+
+    if (previousEntry.score < 9 && entry.score >= 9) {
+      await pushAward(awardXP({
+        action: 'score_9_plus',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+          score: entry.score,
+        },
+      }));
+    }
+
+    if (previousEntry.score < 10 && entry.score === 10) {
+      await pushAward(awardXP({
+        action: 'score_10',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+          score: entry.score,
+        },
+      }));
+    }
+
+    if (!previousEntry.notes && entry.notes) {
+      await pushAward(awardXP({
+        action: 'write_notes',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+        },
+      }));
+    }
+
+    if (!previousEntry.isFavorite && entry.isFavorite) {
+      await pushAward(awardXP({
+        action: 'favorite_title',
+        metadata: {
+          entryId: entry.id,
+          title: entry.title,
+        },
+      }));
+    }
+
     // Normaliza datas para YYYY-MM-DD antes de retornar ao front-end
     const formatted = {
       ...entry,
@@ -71,6 +179,7 @@ export async function PATCH(
       finishDate: entry.finishDate
         ? (entry.finishDate as Date).toISOString().split('T')[0]
         : null,
+      gamification,
     };
     return NextResponse.json(formatted);
   } catch (error) {

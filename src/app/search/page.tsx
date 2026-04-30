@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import ListEditor from '@/components/ListEditor';
 import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
+import { emitXPNotification } from '@/hooks/useXPNotification';
 
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const TMDB = 'https://api.themoviedb.org/3';
@@ -454,7 +455,10 @@ function MediaCardComponent({ item }: { item: MediaCard }) {
           progress: 0,
         }),
       });
-      if (r.ok) existingEntry = await r.json();
+      if (r.ok) {
+        existingEntry = await r.json();
+        emitXPNotification(existingEntry.gamification);
+      }
     } catch {}
 
     if (!existingEntry) {

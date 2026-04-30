@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
+import { awardXP } from '@/lib/gamification';
 
 const TMDB    = 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const TODAY   = () => new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+
+type TmdbSeasonSummary = {
+  id: number;
+  season_number: number;
+  episode_count?: number | null;
+  poster_path?: string | null;
+  air_date?: string | null;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -175,14 +184,21 @@ const showName = seriesDataEn.name ?? seriesData.name ?? title.trim();
         popularity: typeof seriesData.popularity   === 'number' ? seriesData.popularity   : 0,
       };
 
-      const seasons: any[] = (seriesData.seasons ?? []).filter((s: any) => s.season_number > 0);
+      const seasons: TmdbSeasonSummary[] = ((seriesData.seasons ?? []) as TmdbSeasonSummary[])
+        .filter((season) => season.season_number > 0);
+      const existingSeasons = await prisma.entry.findMany({
+        where: { tmdbId: { in: seasons.map((season) => season.id) } },
+        select: { tmdbId: true },
+      });
+      const existingSeasonIds = new Set(existingSeasons.map((season) => season.tmdbId));
+      const newSeasons = seasons.filter((season) => !existingSeasonIds.has(season.id));
 
       // Busca datas de todas as temporadas em paralelo
       const seasonDates = await Promise.all(
         seasons.map(s => fetchSeasonDates(tmdbId, s.season_number, s.air_date ?? null))
       );
 
-      const operations = seasons.map((season: any, idx: number) => {
+      const operations = seasons.map((season, idx) => {
         const { releaseDate, endDate } = seasonDates[idx];
         const seasonTitle  = buildSeasonTitle(showName, season.season_number);
         const seasonPoster = season.poster_path ?? seriesData.poster_path ?? null;
@@ -215,7 +231,18 @@ const showName = seriesDataEn.name ?? seriesData.name ?? title.trim();
       });
 
       await Promise.all(operations);
-      return NextResponse.json({ success: true, seasons: operations.length });
+      const gamification = newSeasons.length > 0
+        ? [await awardXP({
+            action: 'add_tv_season',
+            metadata: {
+              title: showName,
+              seasonCount: newSeasons.length,
+              episodeCount: newSeasons.reduce((sum, season) => sum + (season.episode_count ?? 0), 0),
+            },
+          })]
+        : [];
+
+      return NextResponse.json({ success: true, seasons: operations.length, gamification });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -240,6 +267,7 @@ const englishTitle = seriesEnName
   ? buildSeasonTitle(seriesEnName, seasonNumber ?? 1)
   : title.trim();
 
+      const existingEntry = await prisma.entry.findUnique({ where: { tmdbId } });
       const entry = await prisma.entry.upsert({
         where:  { tmdbId },
         update: {
@@ -281,7 +309,19 @@ finishDate:    finishDate ? new Date(finishDate) : null,
 },
       });
 
-      return NextResponse.json(entry);
+      const gamification = !existingEntry
+        ? [await awardXP({
+            action: 'add_tv_season',
+            metadata: {
+              entryId: entry.id,
+              title: entry.title,
+              seasonNumber: entry.seasonNumber,
+              episodeCount: entry.totalEpisodes ?? 0,
+            },
+          })]
+        : [];
+
+      return NextResponse.json({ ...entry, gamification });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -313,6 +353,7 @@ genres      = (d.genres ?? []).map((g: any) => g.name).join(', ');
         rating      = typeof d.vote_average === 'number' ? d.vote_average : null;
       } catch { /* mantém nulls */ }
 
+      const existingEntry = await prisma.entry.findUnique({ where: { tmdbId } });
       const entry = await prisma.entry.upsert({
         where:  { tmdbId },
         update: {
@@ -349,7 +390,17 @@ finishDate:    finishDate ? new Date(finishDate) : null,
 },
       });
 
-      return NextResponse.json(entry);
+      const gamification = !existingEntry
+        ? [await awardXP({
+            action: 'add_movie',
+            metadata: {
+              entryId: entry.id,
+              title: entry.title,
+            },
+          })]
+        : [];
+
+      return NextResponse.json({ ...entry, gamification });
     }
 
     return NextResponse.json({ error: `Tipo desconhecido: ${type}` }, { status: 400 });

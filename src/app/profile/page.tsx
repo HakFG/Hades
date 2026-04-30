@@ -7,6 +7,7 @@ import { formatScore, scoreColor, imgUrl, entrySlug } from '@/lib/utils';
 import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
 import styles from './profile.module.css';
+import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,10 @@ interface Entry {
   staff?: any;
 }
 
+type EntryWithGamification = Entry & {
+  gamification?: XPNotificationAward[];
+};
+
 interface ActivityLog {
   id: string;
   entryId: string;
@@ -80,7 +85,7 @@ interface Profile {
   avatarColor?: string | null;
 }
 
-type Tab = 'overview' | 'series' | 'films' | 'favorites' | 'stats';
+type Tab = 'overview' | 'series' | 'films' | 'favorites' | 'stats'| 'search';
 type StatusKey = 'WATCHING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REWATCHING' | 'UPCOMING';
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
@@ -139,7 +144,7 @@ function entryFormat(e: Entry): string {
 
 // ─── EntryCard ─────────────────────────────────────────────────────────────────
 
-function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
+export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
   entry: Entry;
   onEdit: (e: Entry) => void;
   onToggleFav: (e: Entry) => void;
@@ -1472,6 +1477,7 @@ function ProfileContent() {
   }, []);
 
   function handleSaved(updated: Entry) {
+    emitXPNotification((updated as EntryWithGamification).gamification);
     setEntries(prev => prev.map(e =>
       e.id === updated.id ? { ...e, ...updated } : e
     ));
@@ -1482,11 +1488,15 @@ function ProfileContent() {
   async function toggleFav(entry: Entry) {
     const next = !entry.isFavorite;
     setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, isFavorite: next } : e));
-    await fetch(`/api/entries/${entry.id}`, {
+    const res = await fetch(`/api/entries/${entry.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isFavorite: next }),
     });
+    if (res.ok) {
+      const updated = await res.json();
+      emitXPNotification(updated.gamification);
+    }
   }
 
   async function updateProgress(entryId: string, newProgress: number) {
@@ -1500,6 +1510,7 @@ function ProfileContent() {
       });
       if (res.ok) {
         const updatedEntry = await res.json();
+        emitXPNotification(updatedEntry.gamification);
         setEntries(prev => prev.map(e => e.id === entryId ? updatedEntry : e));
         pushActivity(updatedEntry);
       } else {

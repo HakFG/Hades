@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { getOrdinal } from '@/lib/utils';
+import { getNextUpItems } from '@/lib/next-up';
+import NextUpCard from '@/components/NextUpCard';
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -185,13 +187,16 @@ async function getHomeData() {
     take: 6,
   });
 
+  // 6. NEXT UP — inteligente
+  const nextUpItems = await getNextUpItems(4);
+
   const [popularResults, newsResults] = await Promise.all([
     Promise.all(popularPromises), Promise.all(newsPromises),
   ]);
   const uniqueNews = Array.from(new Map(newsResults.flat().map(item => [item.title, item])).values())
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 8);
 
-  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressEntries };
+  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressEntries, nextUp: nextUpItems };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -205,7 +210,7 @@ export default async function HomePage() {
 }
 
 async function HomePageContent() {
-  const { airing, popular, news, newlyAdded, inProgress } = await getHomeData();
+  const { airing, popular, news, newlyAdded, inProgress, nextUp } = await getHomeData();
 
   return (
     <div style={{
@@ -790,6 +795,27 @@ async function HomePageContent() {
                 </div>
               )}
             </div>
+
+            {/* ── NEXT UP ──────────────────────────────────────────────── */}
+<div className="side-panel">
+  <div className="side-panel-header">
+    <div className="side-panel-header-dot" style={{ background: '#f39c12', boxShadow: '0 0 8px rgba(243,156,18,0.6)' }} />
+    <h3 className="side-panel-header-title" style={{ color: '#f39c12' }}>Next Up</h3>
+  </div>
+
+  {nextUp && nextUp.length > 0 ? (
+    <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+      {nextUp.map((item) => (
+        <NextUpCard key={item.id} item={item} />
+      ))}
+    </div>
+  ) : (
+    <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
+      No suggestions for now.<br />
+      <span style={{ color: '#f39c12', fontWeight: '700' }}>Add series to Watching</span> or plan some quick movies.
+    </div>
+  )}
+</div>
 
             {/* ── NEWLY ADDED ─────────────────────────────────────────── */}
             <div className="side-panel">

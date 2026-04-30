@@ -3,6 +3,7 @@ import { recordActivity } from '@/lib/activity';
 import { useState, useEffect, use, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { getOrdinal, buildSeasonTitle, formatScore, scoreColor } from '@/lib/utils';
+import { emitXPNotification } from '@/hooks/useXPNotification';
 import {
   fetchTitleData,
   getAutoRelations,
@@ -732,6 +733,7 @@ async function save() {
 
     if (res.ok) {
       savedEntry = await res.json();
+      emitXPNotification(savedEntry.gamification);
       // ✅ Registra a atividade no banco de dados
       await recordActivity({
         id: savedEntry.id,
@@ -923,6 +925,7 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   });
   if (!addRes.ok) { alert('Erro ao adicionar título à lista. Tente novamente.'); return false; }
   const newEntry = await addRes.json();
+  emitXPNotification(newEntry.gamification);
   setEntry(newEntry);
   return true;
 }

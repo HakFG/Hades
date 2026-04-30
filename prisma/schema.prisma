@@ -34,32 +34,32 @@ model Entry {
   progress      Int         @default(0)
   totalEpisodes Int?
 
-  startDate     DateTime?
-  finishDate    DateTime?
-  rewatchCount  Int         @default(0)
+  startDate    DateTime?
+  finishDate   DateTime?
+  rewatchCount Int       @default(0)
 
-  synopsis      String?     @db.Text
-  releaseDate   String?
-  endDate       String?
-  format        String?
-  rating        Float?
-  popularity    Float?
-  imagePath     String?
-  bannerPath    String?
-  customImage   String?
-  genres        String?
-  studio        String?
-  staff         Json?
+  synopsis    String? @db.Text
+  releaseDate String?
+  endDate     String?
+  format      String?
+  rating      Float?
+  popularity  Float?
+  imagePath   String?
+  bannerPath  String?
+  customImage String?
+  genres      String?
+  studio      String?
+  staff       Json?
 
-  notes         String?     @db.Text
-  private       Boolean     @default(false)
-  hidden        Boolean     @default(false)
+  notes   String? @db.Text
+  private Boolean @default(false)
+  hidden  Boolean @default(false)
 
-  isFavorite    Boolean     @default(false)
-  favoriteRank  Int?
+  isFavorite   Boolean @default(false)
+  favoriteRank Int?
 
-  updatedAt     DateTime    @updatedAt
-  createdAt     DateTime    @default(now())
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 
   // Relações corrigidas
   relationsFrom Relation[] @relation("SourceRelations")
@@ -72,19 +72,19 @@ model Entry {
 }
 
 model Relation {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
   sourceEntryId String
   targetEntryId String?
 
-  relationType  String
+  relationType String
 
-  title         String
-  poster_path   String?
-  kind          String
-  year          String?
-  seasonNumber  Int?
-  order         Int?
+  title        String
+  poster_path  String?
+  kind         String
+  year         String?
+  seasonNumber Int?
+  order        Int?
 
   targetTmdbId       Int
   targetParentTmdbId Int?
@@ -113,17 +113,54 @@ model Profile {
   createdAt   DateTime @default(now())
 }
 
+model UserGamification {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  totalXP       Int       @default(0)
+  currentLevel  Int       @default(1)
+  xpToNextLevel Int       @default(1000)
+  currentXP     Int       @default(0)
+  badges        String[]  @default([])
+  lastAwardedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([currentLevel])
+  @@index([totalXP])
+}
+
+model GamificationActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  xpGained  Int
+  metadata  Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action])
+}
+
+model StreakData {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  currentStreak   Int       @default(0)
+  longestStreak   Int       @default(0)
+  lastActivityDay DateTime?
+  updatedAt       DateTime  @updatedAt
+}
+
 model ActivityLog {
-  id             String   @id @default(cuid())
-  entryId        String
-  title          String
-  imagePath      String?
-  type           String
-  status         String
-  progressStart  Int?
-  progressEnd    Int?
-  score          Float
-  slug           String
-  createdAt      DateTime @default(now())
-  lastUpdatedAt  DateTime @updatedAt
+  id            String   @id @default(cuid())
+  entryId       String
+  title         String
+  imagePath     String?
+  type          String
+  status        String
+  progressStart Int?
+  progressEnd   Int?
+  score         Float
+  slug          String
+  createdAt     DateTime @default(now())
+  lastUpdatedAt DateTime @updatedAt
 }
