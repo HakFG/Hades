@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { formatScore, scoreColor, imgUrl, entrySlug } from '@/lib/utils';
 import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
+import styles from './profile.module.css';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -167,7 +168,7 @@ function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
     }
   }
 
-const handleIncrement = (e: React.MouseEvent) => {
+  const handleIncrement = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (entry.type === 'TV_SEASON' && onUpdateProgress && entry.totalEpisodes) {
@@ -248,7 +249,6 @@ const handleIncrement = (e: React.MouseEvent) => {
           </div>
         </div>
 
-        
         {/* Progresso com botões para séries (visíveis apenas no hover) */}
         <div style={{
           bottom: 0,
@@ -263,7 +263,7 @@ const handleIncrement = (e: React.MouseEvent) => {
           alignItems: 'center',
           gap: '0px',
           paddingLeft: entry.type === 'TV_SEASON' ? '0px' : '12px',
-        marginLeft: entry.type === 'TV_SEASON' ? '-6px' : '0px', // ← aqui você controla a distância da borda esquerda
+          marginLeft: entry.type === 'TV_SEASON' ? '-6px' : '0px',
           paddingBottom: '9px',
           boxSizing: 'border-box',
         }}>
@@ -283,8 +283,8 @@ const handleIncrement = (e: React.MouseEvent) => {
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: 0,
-                  marginLeft: '2px', // ← distância entre − e o número
-                  marginRight: '2px', // ← distância entre o número e +
+                  marginLeft: '2px',
+                  marginRight: '2px',
                   opacity: hovered ? 1 : 0,
                   transition: 'opacity 0.35s ease, color 0.2s ease',
                   pointerEvents: hovered ? 'auto' : 'none',
@@ -449,61 +449,55 @@ function ProfileEditor({ profile, onClose, onSaved }: {
   }
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(3px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#1a1a2e', borderRadius: '12px', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#e0e4e8', margin: 0 }}>Edit Profile</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#92a0ad', fontSize: '24px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+    <div onClick={onClose} className={styles.modalOverlay}>
+      <div onClick={e => e.stopPropagation()} className={styles.modalBox}>
+        <div className={styles.modalHeader}>
+          <h3 className={styles.modalTitle}>Edit Profile</h3>
+          <button onClick={onClose} className={styles.modalCloseBtn}>×</button>
         </div>
-        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className={styles.modalBody}>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Username</label>
-            <input value={username} onChange={e => setUsername(e.target.value)} style={{ width: '100%', padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '14px' }} />
+            <label className={styles.modalFieldLabel}>Username</label>
+            <input value={username} onChange={e => setUsername(e.target.value)} className={styles.modalInput} />
           </div>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Bio</label>
-            <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} style={{ width: '100%', padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '13px', resize: 'vertical' }} />
+            <label className={styles.modalFieldLabel}>Bio</label>
+            <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} className={styles.modalTextarea} />
           </div>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Avatar (Image)</label>
+            <label className={styles.modalFieldLabel}>Avatar (Image)</label>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
               {avatarPreview && (
-  <img 
-    src={avatarPreview} 
-    alt="avatar preview" 
-    style={{ 
-      width: '64px', 
-      height: '64px', 
-      borderRadius: '8px', 
-      objectFit: 'cover', 
-      background: 'transparent'   // ✅ força transparência
-    }} 
-  />
-)}
-              <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ flex: 1, padding: '8px', background: '#2b2d42', borderRadius: '8px', color: '#e0e4e8', fontSize: '12px', border: '1px solid #3d3d5c' }} />
-              <input type="text" value={avatarUrl} onChange={e => { setAvatarUrl(e.target.value); setAvatarPreview(e.target.value); }} placeholder="Or paste URL" style={{ flex: 2, padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '13px' }} />
+                <img
+                  src={avatarPreview}
+                  alt="avatar preview"
+                  className={styles.modalAvatarPreview}
+                />
+              )}
+              <input type="file" accept="image/*" onChange={handleAvatarUpload} className={styles.modalFileInput} />
+              <input type="text" value={avatarUrl} onChange={e => { setAvatarUrl(e.target.value); setAvatarPreview(e.target.value); }} placeholder="Or paste URL" className={styles.modalInput} style={{ flex: 2 }} />
             </div>
           </div>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Avatar Color (fallback)</label>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <input type="color" value={avatarColor} onChange={e => setAvatarColor(e.target.value)} style={{ width: '48px', height: '40px', border: 'none', borderRadius: '8px', cursor: 'pointer' }} />
-              <span style={{ fontSize: '13px', color: '#92a0ad' }}>{avatarColor}</span>
+            <label className={styles.modalFieldLabel}>Avatar Color (fallback)</label>
+            <div className={styles.modalColorWrap}>
+              <input type="color" value={avatarColor} onChange={e => setAvatarColor(e.target.value)} className={styles.modalColorInput} />
+              <span className={styles.modalColorLabel}>{avatarColor}</span>
             </div>
           </div>
           <div>
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Banner Image</label>
+            <label className={styles.modalFieldLabel}>Banner Image</label>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <input type="file" accept="image/*" onChange={handleBannerUpload} style={{ flex: 1, padding: '8px', background: '#2b2d42', borderRadius: '8px', color: '#e0e4e8', fontSize: '12px', border: '1px solid #3d3d5c' }} />
-              <input type="text" value={bannerUrl} onChange={e => { setBannerUrl(e.target.value); setBannerPreview(e.target.value); }} placeholder="Or paste URL" style={{ flex: 2, padding: '10px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '13px' }} />
+              <input type="file" accept="image/*" onChange={handleBannerUpload} className={styles.modalFileInput} />
+              <input type="text" value={bannerUrl} onChange={e => { setBannerUrl(e.target.value); setBannerPreview(e.target.value); }} placeholder="Or paste URL" className={styles.modalInput} style={{ flex: 2 }} />
             </div>
-            {bannerPreview && <img src={bannerPreview} alt="banner preview" style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '8px', marginTop: '12px' }} />}
+            {bannerPreview && <img src={bannerPreview} alt="banner preview" className={styles.modalBannerPreview} />}
           </div>
-          <div style={{ display: 'flex', gap: '12px', paddingTop: '8px' }}>
-            <button onClick={save} disabled={saving} style={{ flex: 1, padding: '12px', background: '#3db4f2', border: 'none', borderRadius: '8px', color: 'white', fontSize: '14px', fontWeight: '700', cursor: saving ? 'wait' : 'pointer' }}>
+          <div className={styles.modalFooter}>
+            <button onClick={save} disabled={saving} className={styles.modalSaveBtn}>
               {saving ? 'Saving...' : 'Save'}
             </button>
-            <button onClick={onClose} style={{ flex: 1, padding: '12px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '8px', color: '#e0e4e8', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+            <button onClick={onClose} className={styles.modalCancelBtn}>
               Cancel
             </button>
           </div>
@@ -525,7 +519,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
   const [statusFilter, setStatusFilter] = useState<StatusKey | 'ALL'>('ALL');
   const [formatFilter, setFormatFilter] = useState('ALL');
   const [genreFilter, setGenreFilter] = useState('ALL');
-  const [selectedYear, setSelectedYear] = useState(0);   // ← substitui yearMin/yearMax
+  const [selectedYear, setSelectedYear] = useState(0);
   const [scoreFilter, setScoreFilter] = useState(0);
   const [sortBy, setSortBy] = useState('updatedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -555,7 +549,6 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
         const fmt = entryFormat(e);
         if (fmt !== formatFilter) return false;
       }
-      // Filtro de ano único
       if (selectedYear > 0) {
         const y = releaseYear(e);
         if (!y || y !== selectedYear) return false;
@@ -589,7 +582,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
     const statuses = statusFilter === 'ALL' ? ALL_STATUSES.filter(s => grouped[s].length) : [statusFilter];
     if (statuses.every(s => grouped[s].length === 0)) {
       return (
-        <div style={{ textAlign: 'center', padding: '80px 20px', color: '#647380' }}>
+        <div className={styles.listEmpty}>
           {search ? 'No results found.' : `No ${type === 'MOVIE' ? 'films' : 'series'} in this list yet.`}
         </div>
       );
@@ -600,15 +593,24 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
           const items = grouped[s];
           if (!items.length) return null;
           return (
-            <div key={s}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', paddingBottom: '8px', borderBottom: `2px solid ${STATUS_COLOR[s]}33` }}>
-                <div style={{ width: '3px', height: '16px', borderRadius: '2px', background: STATUS_COLOR[s] }} />
-                <span style={{ fontSize: '13px', fontWeight: '700', color: STATUS_COLOR[s], textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <div key={s} className={styles.statusGroup}>
+              <div
+                className={styles.statusGroupHeader}
+                style={{ '--statusColor': STATUS_COLOR[s] } as React.CSSProperties}
+              >
+                <div
+                  className={styles.statusGroupBar}
+                  style={{ background: STATUS_COLOR[s] }}
+                />
+                <span
+                  className={styles.statusGroupLabel}
+                  style={{ color: STATUS_COLOR[s] }}
+                >
                   {STATUS_LABEL[s]}
                 </span>
-                <span style={{ fontSize: '11px', color: '#3d3d5c' }}>({items.length})</span>
+                <span className={styles.statusGroupCount}>({items.length})</span>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>
+              <div className={styles.cardsGrid}>
                 {items.map(e => (
                   <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />
                 ))}
@@ -623,53 +625,56 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
   const totalFiltered = statusFilter === 'ALL' ? sortedFiltered.length : grouped[statusFilter]?.length ?? 0;
 
   return (
-    <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-      <div style={{ width: sidebarCollapsed ? '40px' : '200px', flexShrink: 0, transition: 'width 0.2s' }}>
-        <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} style={{ marginBottom: '12px', background: '#1e1e35', border: '1px solid #2d2d4a', borderRadius: '4px', color: '#92a0ad', padding: '6px 12px', fontSize: '11px', cursor: 'pointer', width: '100%' }}>
+    <div className={styles.listLayout}>
+      <div className={styles.listSidebar} style={{ width: sidebarCollapsed ? '40px' : '200px' }}>
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className={styles.sidebarCollapseBtn}
+        >
           {sidebarCollapsed ? '▶' : '◀ Filters'}
         </button>
         {!sidebarCollapsed && (
-          <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '14px' }}>
+          <div className={styles.sidebarPanel}>
             <div style={{ marginBottom: '18px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '10px' }}>Status</div>
+              <div className={styles.filterSectionTitle}>Status</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 {(['ALL', ...ALL_STATUSES] as const).map(s => {
                   const cnt = s === 'ALL' ? mine.length : counts[s];
                   if (cnt === 0 && s !== 'ALL') return null;
                   const isActive = statusFilter === s;
                   return (
-                    <button key={s} onClick={() => setStatusFilter(s)} style={{
-                      textAlign: 'left', padding: isActive ? '8px 8px 8px 14px' : '8px', borderRadius: '3px', fontSize: '13px', cursor: 'pointer',
-                      background: isActive ? `${STATUS_COLOR[s === 'ALL' ? 'WATCHING' : s]}18` : 'transparent', border: 'none',
-                      color: isActive ? (s === 'ALL' ? '#3db4f2' : STATUS_COLOR[s]) : '#8ba2b9', fontWeight: isActive ? '700' : '400', transition: '0.2s',
-                    }}>
-                      {s === 'ALL' ? 'All' : STATUS_LABEL[s]} <span style={{ fontSize: '10px', marginLeft: '4px', opacity: 0.7 }}>({cnt})</span>
+                    <button
+                      key={s}
+                      onClick={() => setStatusFilter(s)}
+                      className={`${styles.filterStatusBtn} ${isActive ? styles.filterStatusBtnActive : ''}`}
+                      style={isActive && s !== 'ALL' ? { color: STATUS_COLOR[s], borderLeftColor: STATUS_COLOR[s] } : undefined}
+                    >
+                      {s === 'ALL' ? 'All' : STATUS_LABEL[s]}
+                      <span className={styles.filterStatusCount}>({cnt})</span>
                     </button>
                   );
                 })}
               </div>
             </div>
-            <hr style={{ border: 0, borderTop: '1px solid rgba(255,255,255,0.05)', margin: '12px 0' }} />
+            <hr className={styles.filterDivider} />
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>Format</div>
-              <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ width: '100%', background: '#151f2e', color: '#bcbedc', border: 'none', padding: '6px 10px', fontSize: '12px', borderRadius: '4px' }}>
+              <div className={styles.filterSectionTitle}>Format</div>
+              <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} className={styles.filterSelect}>
                 {formatOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>Genre</div>
-              <select value={genreFilter} onChange={e => setGenreFilter(e.target.value)} style={{ width: '100%', background: '#151f2e', color: '#bcbedc', border: 'none', padding: '6px 10px', fontSize: '12px', borderRadius: '4px' }}>
+              <div className={styles.filterSectionTitle}>Genre</div>
+              <select value={genreFilter} onChange={e => setGenreFilter(e.target.value)} className={styles.filterSelect}>
                 <option value="ALL">All Genres</option>
                 {['Action','Adventure','Comedy','Drama','Fantasy','Horror','Romance','Sci-Fi','Thriller','Mystery','Crime','Animation','Documentary','Family','Music','War','Western','History'].map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>
-                Year
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#647380', marginBottom: '4px' }}>
+              <div className={styles.filterSectionTitle}>Year</div>
+              <div className={styles.filterRangeLabel}>
                 <span>Year</span>
-                <span style={{ color: selectedYear > 0 ? '#3dbbee' : '#647380', fontWeight: 'bold' }}>
+                <span className={selectedYear > 0 ? styles.filterRangeValue : ''}>
                   {selectedYear > 0 ? selectedYear : 'Any'}
                 </span>
               </div>
@@ -680,33 +685,61 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
                 step={1}
                 value={selectedYear > 0 ? selectedYear : TMDB_MIN_YEAR}
                 onChange={e => setSelectedYear(Number(e.target.value) === TMDB_MIN_YEAR ? 0 : Number(e.target.value))}
-                style={{ width: '100%', height: '6px', background: '#151f2e', borderRadius: '5px', accentColor: '#3dbbee', cursor: 'pointer' }}
+                className={styles.filterRange}
               />
             </div>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>Score</div>
-              <input type="range" min={0} max={10} step={1} value={scoreFilter} onChange={e => setScoreFilter(Number(e.target.value))} style={{ width: '100%', accentColor: scoreColor(scoreFilter), cursor: 'pointer', height: '4px' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#647380', marginTop: '4px' }}><span>Any</span><span>10</span></div>
+              <div className={styles.filterSectionTitle}>Score</div>
+              <input
+                type="range"
+                min={0}
+                max={10}
+                step={1}
+                value={scoreFilter}
+                onChange={e => setScoreFilter(Number(e.target.value))}
+                className={styles.filterRange}
+                style={{ accentColor: scoreColor(scoreFilter) }}
+              />
+              <div className={styles.filterRangeLabel}><span>Any</span><span>10</span></div>
             </div>
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '8px' }}>Sort</div>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ width: '100%', background: '#151f2e', color: '#bcbedc', border: 'none', padding: '6px 10px', fontSize: '12px', borderRadius: '4px', marginBottom: '8px' }}>
-                {['updatedAt','title','score','progress','releaseYear','startDate','finishDate'].map(o => <option key={o} value={o}>{o === 'updatedAt' ? 'Last Updated' : o.charAt(0).toUpperCase()+o.slice(1)}</option>)}
+              <div className={styles.filterSectionTitle}>Sort</div>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)} className={styles.filterSelect} style={{ marginBottom: '8px' }}>
+                {['updatedAt','title','score','progress','releaseYear','startDate','finishDate'].map(o => (
+                  <option key={o} value={o}>{o === 'updatedAt' ? 'Last Updated' : o.charAt(0).toUpperCase()+o.slice(1)}</option>
+                ))}
               </select>
-              <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')} style={{ width: '100%', padding: '5px 8px', background: '#2b2d42', border: '1px solid #3d3d5c', borderRadius: '3px', color: '#92a0ad', fontSize: '11px', cursor: 'pointer' }}>
+              <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')} className={styles.sortDirBtn}>
                 {sortDir === 'asc' ? '▲ Ascending' : '▼ Descending'}
               </button>
             </div>
-            <button onClick={() => { setStatusFilter('ALL'); setFormatFilter('ALL'); setGenreFilter('ALL'); setSelectedYear(0); setScoreFilter(0); setSearch(''); setSortBy('updatedAt'); setSortDir('desc'); }} style={{ width: '100%', padding: '6px', background: '#3db4f2', border: 'none', borderRadius: '3px', color: 'white', fontSize: '11px', fontWeight: '700', cursor: 'pointer', marginTop: '8px' }}>
+            <button
+              onClick={() => {
+                setStatusFilter('ALL');
+                setFormatFilter('ALL');
+                setGenreFilter('ALL');
+                setSelectedYear(0);
+                setScoreFilter(0);
+                setSearch('');
+                setSortBy('updatedAt');
+                setSortDir('desc');
+              }}
+              className={styles.resetFiltersBtn}
+            >
               Reset Filters
             </button>
           </div>
         )}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search title..." style={{ width: '100%', background: '#1e1e1e', border: 'none', color: 'white', padding: '10px', borderRadius: '4px', fontSize: '13px', marginBottom: '20px' }} />
+      <div className={styles.listMain}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search title..."
+          className={styles.searchInput}
+        />
         {renderContent()}
-        <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '11px', color: '#3d3d5c', padding: '12px' }}>Showing {totalFiltered} of {mine.length} entries</div>
+        <div className={styles.listFooter}>Showing {totalFiltered} of {mine.length} entries</div>
       </div>
     </div>
   );
@@ -723,40 +756,69 @@ function FavoritesTab({ entries, onEdit, onToggleFav, onUpdateProgress }: {
   const [favType, setFavType] = useState<'series' | 'films'>('series');
   const favSeries = entries.filter(e => e.isFavorite && e.type === 'TV_SEASON');
   const favFilms = entries.filter(e => e.isFavorite && e.type === 'MOVIE');
+
   if (favSeries.length === 0 && favFilms.length === 0) {
-    return <div style={{ textAlign: 'center', padding: '60px', color: '#647380' }}><div style={{ fontSize: '32px', marginBottom: '12px' }}>♡</div><div>No favorites yet</div><div style={{ fontSize: '12px', opacity: 0.6 }}>Hover over a card and click ♡ to add favorites</div></div>;
-  }
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid #1e2240', marginBottom: '24px' }}>
-        <button onClick={() => setFavType('series')} style={{ padding: '10px 20px', background: 'none', border: 'none', borderBottom: favType === 'series' ? '2px solid #3db4f2' : '2px solid transparent', color: favType === 'series' ? '#3db4f2' : '#647380', fontWeight: favType === 'series' ? '700' : '500', fontSize: '13px', cursor: 'pointer', marginBottom: '-1px' }}>Series ({favSeries.length})</button>
-        <button onClick={() => setFavType('films')} style={{ padding: '10px 20px', background: 'none', border: 'none', borderBottom: favType === 'films' ? '2px solid #f39c12' : '2px solid transparent', color: favType === 'films' ? '#f39c12' : '#647380', fontWeight: favType === 'films' ? '700' : '500', fontSize: '13px', cursor: 'pointer', marginBottom: '-1px' }}>Films ({favFilms.length})</button>
+    return (
+      <div className={styles.favAllEmpty}>
+        <span className={styles.favEmptyIcon}>♡</span>
+        <div className={styles.favEmptyText}>No favorites yet</div>
+        <div className={styles.favEmptyHint}>Hover over a card and click ♡ to add favorites</div>
       </div>
-      {favType === 'series' && (favSeries.length === 0 ? <div style={{ textAlign: 'center', padding: '60px', color: '#647380' }}>No favorite series yet.</div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>{favSeries.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />)}</div>)}
-      {favType === 'films' && (favFilms.length === 0 ? <div style={{ textAlign: 'center', padding: '60px', color: '#647380' }}>No favorite films yet.</div> : <div style={{ display: 'flex', flexWrap: 'wrap', gap: '25px' }}>{favFilms.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />)}</div>)}
+    );
+  }
+
+  return (
+    <div className={styles.favoritesContainer}>
+      <div className={styles.favSubTabs}>
+        <button
+          onClick={() => setFavType('series')}
+          className={`${styles.favSubTab} ${favType === 'series' ? styles.favSubTabActive : ''}`}
+        >
+          Series ({favSeries.length})
+        </button>
+        <button
+          onClick={() => setFavType('films')}
+          className={`${styles.favSubTab} ${favType === 'films' ? styles.favSubTabActive : ''}`}
+        >
+          Films ({favFilms.length})
+        </button>
+      </div>
+
+      {favType === 'series' && (
+        favSeries.length === 0
+          ? (
+            <div className={styles.favEmptyState}>
+              <span className={styles.favEmptyIcon}>☆</span>
+              <div className={styles.favEmptyText}>No favorite series yet.</div>
+            </div>
+          )
+          : <div className={styles.favoritesGrid}>{favSeries.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />)}</div>
+      )}
+      {favType === 'films' && (
+        favFilms.length === 0
+          ? (
+            <div className={styles.favEmptyState}>
+              <span className={styles.favEmptyIcon}>☆</span>
+              <div className={styles.favEmptyText}>No favorite films yet.</div>
+            </div>
+          )
+          : <div className={styles.favoritesGrid}>{favFilms.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />)}</div>
+      )}
     </div>
   );
 }
 
-// ─── Stats Tab (com botão de sincronização reposicionado) ───────────────────────
+// ─── Stats Tab ─────────────────────────────────────────────────────────────────
 
 function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => void }) {
   const [syncing, setSyncing] = useState(false);
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  /**
-   * Exporta um backup COMPLETO incluindo:
-   * - Todas as entries com 100% dos campos
-   * - Relações entre entries
-   * - Log de atividades
-   * - Perfil do usuário
-   */
   const handleFullExport = async () => {
     try {
       const res = await fetch('/api/backup/full-export');
       if (!res.ok) throw new Error('Falha ao exportar');
-      
       const backup = await res.json();
       const data = JSON.stringify(backup, null, 2);
       const blob = new Blob([data], { type: 'application/json' });
@@ -773,35 +835,23 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
     }
   };
 
-  /**
-   * Importa um backup COMPLETO (gerado por handleFullExport).
-   * Restaura: entries, relações, atividades e perfil.
-   */
   const handleFullImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
     if (!confirm('⚠️ Isso vai RESTAURAR O BACKUP COMPLETO:\n\n✓ Todas as entries\n✓ Relações entre títulos\n✓ Histórico de atividades\n✓ Configurações do perfil\n\nEntradas existentes com o mesmo ID serão sobrescritas.\n\nContinuar?')) {
       e.target.value = '';
       return;
     }
-    
     setImporting(true);
     try {
       const text = await file.text();
       const backup = JSON.parse(text);
-      
-      // Valida estrutura básica
-      if (!backup || typeof backup !== 'object') {
-        throw new Error('Formato de backup inválido');
-      }
-
+      if (!backup || typeof backup !== 'object') throw new Error('Formato de backup inválido');
       const res = await fetch('/api/backup/full-import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(backup),
       });
-
       if (res.ok) {
         const result = await res.json();
         alert(
@@ -826,7 +876,6 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
     }
   };
 
-  // Legacy export (só entries) para compatibilidade
   const handleExport = () => {
     const data = JSON.stringify(entries, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
@@ -838,7 +887,6 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
     URL.revokeObjectURL(url);
   };
 
-  // Legacy import (só entries) para compatibilidade
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -896,12 +944,12 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
   const genres = Object.entries(genreMap).sort((a, b) => b[1] - a[1]).slice(0, 15);
 
   const episodeCountDist = [
-    { range: '2-6', count: series.filter(e => (e.totalEpisodes || 0) >= 2 && (e.totalEpisodes || 0) <= 6).length },
-    { range: '7-16', count: series.filter(e => (e.totalEpisodes || 0) >= 7 && (e.totalEpisodes || 0) <= 16).length },
-    { range: '17-28', count: series.filter(e => (e.totalEpisodes || 0) >= 17 && (e.totalEpisodes || 0) <= 28).length },
-    { range: '29-55', count: series.filter(e => (e.totalEpisodes || 0) >= 29 && (e.totalEpisodes || 0) <= 55).length },
-    { range: '56-100', count: series.filter(e => (e.totalEpisodes || 0) >= 56 && (e.totalEpisodes || 0) <= 100).length },
-    { range: '101+', count: series.filter(e => (e.totalEpisodes || 0) >= 101).length },
+    { range: '2-6',    count: series.filter(e => (e.totalEpisodes || 0) >= 2   && (e.totalEpisodes || 0) <= 6).length },
+    { range: '7-16',   count: series.filter(e => (e.totalEpisodes || 0) >= 7   && (e.totalEpisodes || 0) <= 16).length },
+    { range: '17-28',  count: series.filter(e => (e.totalEpisodes || 0) >= 17  && (e.totalEpisodes || 0) <= 28).length },
+    { range: '29-55',  count: series.filter(e => (e.totalEpisodes || 0) >= 29  && (e.totalEpisodes || 0) <= 55).length },
+    { range: '56-100', count: series.filter(e => (e.totalEpisodes || 0) >= 56  && (e.totalEpisodes || 0) <= 100).length },
+    { range: '101+',   count: series.filter(e => (e.totalEpisodes || 0) >= 101).length },
   ];
   const maxEpCount = Math.max(...episodeCountDist.map(d => d.count), 1);
 
@@ -927,175 +975,97 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
   };
 
   const StatBox = ({ label, value, accent, sub }: { label: string; value: string | number; accent?: string; sub?: string }) => (
-    <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '16px', textAlign: 'center', borderLeft: `3px solid ${accent || '#3db4f2'}` }}>
-      <div style={{ fontSize: '10px', color: '#647380', textTransform: 'uppercase', fontWeight: '700', marginBottom: '6px' }}>{label}</div>
-      <div style={{ fontSize: '28px', fontWeight: '800', color: accent || '#e0e4e8', lineHeight: 1.1 }}>{value}</div>
-      {sub && <div style={{ fontSize: '11px', color: '#3d3d5c', marginTop: '4px' }}>{sub}</div>}
+    <div
+      className={styles.statBox}
+      style={{ '--statAccent': accent } as React.CSSProperties}
+    >
+      <div className={styles.statBoxLabel}>{label}</div>
+      <div className={styles.statBoxValue} style={{ color: accent || undefined }}>{value}</div>
+      {sub && <div className={styles.statBoxSub}>{sub}</div>}
     </div>
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-      {/* Cabeçalho da seção Stats com título e botão alinhados */}
-<div style={{ position: 'relative', marginBottom: '8px' }}>
-        <h2 style={{
-          fontSize: '18px',
-          fontWeight: '700',
-          color: '#e67d99',
-          margin: '0 0 16px 0',
-          borderLeft: '3px solid #e67d99',
-          paddingLeft: '12px',
-          letterSpacing: '-0.3px',
-        }}>
-          Estatísticas
-        </h2>
-        <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json"
-            onChange={handleFullImport}
-            style={{ display: 'none' }}
-          />
+    <div className={styles.statsContainer}>
+      {/* Header */}
+      <div className={styles.statsHeader}>
+        <h2 className={styles.statsTitle}>Statistics</h2>
+        <div className={styles.statsActions}>
+          <input ref={importInputRef} type="file" accept=".json" onChange={handleFullImport} style={{ display: 'none' }} />
           <button
             onClick={() => importInputRef.current?.click()}
             disabled={importing}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: importing ? '#4a4a5a' : '#9b59b6',
-              border: 'none', borderRadius: '20px',
-              padding: '6px 14px', color: 'white',
-              fontSize: '11px', fontWeight: '700',
-              cursor: importing ? 'wait' : 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: importing ? 'none' : '0 1px 4px rgba(0,0,0,0.2)',
-            }}
-            onMouseEnter={e => { if (!importing) e.currentTarget.style.background = '#8e44ad'; }}
-            onMouseLeave={e => { if (!importing) e.currentTarget.style.background = '#9b59b6'; }}
+            className={`${styles.statsActionBtn} ${importing ? styles.statsActionBtnSyncing : styles.statsActionBtnRestore}`}
             title="Importa TUDO: entries, relações, atividades e perfil"
           >
-            ⬆️ {importing ? 'Importando...' : 'Restaurar'}
+            ⬆️ {importing ? 'Importing...' : 'Restore'}
           </button>
           <button
             onClick={handleFullExport}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: '#e74c3c',
-              border: 'none', borderRadius: '20px',
-              padding: '6px 14px', color: 'white',
-              fontSize: '11px', fontWeight: '700',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#c0392b'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#e74c3c'; }}
+            className={`${styles.statsActionBtn} ${styles.statsActionBtnBackup}`}
             title="Exporta TUDO: entries, relações, atividades e perfil"
           >
             ⬇️ Backup
           </button>
-          <div style={{ width: '1px', height: '24px', background: '#444', margin: '0 4px' }} />
-          <input
-            type="file"
-            accept=".json"
-            onChange={handleImport}
-            style={{ display: 'none' }}
-            id="legacy-import"
-          />
+          <div className={styles.statsDivider} />
+          <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} id="legacy-import" />
           <button
             onClick={() => (document.getElementById('legacy-import') as HTMLInputElement)?.click()}
             disabled={importing}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: importing ? '#4a4a5a' : '#2ecc71',
-              border: 'none', borderRadius: '20px',
-              padding: '6px 14px', color: 'white',
-              fontSize: '11px', fontWeight: '600',
-              cursor: importing ? 'wait' : 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: importing ? 'none' : '0 1px 4px rgba(0,0,0,0.2)',
-            }}
-            onMouseEnter={e => { if (!importing) e.currentTarget.style.background = '#27ae60'; }}
-            onMouseLeave={e => { if (!importing) e.currentTarget.style.background = '#2ecc71'; }}
+            className={`${styles.statsActionBtn} ${importing ? styles.statsActionBtnSyncing : styles.statsActionBtnImport}`}
             title="Importa só entries (compatível com backups antigos)"
           >
-            ↑ {importing ? 'Importando...' : 'Entradas'}
+            ↑ {importing ? 'Importing...' : 'Entries'}
           </button>
           <button
             onClick={handleExport}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: '#f39c12',
-              border: 'none', borderRadius: '20px',
-              padding: '6px 14px', color: 'white',
-              fontSize: '11px', fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#d68910'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#f39c12'; }}
+            className={`${styles.statsActionBtn} ${styles.statsActionBtnExport}`}
             title="Exporta só entries (compatível com backups antigos)"
           >
-            ↓ Entradas
+            ↓ Entries
           </button>
           <button
             onClick={syncAll}
             disabled={syncing}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: syncing ? '#4a4a5a' : '#3db4f2',
-              border: 'none',
-              borderRadius: '20px',
-              padding: '6px 14px',
-              color: 'white',
-              fontSize: '11px',
-              fontWeight: '600',
-              cursor: syncing ? 'wait' : 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: syncing ? 'none' : '0 1px 4px rgba(0,0,0,0.2)',
-            }}
-            onMouseEnter={e => { if (!syncing) (e.currentTarget.style.background = '#2c8bc0'); }}
-            onMouseLeave={e => { if (!syncing) (e.currentTarget.style.background = '#3db4f2'); }}
+            className={`${styles.statsActionBtn} ${syncing ? styles.statsActionBtnSyncing : styles.statsActionBtnSync}`}
             title="Sincroniza metadados TMDB"
           >
-            <span style={{ display: 'inline-block', animation: syncing ? 'spin 0.8s linear infinite' : 'none', fontSize: '12px' }}>↻</span>
-            {syncing ? 'Sincronizando...' : 'Sincronizar'}
+            <span className={syncing ? styles.spinIcon : ''}>↻</span>
+            {syncing ? 'Syncing...' : 'Sync'}
           </button>
         </div>
       </div>
 
-      {/* Animações */}
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-
-      {/* Grid de estatísticas */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-        <StatBox label="Total Series" value={series.length} accent="#3db4f2" sub={`${seriesCompleted.length} completed`} />
-        <StatBox label="Episodes" value={totalEpisodes.toLocaleString()} accent="#3db4f2" />
-        <StatBox label="Series Score" value={seriesMean} accent={seriesMean !== '—' ? scoreColor(Number(seriesMean)) : '#647380'} />
-        <StatBox label="Total Films" value={films.length} accent="#f39c12" sub={`${filmsCompleted.length} completed`} />
-        <StatBox label="Films Watched" value={filmsCompleted.length} accent="#f39c12" />
-        <StatBox label="Films Score" value={filmsMean} accent={filmsMean !== '—' ? scoreColor(Number(filmsMean)) : '#647380'} />
+      {/* Stat boxes */}
+      <div className={styles.statsGrid}>
+        <StatBox label="Total Series"   value={series.length}                 accent="#3db4f2" sub={`${seriesCompleted.length} completed`} />
+        <StatBox label="Episodes"        value={totalEpisodes.toLocaleString()} accent="#3db4f2" />
+        <StatBox label="Series Score"    value={seriesMean}                    accent={seriesMean !== '—' ? scoreColor(Number(seriesMean)) : undefined} />
+        <StatBox label="Total Films"     value={films.length}                  accent="#c9965a" sub={`${filmsCompleted.length} completed`} />
+        <StatBox label="Films Watched"   value={filmsCompleted.length}         accent="#c9965a" />
+        <StatBox label="Films Score"     value={filmsMean}                     accent={filmsMean !== '—' ? scoreColor(Number(filmsMean)) : undefined} />
       </div>
 
+      {/* Score distribution */}
       {scored.length > 0 && (
-        <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px' }}>
-          <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '18px' }}>Score Distribution</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '100px' }}>
-            {[1,2,3,4,5,6,7,8,9,10].map(n => {
+        <div className={styles.chartPanel}>
+          <div className={styles.chartPanelTitle}>Score Distribution</div>
+          <div className={styles.scoreBarsWrap}>
+            {[1,2,3,4,5,6,7,8,9,10].map((n, i) => {
               const c = scoreDist[n] || 0;
               const h = c ? Math.max((c / maxD) * 80, 4) : 0;
               return (
-                <div key={n} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                  {c > 0 && <span style={{ fontSize: '10px', color: scoreColor(n), fontWeight: '700' }}>{c}</span>}
-                  <div style={{ width: '100%', height: `${h}px`, background: h ? scoreColor(n) : 'transparent', borderRadius: '3px 3px 0 0' }} />
-                  <span style={{ fontSize: '10px', color: '#3d3d5c', fontWeight: '700' }}>{n}</span>
+                <div key={n} className={styles.scoreBarCol}>
+                  {c > 0 && <span className={styles.scoreBarCount} style={{ color: scoreColor(n) }}>{c}</span>}
+                  <div
+                    className={styles.scoreBar}
+                    style={{
+                      height: `${h}px`,
+                      background: h ? scoreColor(n) : 'transparent',
+                      animationDelay: `${i * 0.05}s`,
+                    }}
+                  />
+                  <span className={styles.scoreBarLabel}>{n}</span>
                 </div>
               );
             })}
@@ -1103,34 +1073,45 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
         </div>
       )}
 
-      <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px' }}>
-        <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '18px' }}>Episode Count</div>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {episodeCountDist.map(({ range, count }) => (
-            <div key={range} style={{ flex: 1, minWidth: '60px', textAlign: 'center' }}>
-              <div style={{ height: `${Math.max((count / maxEpCount) * 60, 4)}px`, background: '#4a90e2', borderRadius: '3px 3px 0 0', marginBottom: '6px' }} />
-              <div style={{ fontSize: '16px', fontWeight: '700', color: '#e0e4e8' }}>{count}</div>
-              <div style={{ fontSize: '10px', color: '#647380' }}>{range}</div>
+      {/* Episode count */}
+      <div className={styles.chartPanel}>
+        <div className={styles.chartPanelTitle}>Episode Count</div>
+        <div className={styles.episodeBarsWrap}>
+          {episodeCountDist.map(({ range, count }, i) => (
+            <div key={range} className={styles.episodeBarItem}>
+              <div
+                className={styles.episodeBarFill}
+                style={{
+                  height: `${Math.max((count / maxEpCount) * 60, count > 0 ? 4 : 0)}px`,
+                  animationDelay: `${i * 0.07}s`,
+                }}
+              />
+              <div className={styles.episodeBarValue}>{count}</div>
+              <div className={styles.episodeBarRange}>{range}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+      {/* Status bars */}
+      <div className={styles.statusBarsGrid}>
         {[{ label: 'Series Status', data: series }, { label: 'Films Status', data: films }].map(({ label, data }) => (
-          <div key={label} style={{ background: '#1e1e35', borderRadius: '4px', padding: '18px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '14px' }}>{label}</div>
+          <div key={label} className={styles.statusBarsPanel}>
+            <div className={styles.chartPanelTitle}>{label}</div>
             {ALL_STATUSES.filter(s => data.filter(e => e.status === s).length > 0).map(s => {
               const c = data.filter(e => e.status === s).length;
               const pct = data.length ? (c / data.length) * 100 : 0;
               return (
-                <div key={s} style={{ marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '11px', color: '#92a0ad' }}>{STATUS_LABEL[s]}</span>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: STATUS_COLOR[s] }}>{c}</span>
+                <div key={s} className={styles.statusBarItem}>
+                  <div className={styles.statusBarMeta}>
+                    <span className={styles.statusBarMetaLabel}>{STATUS_LABEL[s]}</span>
+                    <span className={styles.statusBarMetaValue} style={{ color: STATUS_COLOR[s] }}>{c}</span>
                   </div>
-                  <div style={{ height: '4px', background: '#2b2d42', borderRadius: '2px', overflow: 'hidden' }}>
-                    <div style={{ width: `${pct}%`, height: '100%', background: STATUS_COLOR[s], borderRadius: '2px' }} />
+                  <div className={styles.statusBarTrack}>
+                    <div
+                      className={styles.statusBarFill}
+                      style={{ width: `${pct}%`, background: STATUS_COLOR[s] }}
+                    />
                   </div>
                 </div>
               );
@@ -1139,26 +1120,38 @@ function StatsTab({ entries, onImport }: { entries: Entry[]; onImport?: () => vo
         ))}
       </div>
 
+      {/* Year chart */}
       {yearsSorted.length > 0 && (
-        <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px', overflowX: 'auto' }}>
-          <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '18px' }}>Release Year</div>
-          <div style={{ display: 'flex', gap: '2px', minWidth: '600px' }}>
-            {yearsSorted.map(([year, count]) => (
-              <div key={year} style={{ flex: 1, textAlign: 'center' }}>
-                <div style={{ height: `${Math.max((Number(count) / maxYearCount) * 80, 4)}px`, background: '#f39c12', borderRadius: '2px 2px 0 0', marginBottom: '6px' }} />
-                <div style={{ fontSize: '9px', color: '#647380' }}>{year}</div>
-                <div style={{ fontSize: '10px', fontWeight: '600', color: '#e0e4e8' }}>{count}</div>
+        <div className={styles.chartPanel} style={{ overflowX: 'auto' }}>
+          <div className={styles.chartPanelTitle}>Release Year</div>
+          <div className={styles.yearChartWrap}>
+            {yearsSorted.map(([year, count], i) => (
+              <div key={year} className={styles.yearBarItem}>
+                <div
+                  className={styles.yearBarFill}
+                  style={{
+                    height: `${Math.max((Number(count) / maxYearCount) * 80, 4)}px`,
+                    animationDelay: `${i * 0.02}s`,
+                  }}
+                />
+                <div className={styles.yearBarLabel}>{year}</div>
+                <div className={styles.yearBarValue}>{count}</div>
               </div>
             ))}
           </div>
         </div>
       )}
 
+      {/* Genre chips */}
       {genres.length > 0 && (
-        <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '18px' }}>
-          <div style={{ fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '14px' }}>Top Genres</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {genres.map(([g, c]) => <span key={g} style={{ background: '#2b2d42', borderRadius: '20px', padding: '5px 12px', fontSize: '12px', color: '#92a0ad', fontWeight: '600' }}>{g} <span style={{ color: '#3db4f2', fontWeight: '800' }}>({c})</span></span>)}
+        <div className={styles.chartPanel}>
+          <div className={styles.chartPanelTitle}>Top Genres</div>
+          <div className={styles.genreChipsWrap}>
+            {genres.map(([g, c]) => (
+              <span key={g} className={styles.genreChip}>
+                {g} <span className={styles.genreChipCount}>({c})</span>
+              </span>
+            ))}
           </div>
         </div>
       )}
@@ -1177,7 +1170,6 @@ function activityDescription(a: ActivityLog): string {
     if (a.status === 'DROPPED') return `Dropped`;
     return `Updated`;
   }
-  // TV_SEASON
   if (a.status === 'PLANNING') return `Added to list`;
   if (a.status === 'PAUSED') return `Paused`;
   if (a.status === 'DROPPED') return `Dropped`;
@@ -1202,34 +1194,38 @@ function ActivityItemEntry({ activity, onDelete }: { activity: ActivityLog; onDe
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #2d2d4a', position: 'relative' }}
+      className={styles.activityItem}
     >
-      <Link href={`/titles/${activity.slug}`} style={{ flexShrink: 0, width: '36px', height: '52px', borderRadius: '4px', overflow: 'hidden', display: 'block' }}>
-        <div style={{ width: '100%', height: '100%', backgroundImage: activity.imagePath ? `url(${imgUrl(activity.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
+      <Link href={`/titles/${activity.slug}`} className={styles.activityThumb}>
+        <div
+          className={styles.activityThumbImg}
+          style={{
+            backgroundImage: activity.imagePath ? `url(${imgUrl(activity.imagePath)})` : undefined,
+          }}
+        />
       </Link>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: '11px', color: '#647380', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div className={styles.activityInfo}>
+        <div className={styles.activityDesc}>
           {activityDescription(activity)}
-          {activity.score > 0 && <span style={{ color: '#64ffda', marginLeft: '6px' }}>{formatScore(activity.score)}</span>}
+          {activity.score > 0 && <span className={styles.activityScore}>{formatScore(activity.score)}</span>}
         </div>
-        <Link href={`/titles/${activity.slug}`} style={{ textDecoration: 'none' }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: '#e0e4e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity.title}</div>
-        </Link>
+        <Link href={`/titles/${activity.slug}`} className={styles.activityTitle}>{activity.title}</Link>
       </div>
-      <div style={{ fontSize: '10px', color: '#3d3d5c', flexShrink: 0, marginRight: hovered ? '24px' : '0', transition: 'margin 0.2s' }}>
+      <div className={styles.activityDate} style={{ marginRight: hovered ? '28px' : '0' }}>
         {relativeDate(activity.createdAt)}
       </div>
       <button
         onClick={() => onDelete(activity.id)}
-        style={{ position: 'absolute', right: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#3d3d5c', fontSize: '13px', padding: '4px', opacity: hovered ? 1 : 0, transition: 'opacity 0.2s ease, color 0.15s ease' }}
-        onMouseEnter={e => (e.currentTarget.style.color = '#e74c3c')}
-        onMouseLeave={e => (e.currentTarget.style.color = '#3d3d5c')}
-      >🗑</button>
+        className={styles.activityDeleteBtn}
+        style={{ opacity: hovered ? 1 : 0 }}
+      >
+        🗑
+      </button>
     </div>
   );
 }
 
-// ─── Overview Tab (versão modificada com activityLog) ──────────────────────────
+// ─── Overview Tab ─────────────────────────────────────────────────────────────
 
 function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityLog, activityVisible, onLoadMore, onDeleteActivity }: {
   entries: Entry[];
@@ -1255,91 +1251,112 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
   const hasMore = activityLog.length > activityVisible;
 
   return (
-    <div style={{ display: 'flex', gap: '28px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-      <div style={{ width: '240px', flexShrink: 0 }}>
+    <div className={styles.overviewLayout}>
+      {/* Sidebar: favorites */}
+      <div className={styles.overviewSidebar}>
         {favSeries.length > 0 && (
-          <div style={{ marginBottom: '28px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '12px' }}>★ Favorite Series</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-              {favSeries.slice(0,6).map(e => (
-                <Link key={e.id} href={`/titles/${entrySlug(e)}`} style={{ display: 'block', borderRadius: '4px', overflow: 'hidden', aspectRatio: '2/3', position: 'relative' }}>
-                  <div style={{ width: '100%', height: '100%', backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', padding: '6px 4px 3px' }}>
-                    <div style={{ fontSize: '8px', color: 'white', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
+          <div className={styles.favGroup}>
+            <div className={styles.favGroupTitle}>Favorite Series</div>
+            <div className={styles.favGrid}>
+              {favSeries.slice(0, 6).map(e => (
+                <Link key={e.id} href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
+                  <div
+                    className={styles.favPosterImg}
+                    style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
+                  />
+                  <div className={styles.favPosterLabel}>
+                    <div className={styles.favPosterTitle}>{e.title}</div>
                   </div>
                 </Link>
               ))}
             </div>
-            {favSeries.length > 6 && <div style={{ fontSize: '11px', color: '#647380', marginTop: '8px', textAlign: 'center' }}>+{favSeries.length-6} more</div>}
+            {favSeries.length > 6 && <div className={styles.favMore}>+{favSeries.length - 6} more</div>}
           </div>
         )}
+
         {favFilms.length > 0 && (
-          <div>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '12px' }}>★ Favorite Films</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-              {favFilms.slice(0,6).map(e => (
-                <Link key={e.id} href={`/titles/${entrySlug(e)}`} style={{ display: 'block', borderRadius: '4px', overflow: 'hidden', aspectRatio: '2/3', position: 'relative' }}>
-                  <div style={{ width: '100%', height: '100%', backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined, backgroundColor: '#2b2d42', backgroundSize: 'cover', backgroundPosition: '50%' }} />
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', padding: '6px 4px 3px' }}>
-                    <div style={{ fontSize: '8px', color: 'white', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
+          <div className={styles.favGroup}>
+            <div className={styles.favGroupTitle}>Favorite Films</div>
+            <div className={styles.favGrid}>
+              {favFilms.slice(0, 6).map(e => (
+                <Link key={e.id} href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
+                  <div
+                    className={styles.favPosterImg}
+                    style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
+                  />
+                  <div className={styles.favPosterLabel}>
+                    <div className={styles.favPosterTitle}>{e.title}</div>
                   </div>
                 </Link>
               ))}
             </div>
-            {favFilms.length > 6 && <div style={{ fontSize: '11px', color: '#647380', marginTop: '8px', textAlign: 'center' }}>+{favFilms.length-6} more</div>}
+            {favFilms.length > 6 && <div className={styles.favMore}>+{favFilms.length - 6} more</div>}
           </div>
         )}
-        {favSeries.length===0 && favFilms.length===0 && <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '20px', textAlign: 'center', fontSize: '12px', color: '#3d3d5c' }}>♡ No favorites yet<br /><span style={{ fontSize: '10px' }}>Hover over cards and click ♡</span></div>}
+
+        {favSeries.length === 0 && favFilms.length === 0 && (
+          <div className={styles.emptyFavBox}>
+            <span>♡</span>
+            No favorites yet
+            <br />
+            <span style={{ fontSize: '10px' }}>Hover over cards and click ♡</span>
+          </div>
+        )}
       </div>
 
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-          {[{ label: 'Series', data: series, accent: '#3db4f2' }, { label: 'Films', data: films, accent: '#f39c12' }].map(({ label, data, accent }) => (
-            <div key={label} style={{ background: '#1e1e35', borderRadius: '4px', padding: '16px' }}>
-              <div style={{ fontSize: '10px', fontWeight: '800', color: accent, textTransform: 'uppercase', marginBottom: '12px' }}>{label}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #2d2d4a' }}>
-                <span style={{ fontSize: '12px', color: '#647380' }}>Total</span><span style={{ fontWeight: '800', color: accent }}>{data.length}</span>
+      {/* Main column */}
+      <div className={styles.overviewMain}>
+        <div className={styles.overviewStatsGrid}>
+          {[
+            { label: 'Series', data: series, accent: '#3db4f2' },
+            { label: 'Films',  data: films,  accent: '#c9965a' },
+          ].map(({ label, data, accent }) => (
+            <div
+              key={label}
+              className={styles.overviewStatCard}
+            >
+              <div className={styles.overviewStatLabel} style={{ color: accent }}>{label}</div>
+              <div className={styles.overviewStatRow}>
+                <span className={styles.overviewStatRowLabel}>Total</span>
+                <span className={styles.overviewStatRowValue} style={{ color: accent }}>{data.length}</span>
               </div>
               {label === 'Series' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #2d2d4a' }}>
-                  <span style={{ fontSize: '12px', color: '#647380' }}>Episodes</span><span style={{ fontWeight: '800', color: '#e0e4e8' }}>{data.reduce((a,e)=>a+(e.progress||0),0).toLocaleString()}</span>
+                <div className={styles.overviewStatRow}>
+                  <span className={styles.overviewStatRowLabel}>Episodes</span>
+                  <span className={styles.overviewStatRowValue}>{data.reduce((a, e) => a + (e.progress || 0), 0).toLocaleString()}</span>
                 </div>
               )}
               {label === 'Films' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #2d2d4a' }}>
-                  <span style={{ fontSize: '12px', color: '#647380' }}>Watched</span><span style={{ fontWeight: '800', color: '#e0e4e8' }}>{data.filter(e=>e.status==='COMPLETED').length}</span>
+                <div className={styles.overviewStatRow}>
+                  <span className={styles.overviewStatRowLabel}>Watched</span>
+                  <span className={styles.overviewStatRowValue}>{data.filter(e => e.status === 'COMPLETED').length}</span>
                 </div>
               )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0' }}>
-                <span style={{ fontSize: '12px', color: '#647380' }}>Mean Score</span><span style={{ fontWeight: '800', color: mean(data) !== '—' ? scoreColor(Number(mean(data))) : '#647380' }}>{mean(data)}</span>
+              <div className={styles.overviewStatRow}>
+                <span className={styles.overviewStatRowLabel}>Mean Score</span>
+                <span
+                  className={styles.overviewStatRowValue}
+                  style={{ color: mean(data) !== '—' ? scoreColor(Number(mean(data))) : undefined }}
+                >
+                  {mean(data)}
+                </span>
               </div>
             </div>
           ))}
         </div>
 
-        {/* ── Recent Activity ── */}
-        <div style={{ background: '#1e1e35', borderRadius: '4px', padding: '18px' }}>
-          <div style={{ fontSize: '11px', fontWeight: '700', color: '#647380', textTransform: 'uppercase', marginBottom: '14px' }}>Recent Activity</div>
+        {/* Recent Activity */}
+        <div className={styles.activityPanel}>
+          <div className={styles.activityPanelTitle}>Recent Activity</div>
           {visibleActivities.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#3d3d5c', padding: '20px' }}>No activity yet.</div>
+            <div className={styles.activityEmpty}>No activity yet.</div>
           ) : (
             visibleActivities.map(a => (
               <ActivityItemEntry key={a.id} activity={a} onDelete={onDeleteActivity} />
             ))
           )}
           {hasMore && (
-            <button
-              onClick={onLoadMore}
-              style={{
-                display: 'block', width: '100%', marginTop: '12px',
-                padding: '9px', background: 'none',
-                border: '1px solid #2d2d4a', borderRadius: '4px',
-                color: '#647380', fontSize: '12px', fontWeight: '600',
-                cursor: 'pointer', transition: 'color 0.2s, border-color 0.2s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = '#e0e4e8'; e.currentTarget.style.borderColor = '#3d3d5c'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = '#647380'; e.currentTarget.style.borderColor = '#2d2d4a'; }}
-            >
+            <button onClick={onLoadMore} className={styles.loadMoreBtn}>
               Load more
             </button>
           )}
@@ -1349,7 +1366,7 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
   );
 }
 
-// ─── Componente Principal (corrigido com Suspense) ─────────────────────────────
+// ─── Componente Principal ──────────────────────────────────────────────────────
 
 function ProfileContent() {
   const searchParams = useSearchParams();
@@ -1360,114 +1377,103 @@ function ProfileContent() {
   const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
   const [editingProf, setEditingProf] = useState(false);
   const [activityVisible, setActivityVisible] = useState(15);
-const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
-const activityLogRef = useRef<ActivityLog[]>([]);
-const recentActivityIds = useRef<Set<string>>(new Set());
+  const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
+  const activityLogRef = useRef<ActivityLog[]>([]);
+  const recentActivityIds = useRef<Set<string>>(new Set());
 
-// Mantém ref sempre em sync com o estado
-useEffect(() => {
-  activityLogRef.current = activityLog;
-}, [activityLog]);
+  useEffect(() => {
+    activityLogRef.current = activityLog;
+  }, [activityLog]);
 
-const load = useCallback(async () => {
-  setLoading(true);
-  try {
-    const [eRes, pRes, aRes] = await Promise.all([
-      fetch('/api/entries'),
-      fetch('/api/profile'),
-      fetch('/api/activity'),
-    ]);
-    if (eRes.ok) setEntries(await eRes.json());
-    if (pRes.ok) setProfile(await pRes.json());
-    if (aRes.ok) setActivityLog(await aRes.json());
-  } catch (err) { console.error(err); } finally { setLoading(false); }
-}, []);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [eRes, pRes, aRes] = await Promise.all([
+        fetch('/api/entries'),
+        fetch('/api/profile'),
+        fetch('/api/activity'),
+      ]);
+      if (eRes.ok) setEntries(await eRes.json());
+      if (pRes.ok) setProfile(await pRes.json());
+      if (aRes.ok) setActivityLog(await aRes.json());
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  }, []);
 
-// Refresh silencioso: atualiza dados sem mostrar loading (usado ao voltar para a aba)
-const silentRefresh = useCallback(async () => {
-  try {
-    const [eRes, pRes] = await Promise.all([fetch('/api/entries'), fetch('/api/profile')]);
-    if (eRes.ok) setEntries(await eRes.json());
-    if (pRes.ok) setProfile(await pRes.json());
-  } catch (err) { console.error(err); }
-}, []);
+  const silentRefresh = useCallback(async () => {
+    try {
+      const [eRes, pRes] = await Promise.all([fetch('/api/entries'), fetch('/api/profile')]);
+      if (eRes.ok) setEntries(await eRes.json());
+      if (pRes.ok) setProfile(await pRes.json());
+    } catch (err) { console.error(err); }
+  }, []);
 
-useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-// Recarrega dados ao voltar para a aba (ex: após editar em /titles) — sem efeito de F5
-useEffect(() => {
-  const handleVisibility = () => {
-    if (document.visibilityState === 'visible') {
-      silentRefresh();
-    }
-  };
-  document.addEventListener('visibilitychange', handleVisibility);
-  return () => document.removeEventListener('visibilitychange', handleVisibility);
-}, [silentRefresh]);
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') silentRefresh();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [silentRefresh]);
 
-const pushActivity = useCallback(async (entry: Entry) => {
-  const now = Date.now();
-  const key = `${entry.id}-${entry.status}-${entry.progress}-${Math.floor(now / 200)}`;
-  if (recentActivityIds.current.has(key)) return;
-  recentActivityIds.current.add(key);
-  setTimeout(() => recentActivityIds.current.delete(key), 500);
+  const pushActivity = useCallback(async (entry: Entry) => {
+    const now = Date.now();
+    const key = `${entry.id}-${entry.status}-${entry.progress}-${Math.floor(now / 200)}`;
+    if (recentActivityIds.current.has(key)) return;
+    recentActivityIds.current.add(key);
+    setTimeout(() => recentActivityIds.current.delete(key), 500);
 
-  const shouldGroup = entry.type === 'TV_SEASON' &&
-    (entry.status === 'WATCHING' || entry.status === 'REWATCHING');
+    const shouldGroup = entry.type === 'TV_SEASON' &&
+      (entry.status === 'WATCHING' || entry.status === 'REWATCHING');
+    const last = activityLogRef.current[0];
 
-  const last = activityLogRef.current[0]; // ← ref, nunca stale
-
-  if (shouldGroup && last && last.entryId === entry.id && last.status === entry.status) {
-    const lastTime = new Date(last.lastUpdatedAt).getTime();
-    const hoursDiff = (now - lastTime) / (1000 * 60 * 60);
-    const isConsecutive = (last.progressEnd ?? 0) === entry.progress - 1;
-
-    if (hoursDiff <= 24 && isConsecutive) {
-      const res = await fetch(`/api/activity/${last.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ progressEnd: entry.progress }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        // Atualiza ref imediatamente, antes do re-render
-        activityLogRef.current = [updated, ...activityLogRef.current.slice(1)];
-        setActivityLog(activityLogRef.current);
+    if (shouldGroup && last && last.entryId === entry.id && last.status === entry.status) {
+      const lastTime = new Date(last.lastUpdatedAt).getTime();
+      const hoursDiff = (now - lastTime) / (1000 * 60 * 60);
+      const isConsecutive = (last.progressEnd ?? 0) === entry.progress - 1;
+      if (hoursDiff <= 24 && isConsecutive) {
+        const res = await fetch(`/api/activity/${last.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ progressEnd: entry.progress }),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          activityLogRef.current = [updated, ...activityLogRef.current.slice(1)];
+          setActivityLog(activityLogRef.current);
+        }
+        return;
       }
-      return;
     }
-  }
 
-  const payload = {
-    entryId: entry.id,
-    title: entry.title,
-    imagePath: entry.imagePath ?? null,
-    type: entry.type,
-    status: entry.status,
-    progressStart: shouldGroup ? entry.progress : null,
-    progressEnd: shouldGroup ? entry.progress : null,
-    score: entry.score,
-    slug: entrySlug(entry),
-  };
+    const payload = {
+      entryId: entry.id,
+      title: entry.title,
+      imagePath: entry.imagePath ?? null,
+      type: entry.type,
+      status: entry.status,
+      progressStart: shouldGroup ? entry.progress : null,
+      progressEnd: shouldGroup ? entry.progress : null,
+      score: entry.score,
+      slug: entrySlug(entry),
+    };
 
-  const res = await fetch('/api/activity', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (res.ok) {
-    const newLog = await res.json();
-    // Atualiza ref imediatamente, antes do re-render
-    activityLogRef.current = [newLog, ...activityLogRef.current];
-    setActivityLog(activityLogRef.current);
-  }
-}, []); // sem dependências — usa ref
+    const res = await fetch('/api/activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const newLog = await res.json();
+      activityLogRef.current = [newLog, ...activityLogRef.current];
+      setActivityLog(activityLogRef.current);
+    }
+  }, []);
 
   function handleSaved(updated: Entry) {
     setEntries(prev => prev.map(e =>
-      e.id === updated.id
-        ? { ...e, ...updated }   // preserva campos que a API omitir (ex: startDate/finishDate)
-        : e
+      e.id === updated.id ? { ...e, ...updated } : e
     ));
     pushActivity(updated);
     setEditingEntry(null);
@@ -1476,14 +1482,17 @@ const pushActivity = useCallback(async (entry: Entry) => {
   async function toggleFav(entry: Entry) {
     const next = !entry.isFavorite;
     setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, isFavorite: next } : e));
-    await fetch(`/api/entries/${entry.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isFavorite: next }) });
+    await fetch(`/api/entries/${entry.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isFavorite: next }),
+    });
   }
 
   async function updateProgress(entryId: string, newProgress: number) {
     try {
       const entry = entries.find(e => e.id === entryId);
       const shouldComplete = entry?.type === 'TV_SEASON' && entry.totalEpisodes != null && newProgress === entry.totalEpisodes;
-
       const res = await fetch(`/api/entries/${entryId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1501,51 +1510,82 @@ const pushActivity = useCallback(async (entry: Entry) => {
     }
   }
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#121212', color: '#647380' }}>Loading...</div>;
+  if (loading) return <div className={styles.loadingState}>Loading...</div>;
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'overview', label: 'Overview' }, { id: 'series', label: 'Series List' },
-    { id: 'films', label: 'Film List' }, { id: 'favorites', label: 'Favorites' }, { id: 'stats', label: 'Stats' }
+    { id: 'overview',   label: 'Overview' },
+    { id: 'series',     label: 'Series List' },
+    { id: 'films',      label: 'Film List' },
+    { id: 'favorites',  label: 'Favorites' },
+    { id: 'stats',      label: 'Stats' },
   ];
 
   const series = entries.filter(e => e.type === 'TV_SEASON');
-  const films = entries.filter(e => e.type === 'MOVIE');
+  const films   = entries.filter(e => e.type === 'MOVIE');
 
   return (
-    <div style={{ background: '#121212', minHeight: '100vh', fontFamily: 'Overpass, sans-serif', color: 'rgb(159,173,189)' }}>
-      <div style={{ height: '300px', backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative', display: 'flex', alignItems: 'flex-end', backgroundImage: profile?.bannerUrl ? `url(${profile.bannerUrl})` : 'linear-gradient(135deg, #121212 0%, #1e1e1e 50%, #121212 100%)' }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'linear-gradient(180deg, rgba(18,18,18,0) 0%, rgba(18,18,18,.6) 100%)' }} />
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '30px', position: 'relative', zIndex: 2, transform: 'translateY(35px)', maxWidth: '1140px', margin: '0 auto', padding: '0 50px', width: '100%' }}>
-          <div style={{
-  width: '160px', height: '160px', borderRadius: '4px',
-  background: profile?.avatarUrl ? 'transparent' : (profile?.avatarColor ?? '#3db4f2'),
-  boxShadow: profile?.avatarUrl ? 'none' : '0 0 10px rgba(0,0,0,0.5)',
-  overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px'
-}}>
-  {profile?.avatarUrl ? (
-    <img src={profile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} alt="avatar" />
-  ) : (
-    <span style={{ fontSize: '64px' }}>👤</span>
-  )}
-</div>
-          <div style={{ paddingBottom: '10px' }}>
-            <h1 style={{ color: '#fff', fontSize: '2.2rem', fontWeight: 800, filter: 'drop-shadow(0px 0px 6px black)', margin: 0 }}>{profile?.username ?? 'My Profile'}</h1>
+    <div className={styles.profilePage}>
+      {/* ── Banner ── */}
+      <div
+        className={styles.banner}
+        style={{
+          backgroundImage: profile?.bannerUrl
+            ? `url(${profile.bannerUrl})`
+            : 'linear-gradient(135deg, #1a1818 0%, #292727 50%, #1a1818 100%)',
+        }}
+      >
+        <div className={styles.bannerOverlay} />
+        <div className={styles.bannerContent}>
+          {/* Avatar — estrutura preservada integralmente */}
+          <div
+            className={styles.avatarWrap}
+            style={{
+              background: profile?.avatarUrl ? 'transparent' : (profile?.avatarColor ?? '#3db4f2'),
+              boxShadow: profile?.avatarUrl ? 'none' : '0 0 10px rgba(0,0,0,0.5)',
+            }}
+          >
+            {profile?.avatarUrl ? (
+              <img src={profile.avatarUrl} className={styles.avatarImg} alt="avatar" />
+            ) : (
+              <span style={{ fontSize: '64px' }}>👤</span>
+            )}
+          </div>
+          <div className={styles.bannerUserInfo}>
+            <h1 className={styles.bannerUsername}>{profile?.username ?? 'My Profile'}</h1>
           </div>
         </div>
-        <button onClick={() => setEditingProf(true)} style={{ position: 'absolute', top: '14px', right: '16px', background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '4px', color: 'white', padding: '7px 13px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', backdropFilter: 'blur(4px)' }}>✎ Edit Profile</button>
+        <button onClick={() => setEditingProf(true)} className={styles.editProfileBtn}>
+          ✎ Edit Profile
+        </button>
       </div>
 
-      <div style={{ background: '#1e1e1e', paddingTop: '50px', marginBottom: '30px' }}>
-        <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '0 20px' }}>
-          {profile?.bio && <div style={{ textAlign: 'center', fontSize: '13px', color: 'rgb(159,173,189)', marginBottom: '8px' }}>{profile.bio}</div>}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '30px', marginBottom: '8px' }}>
-            <div><span style={{ fontSize: '16px', fontWeight: 800, color: '#3db4f2' }}>{series.length}</span><span style={{ fontSize: '12px', marginLeft: '5px' }}>Series</span></div>
-            <div><span style={{ fontSize: '16px', fontWeight: 800, color: 'rgb(159,173,189)' }}>{series.reduce((a,e)=>a+(e.progress||0),0).toLocaleString()}</span><span style={{ fontSize: '12px', marginLeft: '5px' }}>Episodes</span></div>
-            <div><span style={{ fontSize: '16px', fontWeight: 800, color: '#f39c12' }}>{films.length}</span><span style={{ fontSize: '12px', marginLeft: '5px' }}>Films</span></div>
+      {/* ── Meta bar with tabs ── */}
+      <div className={styles.metaBar}>
+        <div className={styles.metaBarInner}>
+          {profile?.bio && <div className={styles.bio}>{profile.bio}</div>}
+          <div className={styles.quickStats}>
+            <div className={styles.quickStatItem}>
+              <span className={styles.quickStatValue}>{series.length}</span>
+              <span className={styles.quickStatLabel}>Series</span>
+            </div>
+            <div className={styles.quickStatItem}>
+              <span className={styles.quickStatValue}>
+                {series.reduce((a, e) => a + (e.progress || 0), 0).toLocaleString()}
+              </span>
+              <span className={styles.quickStatLabel}>Episodes</span>
+            </div>
+            <div className={styles.quickStatItem}>
+              <span className={styles.quickStatValue} style={{ color: '#c9965a' }}>{films.length}</span>
+              <span className={styles.quickStatLabel}>Films</span>
+            </div>
           </div>
-          <nav style={{ display: 'flex', justifyContent: 'center', gap: '20px' }}>
+          <nav className={styles.tabsNav}>
             {TABS.map(({ id, label }) => (
-              <button key={id} onClick={() => setTab(id)} style={{ padding: '15px', fontSize: '1.4rem', fontWeight: 600, color: tab === id ? 'rgb(179,104,230)' : 'rgb(159,173,189)', background: 'none', border: 'none', cursor: 'pointer', textShadow: tab === id ? '0 0 5px rgb(179,104,230)' : 'none', transition: '0.3s' }}>
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                className={`${styles.tab} ${tab === id ? styles.tabActive : ''}`}
+              >
                 {label}
               </button>
             ))}
@@ -1553,7 +1593,8 @@ const pushActivity = useCallback(async (entry: Entry) => {
         </div>
       </div>
 
-      <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '0 20px', paddingBottom: '80px' }}>
+      {/* ── Tab content ── */}
+      <div className={styles.contentWrap}>
         {tab === 'overview' && (
           <OverviewTab
             entries={entries}
@@ -1564,17 +1605,17 @@ const pushActivity = useCallback(async (entry: Entry) => {
             activityVisible={activityVisible}
             onLoadMore={() => setActivityVisible(v => v + 15)}
             onDeleteActivity={async (id) => {
-  await fetch(`/api/activity/${id}`, { method: 'DELETE' });
-  const filtered = activityLogRef.current.filter(a => a.id !== id);
-  activityLogRef.current = filtered;
-  setActivityLog(filtered);
-}}
+              await fetch(`/api/activity/${id}`, { method: 'DELETE' });
+              const filtered = activityLogRef.current.filter(a => a.id !== id);
+              activityLogRef.current = filtered;
+              setActivityLog(filtered);
+            }}
           />
         )}
-        {tab === 'series' && <MediaListTab entries={entries} type="TV_SEASON" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
-        {tab === 'films' && <MediaListTab entries={entries} type="MOVIE" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
+        {tab === 'series'    && <MediaListTab entries={entries} type="TV_SEASON" onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
+        {tab === 'films'     && <MediaListTab entries={entries} type="MOVIE"     onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
         {tab === 'favorites' && <FavoritesTab entries={entries} onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
-        {tab === 'stats' && <StatsTab entries={entries} onImport={load} />}
+        {tab === 'stats'     && <StatsTab entries={entries} onImport={load} />}
       </div>
 
       {editingEntry && (
@@ -1588,7 +1629,9 @@ const pushActivity = useCallback(async (entry: Entry) => {
           }}
         />
       )}
-      {editingProf && profile && <ProfileEditor profile={profile} onClose={() => setEditingProf(false)} onSaved={p => setProfile(p)} />}
+      {editingProf && profile && (
+        <ProfileEditor profile={profile} onClose={() => setEditingProf(false)} onSaved={p => setProfile(p)} />
+      )}
     </div>
   );
 }
@@ -1596,7 +1639,7 @@ const pushActivity = useCallback(async (entry: Entry) => {
 // ─── Exportação principal com Suspense ────────────────────────────────────────
 export default function ProfilePage() {
   return (
-    <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#121212', color: '#647380' }}>Carregando...</div>}>
+    <Suspense fallback={<div className={styles.loadingState}>Carregando...</div>}>
       <ProfileContent />
     </Suspense>
   );

@@ -1,6 +1,7 @@
 // src/app/layout.tsx
 import './globals.css';
 import Link from 'next/link';
+import NotificationPanel from '@/components/NotificationPanel';
 
 interface NavLinkProps {
   href: string;
@@ -102,8 +103,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/search"              label="Browse"      />
             </div>
 
-            {/* ── Avatar ── */}
-            <div className="navbar-user">
+            {/* ── Notifications + Avatar ── */}
+            <div className="navbar-user" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <NotificationPanel />
               <Link href="/profile?tab=overview" className="avatar-link" title="Ir ao Perfil">
                 <div className="avatar-circle">
                   <span className="avatar-initial">H</span>

@@ -65,8 +65,6 @@ function HomePageSkeleton() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// getOrdinal removido daqui – importado de @/lib/utils
-
 function buildSeasonSlug(showId: number, seasonNumber: number): string {
   return `tv-${showId}-s${seasonNumber}`;
 }
@@ -79,7 +77,7 @@ function buildMovieSlug(movieId: number): string {
 async function getHomeData() {
   const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
-  // 1. AIRING
+  // 1. AIRING (apenas séries com próximo episódio)
   const myWatching = await prisma.entry.findMany({
     where: { status: 'WATCHING', type: 'TV_SEASON' },
     take: 6,
@@ -92,6 +90,9 @@ async function getHomeData() {
     const data = await res.json();
     return { ...entry, nextEpisode: data?.next_episode_to_air ?? null, inProduction: data?.in_production ?? false, backdrop: data?.backdrop_path ?? null };
   });
+  let airingResults = await Promise.all(airingPromises);
+  // Filtra apenas entradas que realmente têm próximo episódio
+  airingResults = airingResults.filter(e => e.nextEpisode !== null);
 
   // 2. POPULAR SEASONS
   const trendingRes = await fetch(
@@ -173,13 +174,24 @@ async function getHomeData() {
 
   const newlyAdded = recentlyAddedItems.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()).slice(0, 6);
 
-  const [airingResults, popularResults, newsResults] = await Promise.all([
-    Promise.all(airingPromises), Promise.all(popularPromises), Promise.all(newsPromises),
+  // 5. IN PROGRESS — filmes + séries com status WATCHING (excluindo os que já estão em Airing Now)
+  const airingEntryIds = new Set(airingResults.map(e => e.id));
+  const inProgressEntries = await prisma.entry.findMany({
+    where: {
+      status: 'WATCHING',
+      NOT: { id: { in: Array.from(airingEntryIds) } }
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 6,
+  });
+
+  const [popularResults, newsResults] = await Promise.all([
+    Promise.all(popularPromises), Promise.all(newsPromises),
   ]);
   const uniqueNews = Array.from(new Map(newsResults.flat().map(item => [item.title, item])).values())
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 8);
 
-  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded };
+  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressEntries };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -193,7 +205,7 @@ export default async function HomePage() {
 }
 
 async function HomePageContent() {
-  const { airing, popular, news, newlyAdded } = await getHomeData();
+  const { airing, popular, news, newlyAdded, inProgress } = await getHomeData();
 
   return (
     <div style={{
@@ -397,6 +409,38 @@ async function HomePageContent() {
           animation: glow-pulse 2s infinite;
           margin-right: 5px;
           vertical-align: middle;
+        }
+
+        /* ── In Progress badge ── */
+        .progress-badge {
+          display: inline-block;
+          padding: 1px 6px;
+          border-radius: 20px;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 0.5px;
+          text-transform: uppercase;
+          background: rgba(230,125,153,0.15);
+          color: rgb(230,125,153);
+          border: 1px solid rgba(230,125,153,0.25);
+        }
+        .progress-ep {
+          font-size: 10px;
+          color: rgba(220,210,215,0.55);
+          margin: 3px 0 0;
+          font-weight: 600;
+        }
+        .progress-bar-track {
+          height: 3px;
+          background: rgba(255,255,255,0.08);
+          border-radius: 4px;
+          margin-top: 6px;
+          overflow: hidden;
+        }
+        .progress-bar-fill {
+          height: 100%;
+          background: linear-gradient(to right, rgb(230,125,153), rgba(230,125,153,0.5));
+          border-radius: 4px;
         }
 
         /* ── News cards ── */
@@ -644,7 +688,6 @@ async function HomePageContent() {
                 <h3 className="side-panel-header-title" style={{ color: '#2ecc71' }}>Airing Now</h3>
               </div>
 
-              {/* Grid de cards igual Popular/Newly Added */}
               {airing.length > 0 ? (
                 <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
                   {airing.map((e: any) => {
@@ -682,7 +725,68 @@ async function HomePageContent() {
                 </div>
               ) : (
                 <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
-                  Add series to <span style={{ color: '#3db4f2', fontWeight: '700' }}>Watching</span><br />to track episodes here.
+                  No series currently airing.<br />
+                  <span style={{ color: '#3db4f2', fontWeight: '700' }}>Add a series</span> to Watching to track new episodes.
+                </div>
+              )}
+            </div>
+
+            {/* ── IN PROGRESS ─────────────────────────────────────────── */}
+            <div className="side-panel">
+              <div className="side-panel-header">
+                <div className="side-panel-header-dot" style={{ background: 'rgb(230,125,153)', boxShadow: '0 0 8px rgba(230,125,153,0.6)' }} />
+                <h3 className="side-panel-header-title">In Progress</h3>
+              </div>
+
+              {inProgress.length > 0 ? (
+                <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                  {inProgress.map((e: any) => {
+                    const isMovie = e.type === 'MOVIE';
+                    const slug = isMovie
+                      ? `movie-${e.tmdbId}`
+                      : `tv-${e.parentTmdbId}-s${e.seasonNumber ?? 1}`;
+
+                    const progressLabel = !isMovie && e.progress != null && e.totalEpisodes
+                      ? `Ep ${e.progress}/${e.totalEpisodes}`
+                      : null;
+
+                    return (
+                      <Link key={e.id} href={`/titles/${slug}`} className="airing-card">
+                        {e.imagePath ? (
+                          <img
+                            src={`https://image.tmdb.org/t/p/w300${e.imagePath}`}
+                            alt={e.title}
+                            loading="lazy"
+                            decoding="async"
+                            style={{ width: '100%', aspectRatio: '2/3', objectFit: 'cover', display: 'block' }}
+                          />
+                        ) : (
+                          <div style={{ aspectRatio: '2/3', background: 'rgb(62,58,58)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px' }}>
+                            {isMovie ? '🎬' : '📺'}
+                          </div>
+                        )}
+                        <div className="airing-info">
+                          <p className="airing-title">{e.title}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                            <span className="progress-badge">{isMovie ? '🎬 Film' : '📺 Series'}</span>
+                            {progressLabel && (
+                              <span className="progress-ep">{progressLabel}</span>
+                            )}
+                          </div>
+                          {isMovie && (
+                            <div className="progress-bar-track">
+                              <div className="progress-bar-fill" style={{ width: '40%' }} />
+                            </div>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
+                  No titles in progress.<br />
+                  <span style={{ color: 'rgb(230,125,153)', fontWeight: '700' }}>Start watching</span> something to see it here.
                 </div>
               )}
             </div>
