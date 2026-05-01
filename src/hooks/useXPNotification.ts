@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import type { Achievement } from '@/lib/achievements';
 
 export interface XPNotificationAward {
   xpGained: number;
@@ -11,6 +12,7 @@ export interface XPNotificationAward {
   leveledUp: boolean;
   gainedLevels?: number;
   message: string;
+  newAchievements?: Achievement[];
   streak?: {
     current: number;
     longest: number;
@@ -28,6 +30,7 @@ export interface XPToast {
 }
 
 export const XP_AWARDED_EVENT = 'hades:xp-awarded';
+export const ACHIEVEMENT_EVENT = 'hades:achievement-unlocked';
 
 export function emitXPNotification(awards: XPNotificationAward[] | XPNotificationAward | undefined | null) {
   if (typeof window === 'undefined' || !awards) return;
@@ -35,6 +38,12 @@ export function emitXPNotification(awards: XPNotificationAward[] | XPNotificatio
   if (normalized.length === 0) return;
 
   window.dispatchEvent(new CustomEvent(XP_AWARDED_EVENT, { detail: { awards: normalized } }));
+
+  // Emite achievements novos encontrados nos awards
+  const allNew = normalized.flatMap((a) => a.newAchievements ?? []);
+  if (allNew.length > 0) {
+    window.dispatchEvent(new CustomEvent(ACHIEVEMENT_EVENT, { detail: { achievements: allNew } }));
+  }
 }
 
 export function useXPNotification() {
