@@ -57,6 +57,30 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Estilos para corrigir o alinhamento da navbar e XPProgressBar */}
+        <style>{`
+          .navbar-user {
+            display: flex !important;
+            align-items: center !important;
+            gap: 1rem !important;
+            flex-wrap: wrap !important;
+          }
+          .xp-float-shell {
+            display: flex !important;
+            align-items: center !important;
+          }
+          /* Ajuste pequeno para o NotificationPanel não ter margens indesejadas */
+          .notification-panel-trigger,
+          .notification-panel-trigger button {
+            display: flex !important;
+            align-items: center !important;
+          }
+          /* Garantir que o avatar circle fique alinhado verticalmente */
+          .avatar-link {
+            display: flex !important;
+            align-items: center !important;
+          }
+        `}</style>
       </head>
       <body className="anilist-theme">
 
