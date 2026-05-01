@@ -265,7 +265,7 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease',
     boxShadow: '0 24px 45px rgba(0,0,0,0.24)',
     backdropFilter: 'blur(16px)',
-    transform: 'translateY(-8px)',
+    marginTop: '-8px',
   },
   levelUpPulse: {
     borderColor: 'rgba(230,125,153,0.55)',
