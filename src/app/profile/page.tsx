@@ -528,7 +528,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
   const [selectedYear, setSelectedYear] = useState(0);
   const [scoreFilter, setScoreFilter] = useState(0);
   const [sortBy, setSortBy] = useState('title');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 

@@ -7,7 +7,7 @@ import NextUpCard from '@/components/NextUpCard';
 import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
+// ─── Skeleton (mantido igual) ────────────────────────────────────────────────
 
 function HomePageSkeleton() {
   return (
@@ -76,12 +76,11 @@ function buildMovieSlug(movieId: number): string {
   return `movie-${movieId}`;
 }
 
-// ─── Data fetching ─────────────────────────────────────────────────────────────
+// ─── Data fetching (igual ao original) ────────────────────────────────────────
 
 async function getHomeData() {
   const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
-  // 1. AIRING (apenas séries com próximo episódio)
   const myWatching = await prisma.entry.findMany({
     where: { status: 'WATCHING', type: 'TV_SEASON' },
     take: 6,
@@ -95,10 +94,8 @@ async function getHomeData() {
     return { ...entry, nextEpisode: data?.next_episode_to_air ?? null, inProduction: data?.in_production ?? false, backdrop: data?.backdrop_path ?? null };
   });
   let airingResults = await Promise.all(airingPromises);
-  // Filtra apenas entradas que realmente têm próximo episódio
   airingResults = airingResults.filter(e => e.nextEpisode !== null);
 
-  // 2. POPULAR SEASONS
   const trendingRes = await fetch(
     `https://api.themoviedb.org/3/trending/tv/week?api_key=${apiKey}`,
     { next: { revalidate: 3600 } }
@@ -120,7 +117,6 @@ async function getHomeData() {
     };
   });
 
-  // 3. NEWS
   const newsSources = [
     { name: 'Deadline', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://deadline.com/category/film/feed/', sourceSite: 'Deadline', twitter: '@DEADLINE' },
     { name: 'Variety', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://variety.com/c/film/news/feed/', sourceSite: 'Variety', twitter: '@Variety' },
@@ -143,7 +139,6 @@ async function getHomeData() {
     } catch { return []; }
   });
 
-  // 4. NEWLY ADDED
   const [movieChanges, tvChanges] = await Promise.all([
     fetch(`https://api.themoviedb.org/3/movie/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.json()),
     fetch(`https://api.themoviedb.org/3/tv/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.json()),
@@ -178,7 +173,6 @@ async function getHomeData() {
 
   const newlyAdded = recentlyAddedItems.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()).slice(0, 6);
 
-  // 5. IN PROGRESS — filmes + séries com status WATCHING (excluindo os que já estão em Airing Now)
   const airingEntryIds = new Set(airingResults.map(e => e.id));
   const inProgressEntries = await prisma.entry.findMany({
     where: {
@@ -189,7 +183,6 @@ async function getHomeData() {
     take: 6,
   });
 
-  // 6. NEXT UP — inteligente
   const nextUpItems = await getNextUpItems(4);
 
   const [popularResults, newsResults] = await Promise.all([
@@ -201,7 +194,7 @@ async function getHomeData() {
   return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressEntries, nextUp: nextUpItems };
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Componente principal com layout corrigido ────────────────────────────────
 
 export default async function HomePage() {
   return (
@@ -222,7 +215,7 @@ async function HomePageContent() {
       color: 'rgb(220,210,215)',
     }}>
       <style>{`
-        /* ── Animations ── */
+        /* ── Animações e estilos originais (mantidos) ── */
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -234,14 +227,6 @@ async function HomePageContent() {
         @keyframes glow-pulse {
           0%, 100% { box-shadow: 0 0 8px rgba(230,125,153,0.25); }
           50%       { box-shadow: 0 0 22px rgba(230,125,153,0.55); }
-        }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50%       { transform: translateY(-5px); }
-        }
-        @keyframes scanline {
-          0%   { transform: translateY(-100%); }
-          100% { transform: translateY(100vh); }
         }
         @keyframes borderGlow {
           0%, 100% { border-color: rgba(230,125,153,0.3); }
@@ -256,8 +241,16 @@ async function HomePageContent() {
           70%  { transform: scale(1.04); }
           100% { opacity: 1; transform: scale(1); }
         }
+        @keyframes neonPulse {
+          0%   { box-shadow: 0 0 0 0 rgba(230,125,153,0.4); }
+          70%  { box-shadow: 0 0 0 8px rgba(230,125,153,0); }
+          100% { box-shadow: 0 0 0 0 rgba(230,125,153,0); }
+        }
+        @keyframes textGlow {
+          0%, 100% { text-shadow: 0 0 2px rgba(230,125,153,0.2); }
+          50%       { text-shadow: 0 0 8px rgba(230,125,153,0.6); }
+        }
 
-        /* ── Page wrapper ── */
         .hades-home {
           max-width: 1440px;
           margin: 0 auto;
@@ -265,7 +258,121 @@ async function HomePageContent() {
           animation: fadeUp 0.5s ease-out both;
         }
 
-        /* ── Section headers ── */
+        /* ── Grid para 5 cards por linha (com largura fixa) ── */
+        .cards-grid-5 {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(150px, 160px));
+          gap: 20px;
+          justify-content: center;
+          width: 100%;
+        }
+
+        /* ── Wrapper do card com animação de hover ── */
+        .card-hover-effect {
+          transition: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+          will-change: transform;
+        }
+        .card-hover-effect:hover {
+          transform: translateY(-8px);
+          filter: brightness(1.05);
+        }
+
+        /* Força os cards a herdarem o hover e aplica borda brilhante */
+        .card-hover-effect:hover .airing-card,
+        .card-hover-effect:hover .nextup-card,
+        .card-hover-effect:hover > * {
+          border-color: rgba(230,125,153, 0.7) !important;
+          box-shadow: 0 20px 28px -12px rgba(0,0,0,0.5), 0 0 0 2px rgba(230,125,153, 0.3) !important;
+        }
+
+        /* Centraliza o conteúdo do card */
+        .airing-card, .nextup-card {
+          text-align: center;
+        }
+        .airing-card img, .nextup-card img {
+          width: 100%;
+          aspect-ratio: 2/3;
+          object-fit: cover;
+          border-radius: 8px;
+        }
+        .airing-card .airing-info, .nextup-card .airing-info {
+          padding: 12px 8px;
+          text-align: center;
+        }
+        .airing-card .airing-title {
+          font-size: 12px;
+          font-weight: 700;
+          white-space: normal;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          line-height: 1.3;
+          margin-bottom: 6px;
+        }
+        .airing-card .airing-ep,
+        .nextup-card .airing-ep {
+          font-size: 13px;
+          font-weight: 700;
+          color: rgb(230,125,153);
+          margin: 4px 0;
+        }
+        .airing-card .airing-prod,
+        .nextup-card .airing-prod {
+          font-size: 11px;
+          opacity: 0.8;
+        }
+
+        /* Área de progresso e botão (hover) – precisa que os componentes tenham estas classes */
+        .progress-area {
+          display: none;
+          margin-top: 10px;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+        }
+        .card-hover-effect:hover .progress-area {
+          display: flex;
+        }
+        .card-hover-effect:hover .airing-ep,
+        .card-hover-effect:hover .airing-prod {
+          display: none;
+        }
+        .progress-bar {
+          width: 90%;
+          height: 4px;
+          background: rgba(255,255,255,0.2);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+        .progress-fill {
+          height: 100%;
+          width: 0%;
+          background: linear-gradient(90deg, rgb(230,125,153), rgb(245,90,130));
+          border-radius: 4px;
+          transition: width 0.2s;
+        }
+        .add-episode-btn {
+          background: rgb(230,125,153);
+          border: none;
+          color: white;
+          font-size: 18px;
+          font-weight: bold;
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.1s ease, background 0.2s;
+        }
+        .add-episode-btn:hover {
+          background: rgb(245,90,130);
+          transform: scale(1.1);
+        }
+
+        /* ── Seção headers ── */
         .section-head {
           display: flex;
           align-items: center;
@@ -277,7 +384,6 @@ async function HomePageContent() {
           height: 22px;
           background: linear-gradient(to bottom, rgb(230,125,153), rgba(230,125,153,0.3));
           border-radius: 4px;
-          flex-shrink: 0;
         }
         .section-head-title {
           font-size: 11px;
@@ -299,7 +405,40 @@ async function HomePageContent() {
           letter-spacing: 1px;
         }
 
-        /* ── Cover card (poster) ── */
+        /* ── Side panels ── */
+        .side-panel {
+          background: rgb(50,47,47);
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.05);
+          overflow: hidden;
+          margin-bottom: 24px;
+        }
+        .side-panel-header {
+          padding: 12px 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          background: rgba(230,125,153,0.08);
+        }
+        .side-panel-header-dot {
+          width: 8px; height: 8px;
+          border-radius: 50%;
+          background: rgb(230,125,153);
+          box-shadow: 0 0 8px rgba(230,125,153,0.6);
+          animation: glow-pulse 2.5s infinite;
+        }
+        .side-panel-header-title {
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 2px;
+          text-transform: uppercase;
+          color: rgb(230,125,153);
+          margin: 0;
+        }
+        .side-panel-body { padding: 14px; }
+
+        /* ── Cover card (popular) ── */
         .cover-card {
           position: relative;
           border-radius: 8px;
@@ -312,13 +451,11 @@ async function HomePageContent() {
         .cover-card:hover {
           transform: translateY(-6px) scale(1.03);
           box-shadow: 0 20px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(230,125,153,0.35);
-          z-index: 2;
         }
         .cover-card img {
           width: 100%;
           aspect-ratio: 2/3;
           object-fit: cover;
-          display: block;
           border-radius: 8px;
           background: rgb(58,55,55);
         }
@@ -346,109 +483,6 @@ async function HomePageContent() {
           background: linear-gradient(transparent, rgba(42,39,39,0.95));
         }
         .cover-card:hover .cover-title { opacity: 1; transform: translateY(0); }
-
-        /* ── Plain label under card (non-overlay style) ── */
-        .card-label {
-          margin-top: 8px;
-          font-size: 11px;
-          font-weight: 600;
-          color: rgba(220,210,215,0.7);
-          line-height: 1.3;
-          text-align: center;
-          transition: color 0.2s;
-        }
-        .cover-card:hover + .card-label,
-        a:hover .card-label { color: rgb(230,125,153); }
-
-        /* ── Airing card ── */
-        .airing-card {
-          position: relative;
-          border-radius: 10px;
-          overflow: hidden;
-          cursor: pointer;
-          transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.25s ease;
-          display: block;
-          text-decoration: none;
-          background: rgb(52,49,49);
-          border: 1px solid rgba(230,125,153,0.12);
-        }
-        .airing-card:hover {
-          transform: translateY(-5px) scale(1.02);
-          box-shadow: 0 16px 36px rgba(0,0,0,0.5), 0 0 0 1px rgba(230,125,153,0.4);
-          border-color: rgba(230,125,153,0.4);
-        }
-        .airing-card img {
-          width: 100%;
-          aspect-ratio: 2/3;
-          object-fit: cover;
-          display: block;
-        }
-        .airing-card .airing-info {
-          padding: 10px 10px 12px;
-        }
-        .airing-card .airing-title {
-          font-size: 11px;
-          font-weight: 700;
-          color: rgb(220,210,215);
-          margin: 0 0 4px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .airing-card .airing-ep {
-          font-size: 10px;
-          color: rgb(230,125,153);
-          font-weight: 600;
-          margin: 0;
-        }
-        .airing-card .airing-prod {
-          font-size: 10px;
-          color: rgba(220,210,215,0.4);
-          margin: 0;
-        }
-        /* Pulse dot for airing */
-        .live-dot {
-          display: inline-block;
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: #2ecc71;
-          box-shadow: 0 0 0 2px rgba(46,204,113,0.3);
-          animation: glow-pulse 2s infinite;
-          margin-right: 5px;
-          vertical-align: middle;
-        }
-
-        /* ── In Progress badge ── */
-        .progress-badge {
-          display: inline-block;
-          padding: 1px 6px;
-          border-radius: 20px;
-          font-size: 9px;
-          font-weight: 800;
-          letter-spacing: 0.5px;
-          text-transform: uppercase;
-          background: rgba(230,125,153,0.15);
-          color: rgb(230,125,153);
-          border: 1px solid rgba(230,125,153,0.25);
-        }
-        .progress-ep {
-          font-size: 10px;
-          color: rgba(220,210,215,0.55);
-          margin: 3px 0 0;
-          font-weight: 600;
-        }
-        .progress-bar-track {
-          height: 3px;
-          background: rgba(255,255,255,0.08);
-          border-radius: 4px;
-          margin-top: 6px;
-          overflow: hidden;
-        }
-        .progress-bar-fill {
-          height: 100%;
-          background: linear-gradient(to right, rgb(230,125,153), rgba(230,125,153,0.5));
-          border-radius: 4px;
-        }
 
         /* ── News cards ── */
         .news-card {
@@ -490,66 +524,6 @@ async function HomePageContent() {
           border: 1px solid rgba(230,125,153,0.2);
         }
 
-        /* ── Sidebar panels ── */
-        .side-panel {
-          background: rgb(50,47,47);
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.05);
-          overflow: hidden;
-          margin-bottom: 20px;
-        }
-        .side-panel-header {
-          padding: 12px 16px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          border-bottom: 1px solid rgba(255,255,255,0.06);
-          background: rgba(230,125,153,0.08);
-        }
-        .side-panel-header-dot {
-          width: 8px; height: 8px; border-radius: 50%;
-          background: rgb(230,125,153);
-          box-shadow: 0 0 8px rgba(230,125,153,0.6);
-          animation: glow-pulse 2.5s infinite;
-          flex-shrink: 0;
-        }
-        .side-panel-header-title {
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: 2px;
-          text-transform: uppercase;
-          color: rgb(230,125,153);
-          margin: 0;
-        }
-        .side-panel-body { padding: 14px; }
-
-        /* ── Airing list item (sidebar text style) ── */
-        .airing-list-item {
-          display: block;
-          padding: 10px 12px;
-          border-radius: 8px;
-          margin-bottom: 6px;
-          background: rgb(58,55,55);
-          border: 1px solid rgba(255,255,255,0.04);
-          transition: background 0.2s, border-color 0.2s, transform 0.18s;
-          text-decoration: none;
-        }
-        .airing-list-item:hover {
-          background: rgb(68,64,64);
-          border-color: rgba(230,125,153,0.35);
-          transform: translateX(3px);
-        }
-        .airing-list-title {
-          font-size: 12px; font-weight: 700; color: rgb(220,210,215); margin: 0 0 3px;
-        }
-        .airing-list-sub {
-          font-size: 10px; color: rgb(230,125,153); margin: 0; font-weight: 600;
-        }
-        .airing-list-sub-muted {
-          font-size: 10px; color: rgba(220,210,215,0.38); margin: 0;
-        }
-
-        /* ── Divider with glow ── */
         .glow-divider {
           height: 1px;
           background: linear-gradient(to right, transparent, rgba(230,125,153,0.35), transparent);
@@ -557,7 +531,6 @@ async function HomePageContent() {
           border: none;
         }
 
-        /* ── Decorative grain overlay (purely visual) ── */
         .grain-overlay {
           position: fixed; inset: 0; pointer-events: none; z-index: 1000;
           opacity: 0.025;
@@ -565,7 +538,6 @@ async function HomePageContent() {
           background-size: 180px 180px;
         }
 
-        /* ── Stagger animation for grids ── */
         .stagger > *:nth-child(1) { animation: popIn 0.4s 0.05s ease both; }
         .stagger > *:nth-child(2) { animation: popIn 0.4s 0.10s ease both; }
         .stagger > *:nth-child(3) { animation: popIn 0.4s 0.15s ease both; }
@@ -575,10 +547,8 @@ async function HomePageContent() {
         .stagger > *:nth-child(7) { animation: popIn 0.4s 0.35s ease both; }
         .stagger > *:nth-child(8) { animation: popIn 0.4s 0.40s ease both; }
 
-        /* ── Scrollbar ── */
         * { scrollbar-color: rgba(230,125,153,0.4) rgba(58,55,55,0.5); scrollbar-width: thin; }
 
-        /* ── News stagger delay ── */
         .news-card:nth-child(1) { animation-delay: 0.05s; }
         .news-card:nth-child(2) { animation-delay: 0.12s; }
         .news-card:nth-child(3) { animation-delay: 0.19s; }
@@ -589,18 +559,13 @@ async function HomePageContent() {
         .news-card:nth-child(8) { animation-delay: 0.54s; }
       `}</style>
 
-      {/* Subtle grain texture overlay */}
       <div className="grain-overlay" />
 
       <div className="hades-home">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 304px', gap: '36px', alignItems: 'flex-start' }}>
 
-          {/* ══════════════════════════════════════════════════════════════
-              COLUNA ESQUERDA
-          ══════════════════════════════════════════════════════════════ */}
+          {/* COLUNA ESQUERDA (Popular Seasons + News) */}
           <div>
-
-            {/* ── POPULAR SEASONS ─────────────────────────────────────── */}
             <section style={{ marginBottom: '44px' }}>
               <div className="section-head">
                 <div className="section-head-bar" />
@@ -608,30 +573,21 @@ async function HomePageContent() {
                 <div className="section-head-line" />
                 <span className="section-head-count">{popular.length} titles</span>
               </div>
-
               <div className="stagger" style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
                 gap: '20px',
               }}>
                 {popular.map((item: any) => (
-                  <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card" style={{ display: 'block', textDecoration: 'none' }}>
-                    <img
-                      src={`https://image.tmdb.org/t/p/w300${item.poster}`}
-                      alt={item.name}
-                      loading="lazy"
-                      decoding="async"
-                    />
+                  <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
+                    <img src={`https://image.tmdb.org/t/p/w300${item.poster}`} alt={item.name} loading="lazy" />
                     <div className="cover-overlay" />
                     <div className="cover-title">{item.name}</div>
                   </Link>
                 ))}
               </div>
             </section>
-
             <hr className="glow-divider" />
-
-            {/* ── FILMS & SERIES NEWS ──────────────────────────────────── */}
             <section>
               <div className="section-head">
                 <div className="section-head-bar" />
@@ -639,139 +595,113 @@ async function HomePageContent() {
                 <div className="section-head-line" />
                 <span className="section-head-count">{news.length} articles</span>
               </div>
-
-              <div>
-                {news.length > 0 ? (
-                  news.map((article: any, i: number) => (
-                    <a
-                      key={i}
-                      href={article.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="news-card"
-                    >
-                      {article.thumbnail && (
-                        <img src={article.thumbnail} className="news-thumb" alt="news" loading="lazy" decoding="async" />
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                          <span className="news-source-badge">{article.source || 'News'}</span>
-                          {article.twitter && (
-                            <span style={{ fontSize: '9px', color: 'rgba(220,210,215,0.35)', fontWeight: '600' }}>{article.twitter}</span>
-                          )}
-                        </div>
-                        <p style={{
-                          margin: '0 0 5px', fontSize: '13px', fontWeight: '600',
-                          color: 'rgb(220,210,215)', lineHeight: '1.4',
-                          overflow: 'hidden', display: '-webkit-box',
-                          WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                        }}>
-                          {article.title}
-                        </p>
-                        <p style={{ margin: 0, fontSize: '10px', color: 'rgba(220,210,215,0.4)' }}>
-                          {article.pubDate ? new Date(article.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent'}
-                        </p>
+              {news.length > 0 ? (
+                news.map((article: any, i: number) => (
+                  <a key={i} href={article.link} target="_blank" rel="noopener noreferrer" className="news-card">
+                    {article.thumbnail && <img src={article.thumbnail} className="news-thumb" alt="news" loading="lazy" />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                        <span className="news-source-badge">{article.source || 'News'}</span>
+                        {article.twitter && <span style={{ fontSize: '9px', color: 'rgba(220,210,215,0.35)' }}>{article.twitter}</span>}
                       </div>
-                    </a>
-                  ))
-                ) : (
-                  <div style={{ background: 'rgb(52,49,49)', borderRadius: '10px', padding: '28px', textAlign: 'center', color: 'rgba(220,210,215,0.35)', fontSize: '13px' }}>
-                    Loading latest film &amp; series news...
-                  </div>
-                )}
-              </div>
+                      <p style={{ margin: '0 0 5px', fontSize: '13px', fontWeight: '600', color: 'rgb(220,210,215)', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {article.title}
+                      </p>
+                      <p style={{ margin: 0, fontSize: '10px', color: 'rgba(220,210,215,0.4)' }}>
+                        {article.pubDate ? new Date(article.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent'}
+                      </p>
+                    </div>
+                  </a>
+                ))
+              ) : (
+                <div style={{ background: 'rgb(52,49,49)', borderRadius: '10px', padding: '28px', textAlign: 'center', color: 'rgba(220,210,215,0.35)' }}>
+                  Loading news...
+                </div>
+              )}
             </section>
           </div>
 
-          {/* ══════════════════════════════════════════════════════════════
-              COLUNA DIREITA
-          ══════════════════════════════════════════════════════════════ */}
+          {/* COLUNA DIREITA */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-
             <div style={{ marginBottom: '20px' }}>
               <ChallengeWidget compact />
             </div>
 
-            {/* ── AIRING NOW ──────────────────────────────────────────── */}
+            {/* AIRING NOW */}
             <div className="side-panel">
               <div className="side-panel-header">
                 <div className="side-panel-header-dot" style={{ background: '#2ecc71', boxShadow: '0 0 8px rgba(46,204,113,0.6)' }} />
                 <h3 className="side-panel-header-title" style={{ color: '#2ecc71' }}>Airing Now</h3>
               </div>
-
               {airing.length > 0 ? (
-                <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
+                <div className="cards-grid-5 stagger" style={{ padding: '14px' }}>
                   {airing.map((e: any) => (
-                    <AiringProgressCard key={e.id} entry={e} />
+                    <div key={e.id} className="card-hover-effect">
+                      <AiringProgressCard entry={e} />
+                      {/* Se seus componentes não tiverem a área de progresso, você pode inserir manualmente aqui */}
+                    </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
-                  No series currently airing.<br />
-                  <span style={{ color: '#3db4f2', fontWeight: '700' }}>Add a series</span> to Watching to track new episodes.
+                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)' }}>
+                  No series currently airing.
                 </div>
               )}
             </div>
 
-            {/* ── IN PROGRESS ─────────────────────────────────────────── */}
+            {/* IN PROGRESS */}
             <div className="side-panel">
               <div className="side-panel-header">
-                <div className="side-panel-header-dot" style={{ background: 'rgb(230,125,153)', boxShadow: '0 0 8px rgba(230,125,153,0.6)' }} />
+                <div className="side-panel-header-dot" style={{ background: 'rgb(230,125,153)' }} />
                 <h3 className="side-panel-header-title">In Progress</h3>
               </div>
-
               {inProgress.length > 0 ? (
-                <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
+                <div className="cards-grid-5 stagger" style={{ padding: '14px' }}>
                   {inProgress.map((e: any) => (
-                    <AiringProgressCard key={e.id} entry={e} />
+                    <div key={e.id} className="card-hover-effect">
+                      <AiringProgressCard entry={e} />
+                    </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
-                  No titles in progress.<br />
-                  <span style={{ color: 'rgb(230,125,153)', fontWeight: '700' }}>Start watching</span> something to see it here.
+                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)' }}>
+                  No titles in progress.
                 </div>
               )}
             </div>
 
-            {/* ── NEXT UP ──────────────────────────────────────────────── */}
-<div className="side-panel">
-  <div className="side-panel-header">
-    <div className="side-panel-header-dot" style={{ background: '#f39c12', boxShadow: '0 0 8px rgba(243,156,18,0.6)' }} />
-    <h3 className="side-panel-header-title" style={{ color: '#f39c12' }}>Next Up</h3>
-  </div>
+            {/* NEXT UP */}
+            <div className="side-panel">
+              <div className="side-panel-header">
+                <div className="side-panel-header-dot" style={{ background: '#f39c12', boxShadow: '0 0 8px rgba(243,156,18,0.6)' }} />
+                <h3 className="side-panel-header-title" style={{ color: '#f39c12' }}>Next Up</h3>
+              </div>
+              {nextUp && nextUp.length > 0 ? (
+                <div className="cards-grid-5 stagger" style={{ padding: '14px' }}>
+                  {nextUp.map((item) => (
+                    <div key={item.id} className="card-hover-effect">
+                      <NextUpCard item={item} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)' }}>
+                  No suggestions for now.
+                </div>
+              )}
+            </div>
 
-  {nextUp && nextUp.length > 0 ? (
-    <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(148px, 1fr))', gap: '10px' }}>
-      {nextUp.map((item) => (
-        <NextUpCard key={item.id} item={item} />
-      ))}
-    </div>
-  ) : (
-    <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
-      No suggestions for now.<br />
-      <span style={{ color: '#f39c12', fontWeight: '700' }}>Add series to Watching</span> or plan some quick movies.
-    </div>
-  )}
-</div>
-
-            {/* ── NEWLY ADDED ─────────────────────────────────────────── */}
+            {/* NEWLY ADDED (grid 3 colunas) */}
             <div className="side-panel">
               <div className="side-panel-header">
                 <div className="side-panel-header-dot" />
                 <h3 className="side-panel-header-title">Newly Added</h3>
               </div>
-
               <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
                 {newlyAdded.length > 0 ? (
                   newlyAdded.map((item: any) => (
                     <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
-                      <img
-                        src={`https://image.tmdb.org/t/p/w300${item.poster_path}`}
-                        alt={item.name}
-                        loading="lazy"
-                        decoding="async"
-                      />
+                      <img src={`https://image.tmdb.org/t/p/w300${item.poster_path}`} alt={item.name} loading="lazy" />
                       <div className="cover-overlay" />
                       <div className="cover-title">{item.name}</div>
                     </Link>
@@ -784,7 +714,6 @@ async function HomePageContent() {
               </div>
             </div>
           </div>
-          {/* fim coluna direita */}
         </div>
       </div>
     </div>
