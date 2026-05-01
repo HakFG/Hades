@@ -52,13 +52,21 @@ export default function NextUpCard({ item }: NextUpCardProps) {
     badgeText = 'Watch Now';
   }
 
-  const progressPercent = isSeries && item.currentProgress && item.totalEpisodes
+  const progressPercent = isSeries && item.currentProgress !== undefined && item.currentProgress !== null && item.totalEpisodes
     ? (item.currentProgress / item.totalEpisodes) * 100
     : null;
 
-  const progressText = isSeries && item.currentProgress !== undefined && item.totalEpisodes
+  const progressText = isSeries && item.currentProgress !== undefined && item.currentProgress !== null && item.totalEpisodes
     ? `${item.currentProgress}/${item.totalEpisodes}`
     : null;
+
+  const reasonLabel = item.reason === 'next_episode'
+    ? 'Próximo episódio'
+    : item.reason === 'paused_resume'
+      ? 'Retomar'
+      : item.reason === 'almost_finished'
+        ? 'Quase lá'
+        : 'Filme rápido';
 
   const priorityColor = getPriorityColor(item.urgencyScore);
   const priorityBorder = getPriorityBorder(item.urgencyScore);
@@ -120,6 +128,13 @@ export default function NextUpCard({ item }: NextUpCardProps) {
             <span className="badge-text">{badgeText}</span>
           </div>
 
+          {(item.urgencyScore ?? 0) > 0 && (
+            <div className="nextup-meta" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+              <span style={{ color: '#e8e2df', fontSize: '10px', fontWeight: 700 }}>{urgencyLabel}</span>
+              <span style={{ color: 'rgba(220,210,215,0.55)', fontSize: '9px', textTransform: 'uppercase' }}>{reasonLabel}</span>
+            </div>
+          )}
+
           {/* Progress Text */}
           {progressText && (
             <p className="nextup-progress">
@@ -146,12 +161,13 @@ export default function NextUpCard({ item }: NextUpCardProps) {
         .nextup-card {
           display: flex;
           flex-direction: column;
+          min-height: 340px;
           background: linear-gradient(135deg, rgb(52, 49, 49) 0%, rgb(45, 42, 42) 100%);
           border: 1px solid rgba(230, 125, 153, 0.12);
-          border-radius: 12px;
+          border-radius: 14px;
           overflow: hidden;
           transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
           cursor: pointer;
         }
 
@@ -233,10 +249,10 @@ export default function NextUpCard({ item }: NextUpCardProps) {
 
         /* Info Section */
         .nextup-info {
-          padding: 12px;
+          padding: 14px 14px 16px;
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 10px;
           flex-grow: 1;
           background: linear-gradient(180deg, rgb(52, 49, 49) 0%, rgb(42, 39, 39) 100%);
         }
@@ -286,10 +302,21 @@ export default function NextUpCard({ item }: NextUpCardProps) {
 
         /* Progress Text */
         .nextup-progress {
-          font-size: 9px;
-          color: rgba(220, 210, 215, 0.6);
+          font-size: 10px;
+          color: rgba(220, 210, 215, 0.75);
           margin: 0;
-          font-weight: 500;
+          font-weight: 600;
+        }
+
+        .nextup-meta {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          font-size: 9px;
+          letter-spacing: 0.02em;
+          color: rgba(220, 210, 215, 0.64);
+          text-transform: uppercase;
         }
 
         /* Meta Info */

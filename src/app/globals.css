@@ -276,6 +276,15 @@ a {
   box-shadow: 0 0 12px rgba(230, 125, 153, 0.25);
 }
 
+.xp-float-shell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 14px;
+  transform: translateY(-2px);
+  position: relative;
+}
+
 .avatar-initial {
   font-family: 'Cinzel', serif;
   font-size: 13px;

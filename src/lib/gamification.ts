@@ -9,6 +9,11 @@ import {
 } from '@/lib/xp-calculator';
 import { getLevelFromXP, getLevelProgress, getLevelUpRange } from '@/lib/level-system';
 import { checkAchievements, ACHIEVEMENTS, type Achievement } from '@/lib/achievements';
+import {
+  getGamificationAfterChallengeRewards,
+  trackChallengesForAction,
+  type ChallengeProgressResult,
+} from '@/lib/challenge-tracker';
 
 export const DEFAULT_USER_ID = 'main';
 
@@ -36,6 +41,8 @@ export interface AwardXPResult {
   skipped?: boolean;
   skipReason?: string;
   newAchievements: Achievement[];
+  challengeProgress: ChallengeProgressResult[];
+  completedChallenges: ChallengeProgressResult[];
   streak: {
     current: number;
     longest: number;
@@ -151,7 +158,7 @@ async function detectNewAchievements(
   // Busca dados do banco para checar os triggers
   const [entries, gamification] = await Promise.all([
     prisma.entry.findMany({ select: { type: true, status: true, score: true, progress: true, isFavorite: true } }),
-    prisma.userGamification.findUnique({ where: { userId }, select: { badges: true } }),
+    prisma.userGamification.findUnique({ where: { userId }, select: { badges: true, totalXP: true } }),
   ]);
 
   const totalEpisodes = entries
@@ -173,6 +180,7 @@ async function detectNewAchievements(
       totalEpisodes,
       totalSeries,
       totalMovies,
+      totalXP: gamification?.totalXP ?? 0,
       longestStreak,
       currentLevel,
       score10Count,
@@ -229,6 +237,8 @@ export async function awardXP(input: AwardXPInput): Promise<AwardXPResult> {
       skipped: true,
       skipReason: 'daily_limit',
       newAchievements: [],
+      challengeProgress: [],
+      completedChallenges: [],
       streak: {
         current: streak?.currentStreak ?? 0,
         longest: streak?.longestStreak ?? 0,
@@ -314,24 +324,47 @@ export async function awardXP(input: AwardXPInput): Promise<AwardXPResult> {
     }),
   ]);
 
+  const challengeProgress = await trackChallengesForAction({
+    userId,
+    action: input.action,
+    metadata: input.metadata ?? {},
+    currentStreak: streak.currentStreak,
+  });
+  const completedChallenges = challengeProgress.filter((challenge) => challenge.completed);
+  const challengeRewardXP = completedChallenges.reduce((sum, challenge) => sum + challenge.rewardXP, 0);
+  const afterChallengeRewards = challengeRewardXP > 0
+    ? await getGamificationAfterChallengeRewards(userId)
+    : null;
+  const reportedTotal = afterChallengeRewards?.totalXP ?? finalTotal;
+  const reportedLevel = afterChallengeRewards?.level ?? finalProgress.currentLevel.level;
+  const reportedLevelName = afterChallengeRewards?.levelName ?? finalProgress.currentLevel.title;
+  const reportedCurrentXP = afterChallengeRewards?.currentXP ?? finalProgress.currentXP;
+  const reportedXPToNext = afterChallengeRewards?.xpToNext ?? finalProgress.xpToNext;
+  const reportedXPPercent = afterChallengeRewards?.xpPercent ?? finalProgress.xpPercent;
+  const reportedNextLevelAt = afterChallengeRewards?.nextLevelAt ?? finalProgress.nextLevel?.xpRequired ?? null;
+  const previousLevelNumber = levelUp.previousLevel.level;
+  const reportedLeveledUp = reportedLevel > previousLevelNumber;
+
   return {
-    xpGained: xpGained + achievementXP,
+    xpGained: xpGained + achievementXP + challengeRewardXP,
     actionXP: calculation.xpGained,
     streakBonusXP,
-    newTotal: finalTotal,
-    nextLevelAt: finalProgress.nextLevel?.xpRequired ?? null,
-    currentXP: finalProgress.currentXP,
-    xpToNext: finalProgress.xpToNext,
-    xpPercent: finalProgress.xpPercent,
-    leveledUp: levelUp.leveledUp || (achievementXP > 0 && finalProgress.currentLevel.level > progress.currentLevel.level),
-    gainedLevels: finalProgress.currentLevel.level - levelUp.previousLevel.level,
-    level: finalProgress.currentLevel.level,
-    levelName: finalProgress.currentLevel.title,
-    previousLevel: levelUp.previousLevel.level,
-    message: levelUp.leveledUp
-      ? `Level up! Nível ${finalProgress.currentLevel.level} - ${finalProgress.currentLevel.title}`
+    newTotal: reportedTotal,
+    nextLevelAt: reportedNextLevelAt,
+    currentXP: reportedCurrentXP,
+    xpToNext: reportedXPToNext,
+    xpPercent: reportedXPPercent,
+    leveledUp: reportedLeveledUp,
+    gainedLevels: reportedLevel - previousLevelNumber,
+    level: reportedLevel,
+    levelName: reportedLevelName,
+    previousLevel: previousLevelNumber,
+    message: reportedLeveledUp
+      ? `Level up! Nivel ${reportedLevel} - ${reportedLevelName}`
       : `+${xpGained} XP - ${getActionLabel(input.action)}`,
     newAchievements,
+    challengeProgress,
+    completedChallenges,
     streak: {
       current: streak.currentStreak,
       longest: streak.longestStreak,

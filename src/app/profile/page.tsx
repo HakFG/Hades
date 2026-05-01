@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { formatScore, scoreColor, imgUrl, entrySlug } from '@/lib/utils';
 import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
+import PersonalGoalsSection from '@/components/PersonalGoalsSection';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
@@ -85,7 +86,7 @@ interface Profile {
   avatarColor?: string | null;
 }
 
-type Tab = 'overview' | 'series' | 'films' | 'favorites' | 'stats'| 'search';
+type Tab = 'overview' | 'series' | 'films' | 'favorites' | 'stats' | 'search' | 'goals';
 type StatusKey = 'WATCHING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REWATCHING' | 'UPCOMING';
 
 // ─── Constantes ────────────────────────────────────────────────────────────────
@@ -526,8 +527,8 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
   const [genreFilter, setGenreFilter] = useState('ALL');
   const [selectedYear, setSelectedYear] = useState(0);
   const [scoreFilter, setScoreFilter] = useState(0);
-  const [sortBy, setSortBy] = useState('updatedAt');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState('title');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [search, setSearch] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -710,8 +711,16 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
             <div style={{ marginBottom: '16px' }}>
               <div className={styles.filterSectionTitle}>Sort</div>
               <select value={sortBy} onChange={e => setSortBy(e.target.value)} className={styles.filterSelect} style={{ marginBottom: '8px' }}>
-                {['updatedAt','title','score','progress','releaseYear','startDate','finishDate'].map(o => (
-                  <option key={o} value={o}>{o === 'updatedAt' ? 'Last Updated' : o.charAt(0).toUpperCase()+o.slice(1)}</option>
+                {[
+                  { value: 'title', label: 'Title' },
+                  { value: 'updatedAt', label: 'Last Updated' },
+                  { value: 'score', label: 'Score' },
+                  { value: 'progress', label: 'Progress' },
+                  { value: 'releaseYear', label: 'Release Year' },
+                  { value: 'startDate', label: 'Start Date' },
+                  { value: 'finishDate', label: 'Finish Date' },
+                ].map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
               <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')} className={styles.sortDirBtn}>
@@ -726,8 +735,8 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
                 setSelectedYear(0);
                 setScoreFilter(0);
                 setSearch('');
-                setSortBy('updatedAt');
-                setSortDir('desc');
+                setSortBy('title');
+                setSortDir('asc');
               }}
               className={styles.resetFiltersBtn}
             >
@@ -1529,6 +1538,7 @@ function ProfileContent() {
     { id: 'films',      label: 'Film List' },
     { id: 'favorites',  label: 'Favorites' },
     { id: 'stats',      label: 'Stats' },
+    { id: 'goals', label: 'Goals' },
   ];
 
   const series = entries.filter(e => e.type === 'TV_SEASON');
@@ -1627,6 +1637,7 @@ function ProfileContent() {
         {tab === 'films'     && <MediaListTab entries={entries} type="MOVIE"     onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
         {tab === 'favorites' && <FavoritesTab entries={entries} onEdit={setEditingEntry} onToggleFav={toggleFav} onUpdateProgress={updateProgress} />}
         {tab === 'stats'     && <StatsTab entries={entries} onImport={load} />}
+        {tab === 'goals' && <PersonalGoalsSection />}
       </div>
 
       {editingEntry && (

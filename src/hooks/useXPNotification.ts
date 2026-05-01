@@ -13,11 +13,24 @@ export interface XPNotificationAward {
   gainedLevels?: number;
   message: string;
   newAchievements?: Achievement[];
+  completedChallenges?: CompletedChallengeNotification[];
   streak?: {
     current: number;
     longest: number;
     milestoneReached: number | null;
   };
+}
+
+export interface CompletedChallengeNotification {
+  challengeId: string;
+  title: string;
+  category: string;
+  goal: number;
+  current: number;
+  completed: boolean;
+  rewardXP: number;
+  badge?: string;
+  message: string;
 }
 
 export interface XPToast {
@@ -31,6 +44,7 @@ export interface XPToast {
 
 export const XP_AWARDED_EVENT = 'hades:xp-awarded';
 export const ACHIEVEMENT_EVENT = 'hades:achievement-unlocked';
+export const CHALLENGE_EVENT = 'hades:challenge-completed';
 
 export function emitXPNotification(awards: XPNotificationAward[] | XPNotificationAward | undefined | null) {
   if (typeof window === 'undefined' || !awards) return;
@@ -43,6 +57,11 @@ export function emitXPNotification(awards: XPNotificationAward[] | XPNotificatio
   const allNew = normalized.flatMap((a) => a.newAchievements ?? []);
   if (allNew.length > 0) {
     window.dispatchEvent(new CustomEvent(ACHIEVEMENT_EVENT, { detail: { achievements: allNew } }));
+  }
+
+  const completedChallenges = normalized.flatMap((a) => a.completedChallenges ?? []);
+  if (completedChallenges.length > 0) {
+    window.dispatchEvent(new CustomEvent(CHALLENGE_EVENT, { detail: { challenges: completedChallenges } }));
   }
 }
 

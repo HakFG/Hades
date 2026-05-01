@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Flame, Trophy, Zap, Star, Shield, Target, Activity } from 'lucide-react';
 import { ACHIEVEMENTS, RARITY_COLOR, RARITY_LABEL, type Achievement, type AchievementRarity } from '@/lib/achievements';
-import ChallengeWidget from '@/components/ChallengeWidget'; // ← NOVO: integração da FASE 3
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -670,11 +669,6 @@ export default function GamificationPage() {
           sub={stats.nextLevelAt ? `${fmt(stats.xpRemaining)} XP restantes` : 'Nível máximo!'}
           color="var(--flame)"
         />
-      </div>
-
-      {/* ── NOVO: Widget de Desafios (integração da FASE 3) ── */}
-      <div style={{ marginBottom: '28px' }}>
-        <ChallengeWidget />
       </div>
 
       {/* ── Grid principal: Achievements + Atividade ── */}

@@ -37,6 +37,9 @@ function calculateUrgency(item: any, daysStalled: number): number {
   if (item.status === 'PAUSED') {
     score += 30;
   }
+  if (item.status === 'REWATCHING') {
+    score += 12;
+  }
 
   // Dias parado (cada 7 dias = +10, máximo 40)
   score += Math.min(40, Math.floor(daysStalled / 7) * 10);
@@ -64,11 +67,11 @@ export async function getNextUpItems(
   // 1. Séries WATCHING com progresso incompleto (próximo episódio)
   const watchingSeries = await prisma.entry.findMany({
     where: {
-      status: 'WATCHING',
+      status: { in: ['WATCHING', 'REWATCHING'] },
       type: 'TV_SEASON',
       totalEpisodes: { not: null },
     },
-    orderBy: { updatedAt: 'asc' },
+    orderBy: [{ status: 'asc' }, { updatedAt: 'asc' }],
   });
 
   for (const series of watchingSeries) {

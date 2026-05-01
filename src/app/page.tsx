@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { getOrdinal } from '@/lib/utils';
 import { getNextUpItems } from '@/lib/next-up';
 import NextUpCard from '@/components/NextUpCard';
+import AiringProgressCard from '@/components/AiringProgressCard';
+import ChallengeWidget from '@/components/ChallengeWidget';
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -686,6 +688,10 @@ async function HomePageContent() {
           ══════════════════════════════════════════════════════════════ */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
 
+            <div style={{ marginBottom: '20px' }}>
+              <ChallengeWidget compact />
+            </div>
+
             {/* ── AIRING NOW ──────────────────────────────────────────── */}
             <div className="side-panel">
               <div className="side-panel-header">
@@ -694,39 +700,10 @@ async function HomePageContent() {
               </div>
 
               {airing.length > 0 ? (
-                <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                  {airing.map((e: any) => {
-                    const slug = e.parentTmdbId && e.seasonNumber
-                      ? `tv-${e.parentTmdbId}-s${e.seasonNumber}`
-                      : `movie-${e.tmdbId}`;
-                    const hasNext = !!e.nextEpisode;
-                    return (
-                      <Link key={e.id} href={`/titles/${slug}`} className="airing-card">
-                        {e.imagePath ? (
-                          <img
-                            src={`https://image.tmdb.org/t/p/w300${e.imagePath}`}
-                            alt={e.title}
-                            loading="lazy"
-                            decoding="async"
-                            style={{ width: '100%', aspectRatio: '2/3', objectFit: 'cover', display: 'block' }}
-                          />
-                        ) : (
-                          <div style={{ aspectRatio: '2/3', background: 'rgb(62,58,58)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px' }}>📺</div>
-                        )}
-                        <div className="airing-info">
-                          <p className="airing-title">{e.title}</p>
-                          {hasNext ? (
-                            <p className="airing-ep">
-                              <span className="live-dot" />
-                              Ep {e.nextEpisode.episode_number} • {new Date(e.nextEpisode.air_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </p>
-                          ) : (
-                            <p className="airing-prod">{e.inProduction ? 'In production' : 'Season ended'}</p>
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
+                <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
+                  {airing.map((e: any) => (
+                    <AiringProgressCard key={e.id} entry={e} />
+                  ))}
                 </div>
               ) : (
                 <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
@@ -744,49 +721,10 @@ async function HomePageContent() {
               </div>
 
               {inProgress.length > 0 ? (
-                <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                  {inProgress.map((e: any) => {
-                    const isMovie = e.type === 'MOVIE';
-                    const slug = isMovie
-                      ? `movie-${e.tmdbId}`
-                      : `tv-${e.parentTmdbId}-s${e.seasonNumber ?? 1}`;
-
-                    const progressLabel = !isMovie && e.progress != null && e.totalEpisodes
-                      ? `Ep ${e.progress}/${e.totalEpisodes}`
-                      : null;
-
-                    return (
-                      <Link key={e.id} href={`/titles/${slug}`} className="airing-card">
-                        {e.imagePath ? (
-                          <img
-                            src={`https://image.tmdb.org/t/p/w300${e.imagePath}`}
-                            alt={e.title}
-                            loading="lazy"
-                            decoding="async"
-                            style={{ width: '100%', aspectRatio: '2/3', objectFit: 'cover', display: 'block' }}
-                          />
-                        ) : (
-                          <div style={{ aspectRatio: '2/3', background: 'rgb(62,58,58)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px' }}>
-                            {isMovie ? '🎬' : '📺'}
-                          </div>
-                        )}
-                        <div className="airing-info">
-                          <p className="airing-title">{e.title}</p>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-                            <span className="progress-badge">{isMovie ? '🎬 Film' : '📺 Series'}</span>
-                            {progressLabel && (
-                              <span className="progress-ep">{progressLabel}</span>
-                            )}
-                          </div>
-                          {isMovie && (
-                            <div className="progress-bar-track">
-                              <div className="progress-bar-fill" style={{ width: '40%' }} />
-                            </div>
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
+                <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
+                  {inProgress.map((e: any) => (
+                    <AiringProgressCard key={e.id} entry={e} />
+                  ))}
                 </div>
               ) : (
                 <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)', lineHeight: '1.6' }}>
@@ -804,7 +742,7 @@ async function HomePageContent() {
   </div>
 
   {nextUp && nextUp.length > 0 ? (
-    <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+    <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(148px, 1fr))', gap: '10px' }}>
       {nextUp.map((item) => (
         <NextUpCard key={item.id} item={item} />
       ))}
