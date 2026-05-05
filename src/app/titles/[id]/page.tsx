@@ -1600,31 +1600,35 @@ manualRels = saved.map((r: any) => {
 
   function CharCard({p}:{p:CastMember}){
     return(
-      <div className="tp-char-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex',justifyContent:'space-between'}}>
-        <div style={{display:'flex'}}>
-          <img src={p.profile_path?`https://image.tmdb.org/t/p/w185${p.profile_path}`:`https://placehold.co/60x80/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{width:60,height:80,objectFit:'cover'}} alt={p.name}/>
-          <div style={{padding:'8px 10px'}}>
-            <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{p.name}</div>
-            <div style={{fontSize:11,color:MUTED,marginTop:2}}>Actor</div>
+      <Link href={`/staff/${p.id}`} style={{textDecoration:'none',color:'inherit'}}>
+        <div className="tp-char-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex',justifyContent:'space-between'}}>
+          <div style={{display:'flex'}}>
+            <img src={p.profile_path?`https://image.tmdb.org/t/p/w185${p.profile_path}`:`https://placehold.co/60x80/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{width:60,height:80,objectFit:'cover'}} alt={p.name}/>
+            <div style={{padding:'8px 10px'}}>
+              <div style={{fontSize:13,fontWeight:700,color:TEXT}}>{p.name}</div>
+              <div style={{fontSize:11,color:MUTED,marginTop:2}}>Actor</div>
+            </div>
+          </div>
+          <div style={{padding:'8px 10px',textAlign:'right'}}>
+            <div style={{fontSize:12,color:TEXT,fontWeight:500}}>{p.character}</div>
+            <div style={{fontSize:11,color:MUTED,marginTop:2}}>Character</div>
           </div>
         </div>
-        <div style={{padding:'8px 10px',textAlign:'right'}}>
-          <div style={{fontSize:12,color:TEXT,fontWeight:500}}>{p.character}</div>
-          <div style={{fontSize:11,color:MUTED,marginTop:2}}>Character</div>
-        </div>
-      </div>
+      </Link>
     );
   }
 
   function StaffCard({p}:{p:CrewMember}){
     return(
-      <div className="tp-staff-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex'}}>
-        <img src={p.profile_path?`https://image.tmdb.org/t/p/w185${p.profile_path}`:`https://placehold.co/50x65/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{width:50,height:65,objectFit:'cover'}} alt={p.name}/>
-        <div style={{padding:'8px 10px'}}>
-          <div style={{fontSize:12,fontWeight:700,color:TEXT,lineHeight:1.3}}>{p.name}</div>
-          <div style={{fontSize:11,color:MUTED,marginTop:3}}>{p.job}</div>
+      <Link href={`/staff/${p.id}`} style={{textDecoration:'none',color:'inherit'}}>
+        <div className="tp-staff-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex'}}>
+          <img src={p.profile_path?`https://image.tmdb.org/t/p/w185${p.profile_path}`:`https://placehold.co/50x65/2a2727/92a0ad?text=${encodeURIComponent(p.name[0])}`} style={{width:50,height:65,objectFit:'cover'}} alt={p.name}/>
+          <div style={{padding:'8px 10px'}}>
+            <div style={{fontSize:12,fontWeight:700,color:TEXT,lineHeight:1.3}}>{p.name}</div>
+            <div style={{fontSize:11,color:MUTED,marginTop:3}}>{p.job}</div>
+          </div>
         </div>
-      </div>
+      </Link>
     );
   }
 
