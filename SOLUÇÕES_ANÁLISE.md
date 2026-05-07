@@ -5,76 +5,7 @@
 2. [MELHORIAS VISUAIS](#melhorias-visuais)
 3. [NOVAS FEATURES](#novas-features)
 
----
-
-## 🐛 BUGS
-
-### 1. Sistema de Personal Goals - Auto-Completion Bug (CRÍTICO)
-
-**Localização:** `/src/app/profile/page.tsx` > aba `goals` + `/src/lib/personal-goals.ts`
-
-**Problema:**
-- Goals salvos automaticamente se marcam como "completos" ao sair e voltar na aba
-- Não há persistência confiável do estado `completed` no banco de dados
-- Lógica de atualização pode estar invocando validações automáticas indevidas
-
-**Raiz Provável:**
-1. **Validação automática ao carregar:** O componente `PersonalGoalsSection.tsx` pode estar disparando uma validação automática de progresso quando goals são recarregados
-2. **Falta de controle de estado:** O campo `completed` no modelo Prisma pode estar sendo atualizado automaticamente por triggers ou middleware não intencionais
-3. **Race condition em múltiplas requisições:** Se há atualização via API, pode haver inconsistência entre estado local e servidor
-4. **Hook useEffect problemático:** Possível re-render que dispara validação automática
-
-**Análise da Estrutura Atual:**
-- `PersonalGoalsSection.tsx` - Carrega e exibe goals
-- `PersonalGoalModal.tsx` - Modal de edição
-- `personal-goals.ts` - Lógica de cálculo (goalProgressPercent, goalDaysLeft)
-- **Faltando:** Arquivo de API route para goals (`/src/app/api/goals/` não existe)
-
-**Soluções Recomendadas:**
-
-#### Solução 1: Auditoria do Fluxo de Estado (RÁPIDA - 1-2h)
-```
-1. Verificar se há rota API para atualizar goals
-   - Se SIM: analisar se há lógica de auto-completion
-   - Se NÃO: criar rota `/api/goals/[id]/route.ts` com PUT/PATCH controlada
-   
-2. Adicionar logs em PersonalGoalsSection.tsx:
-   - Log ao carregar goals
-   - Log ao disparar atualização
-   - Log de toda mudança no campo `completed`
-   
-3. Verificar schema Prisma:
-   - Campo `completedAt` pode estar com trigger automático?
-   - Campo `updatedAt` pode estar causando recálculos?
-```
-
-#### Solução 2: Separar Estados de Leitura/Escrita (ROBUSTA - 2-3h)
-```
-1. Criar dois hooks distintos:
-   - useGoalsRead: apenas para carregar goals (sem side effects)
-   - useGoalsWrite: para atualizar, com validação explícita
-   
-2. Adicionar campo no schema:
-   - `lastManualUpdate?: DateTime` - marca quando usuário atualizou manualmente
-   - Sistema não pode mudar `completed` sem ser por ação explícita do usuário
-   
-3. Implementar validação de intenção:
-   - Botão "Marcar como Completo" separado
-   - Checkbox com confirmação antes de marcar completo
-```
-
-#### Solução 3: Revisar Lógica de Cálculo (INVESTIGATIVA - 1h)
-```
-1. Função goalProgressPercent() em personal-goals.ts:
-   - Verificar se retorna 100% quando current === target
-   - Se SIM e função retorna 100%: há código que pode estar completando automaticamente?
-   
-2. Componente GoalCard:
-   - Verificar se há onClick automático ou listener acidental
-   - Verificar se existe fetch() sendo disparado sem consentimento
-```
-
----
+--
 
 ## 🎨 MELHORIAS VISUAIS
 
