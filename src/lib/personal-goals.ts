@@ -191,6 +191,8 @@ export async function markGoalComplete(id: string): Promise<PersonalGoal> {
 }
 
 // ─── Auto-sync: calcula o `current` com base nos dados reais do banco ─────────
+// ⚠️ IMPORTANTE: Apenas SINCRONIZA o progresso, NÃO marca como completo automaticamente
+// Completion é APENAS por ação explícita do usuário (botão "Concluir" ou PATCH com action: 'complete')
 
 export async function syncGoalProgress(userId = 'main'): Promise<void> {
   const goals = await prisma.personalGoal.findMany({
@@ -236,17 +238,11 @@ export async function syncGoalProgress(userId = 'main'): Promise<void> {
       }
       // Para 'titles_genre' e 'custom', o usuário atualiza manualmente
 
-      // Verifica se completou
-      const completed = current >= goal.target;
-
+      // ⚠️ IMPORTANTE: Apenas atualiza o `current`, NÃO marca como completo
+      // Completion é sempre por ação explícita do usuário
       await prisma.personalGoal.update({
         where: { id: goal.id },
-        data: {
-          current,
-          ...(completed && !goal.completed
-            ? { completed: true, completedAt: new Date() }
-            : {}),
-        },
+        data: { current },
       });
     } catch (err) {
       console.error(`[syncGoalProgress] Error syncing goal ${goal.id}:`, err);

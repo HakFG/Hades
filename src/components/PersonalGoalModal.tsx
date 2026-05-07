@@ -179,6 +179,7 @@ Regras:
         background: 'rgba(0,0,0,0.75)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '16px',
+        overflowY: 'auto',
       }}
     >
       <div
@@ -189,16 +190,18 @@ Regras:
           borderRadius: '12px',
           width: '100%',
           maxWidth: '500px',
-          maxHeight: '90vh',
-          overflow: 'auto',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
           boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
         }}
       >
-        {/* Header */}
+        {/* Header — FIXO */}
         <div style={{
           padding: '18px 20px 14px',
           borderBottom: '1px solid rgba(255,255,255,0.07)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexShrink: 0,
         }}>
           <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#e5e5e5' }}>
             {isEditing ? '✎ Editar Meta' : step === 'ai' ? '✨ Assistente de Metas' : step === 'pick' ? '🎯 Nova Meta' : '🎯 Configurar Meta'}
@@ -206,7 +209,13 @@ Regras:
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', fontSize: '18px', lineHeight: 1, padding: '2px 6px' }}>✕</button>
         </div>
 
-        <div style={{ padding: '20px' }}>
+        {/* Content — SCROLLÁVEL */}
+        <div style={{ 
+          padding: '20px', 
+          overflowY: 'auto',
+          flex: 1,
+          minHeight: 0,
+        }}>
 
           {/* ── STEP: pick (tipo ou AI) ── */}
           {step === 'pick' && (
@@ -341,13 +350,9 @@ Regras:
 
           {/* ── STEP: form ── */}
           {step === 'form' && (
-            <div>
-              {!isEditing && (
-                <button onClick={() => setStep('pick')} style={{ ...secondaryBtnStyle, marginBottom: '16px' }}>← Voltar</button>
-              )}
-
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {/* Emoji picker simples */}
-              <div style={{ marginBottom: '14px' }}>
+              <div>
                 <label style={labelStyle}>Emoji</label>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   {['🎯','📺','✅','🎬','⏯️','🔥','⭐','🏆','💪','📊','🎭','🌟'].map(e => (
@@ -370,7 +375,7 @@ Regras:
               </div>
 
               {/* Título */}
-              <div style={{ marginBottom: '14px' }}>
+              <div>
                 <label style={labelStyle}>Título da meta *</label>
                 <input
                   value={title}
@@ -381,7 +386,7 @@ Regras:
               </div>
 
               {/* Target + Unit */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={labelStyle}>Target *</label>
                   <input
@@ -394,7 +399,7 @@ Regras:
                   />
                   {/* Suggested targets */}
                   {selectedTemplate?.suggestedTargets?.length ? (
-                    <div style={{ display: 'flex', gap: '4px', marginTop: '5px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
                       {selectedTemplate.suggestedTargets.map((n) => (
                         <button
                           key={n}
@@ -427,7 +432,7 @@ Regras:
               </div>
 
               {/* Deadline */}
-              <div style={{ marginBottom: '14px' }}>
+              <div>
                 <label style={labelStyle}>Prazo (opcional)</label>
                 <input
                   type="date"
@@ -438,7 +443,7 @@ Regras:
               </div>
 
               {/* Reward XP */}
-              <div style={{ marginBottom: '14px' }}>
+              <div>
                 <label style={labelStyle}>Recompensa XP ao concluir</label>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
                   {[0, 50, 100, 200, 300, 500].map(n => (
@@ -462,7 +467,7 @@ Regras:
               </div>
 
               {/* Pinned */}
-              <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input
                   type="checkbox"
                   id="pinned"
@@ -476,17 +481,31 @@ Regras:
               </div>
 
               {error && (
-                <div style={{ color: '#e74c3c', fontSize: '0.78rem', marginBottom: '12px' }}>{error}</div>
+                <div style={{ color: '#e74c3c', fontSize: '0.78rem' }}>{error}</div>
               )}
-
-              {/* Actions */}
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button onClick={onClose} style={secondaryBtnStyle}>Cancelar</button>
-                <button onClick={handleSave} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>
-                  {saving ? 'Salvando...' : isEditing ? 'Salvar alterações' : 'Criar meta'}
-                </button>
-              </div>
             </div>
+          )}
+        </div>
+
+        {/* Footer — FIXO com Botões */}
+        <div style={{
+          padding: '16px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+          display: 'flex', gap: '8px', justifyContent: 'flex-end',
+          background: 'rgba(0,0,0,0.2)',
+          flexShrink: 0,
+        }}>
+          {step === 'form' && !isEditing && (
+            <button onClick={() => setStep('pick')} style={secondaryBtnStyle}>← Voltar</button>
+          )}
+          {step === 'ai' && (
+            <button onClick={() => setStep('pick')} style={secondaryBtnStyle}>← Voltar</button>
+          )}
+          <button onClick={onClose} style={secondaryBtnStyle}>Cancelar</button>
+          {step === 'form' && (
+            <button onClick={handleSave} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'Salvando...' : isEditing ? 'Salvar alterações' : 'Criar meta'}
+            </button>
           )}
         </div>
       </div>
