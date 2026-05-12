@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
 import StatusDot from '@/components/StatusDot';
-import TvSeasonNavClient from '@/components/TvSeasonNavClient';
 
 interface AiringProgressEntry {
   id: string;
@@ -157,13 +156,6 @@ export default function AiringProgressCard({ entry }: AiringProgressCardProps) {
           </div>
         )}
 
-        {isSeries && entry.parentTmdbId ? (
-          <TvSeasonNavClient
-            showTmdbId={entry.parentTmdbId}
-            currentSeason={entry.seasonNumber ?? 1}
-            compact
-          />
-        ) : null}
       </div>
 
       <style jsx>{`

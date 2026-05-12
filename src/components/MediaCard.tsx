@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
 import StatusDot from '@/components/StatusDot';
-import SeasonSelector, { type SeasonSummary } from '@/components/SeasonSelector';
 import type { BrowserMediaItem } from '@/lib/browser-filter';
 
 interface MediaCardProps {
@@ -22,8 +21,6 @@ export default function MediaCard({
 }: MediaCardProps) {
   const target = href ?? `/titles/${item.linkSlug}`;
   const poster = item.posterPath ? `https://image.tmdb.org/t/p/w300${item.posterPath}` : '';
-
-  const seasonSummaries: SeasonSummary[] | undefined = item.seasonSummaries;
 
   return (
     <div className="media-card-wrap">
@@ -46,13 +43,7 @@ export default function MediaCard({
         <p>{item.title}</p>
       </Link>
 
-      {item.type === 'TV_SEASON' && seasonSummaries && seasonSummaries.length > 1 ? (
-        <SeasonSelector
-          seasons={seasonSummaries}
-          selectedSeasonId={item.linkSlug}
-          compact
-        />
-      ) : null}
+
 
       <style jsx>{`
         .media-card-wrap {

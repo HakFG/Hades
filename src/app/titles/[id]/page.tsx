@@ -4,8 +4,6 @@ import { useState, useEffect, use, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
 import StatusDot from '@/components/StatusDot';
-import SeasonSelector from '@/components/SeasonSelector';
-import type { SeasonSummary } from '@/components/SeasonSelector';
 import { silentPersistPosterIfChanged } from '@/lib/entry-poster-sync';
 import { getOrdinal, buildSeasonTitle, formatScore, scoreColor, extractTmdbPosterPath } from '@/lib/utils';
 import { emitXPNotification } from '@/hooks/useXPNotification';
@@ -836,7 +834,7 @@ async function save() {
           {/* Progress */}
           {isTV&&(
             <div>
-              <label style={lbl}>Episodes {episodeCount?`/ ${episodeCount}`:''}</label>
+              <label style={lbl}>Episode Progress</label>
               <div style={{display:'flex',gap:8,alignItems:'center'}}>
                 <button onClick={()=>setProgress(p=>Math.max(0,p-1))} style={stepBtn}>−</button>
                 <input type="number" min={0} max={maxEp} value={progress}
@@ -1551,22 +1549,6 @@ manualRels = saved.map((r: any) => {
       : `https://image.tmdb.org/t/p/w500${rawPosterPath}`
     : null;
 
-  const titleSeasonNavOptions: SeasonSummary[] =
-    isTV && show && showId != null && seasonNumber != null
-      ? (show.seasons ?? [])
-          .filter((s) => s.season_number > 0)
-          .map((s) => ({
-            id: `tv-${showId}-s${s.season_number}`,
-            seasonNumber: s.season_number,
-            title: s.name || `Season ${s.season_number}`,
-            episodeCount: s.episode_count ?? 0,
-            status: s.air_date ? String(s.air_date) : '—',
-            href: `/titles/tv-${showId}-s${s.season_number}`,
-          }))
-      : [];
-  const selectedSeasonSlug =
-    isTV && showId != null && seasonNumber != null ? `tv-${showId}-s${seasonNumber}` : null;
-
   // ID a ser enviado ao criar uma entrada (prefere entry existente, depois season.id/movie.id)
   const createTmdbId = entry?.tmdbId ?? (isTV ? (seasonDetail?.id ?? show?.seasons?.find(s=>s.season_number===seasonNumber)?.id ?? null) : (movie?.id ?? null));
 
@@ -1645,7 +1627,6 @@ manualRels = saved.map((r: any) => {
   const sidebarRows:([string,React.ReactNode])[]=[
     ['Format',formatDisplay],
     ['Production',productionStatus],
-    ...(isTV&&show?[['Season',`${getOrdinal(seasonNumber!)} Season`] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
     ...(isTV&&seasonStatus?[['Status',seasonStatus] as [string,React.ReactNode]]:(!isTV&&movie?.status?[['Status',movie.status] as [string,React.ReactNode]]:[] as [string,React.ReactNode][])),
     ...(seasonAirDate?[['Air Date',new Date(seasonAirDate+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
     ...(isTV&&endDate?[['Last Air',new Date(endDate).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
@@ -1889,16 +1870,6 @@ onClick={async () => {
               style={{background:statusColor(entry?.status),color:'white',padding:10,borderRadius:4,textAlign:'center',fontWeight:700,marginBottom:8,cursor:'pointer',fontSize:13,border:'none',width:'100%',letterSpacing:'.3px'}}>
               {entry?.status??'+ ADICIONAR'}
             </button>
-
-            {isTV && titleSeasonNavOptions.length > 1 ? (
-              <div style={{ marginBottom: 10 }}>
-                <SeasonSelector
-                  seasons={titleSeasonNavOptions}
-                  selectedSeasonId={selectedSeasonSlug}
-                  compact
-                />
-              </div>
-            ) : null}
 
             {/* Info panel */}
             <div style={{background:CARD,borderRadius:4,padding:16,fontSize:13,color:TEXT}}>

@@ -9,7 +9,6 @@ import ListEditor from '@/components/ListEditor';
 import PersonalGoalsSection from '@/components/PersonalGoalsSection';
 import StatusBubble from '@/components/StatusBubble';
 import StatusDot from '@/components/StatusDot';
-import TvSeasonNavClient from '@/components/TvSeasonNavClient';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
@@ -631,9 +630,6 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
                 {items.map(e => (
                   <div key={e.id} style={{ display: 'grid', gap: 6, width: 135, justifyItems: 'stretch' }}>
                     <EntryCard entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />
-                    {e.type === 'TV_SEASON' && e.parentTmdbId ? (
-                      <TvSeasonNavClient showTmdbId={e.parentTmdbId} currentSeason={e.seasonNumber ?? 1} compact />
-                    ) : null}
                   </div>
                 ))}
               </div>
@@ -825,9 +821,6 @@ function FavoritesTab({ entries, onEdit, onToggleFav, onUpdateProgress }: {
           : <div className={styles.favoritesGrid}>{favSeries.map(e => (
             <div key={e.id} style={{ display: 'grid', gap: 6, width: 135, justifyItems: 'stretch' }}>
               <EntryCard entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />
-              {e.parentTmdbId ? (
-                <TvSeasonNavClient showTmdbId={e.parentTmdbId} currentSeason={e.seasonNumber ?? 1} compact />
-              ) : null}
             </div>
           ))}</div>
       )}

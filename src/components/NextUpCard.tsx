@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { NextUpItem } from '@/lib/next-up';
 import StatusBubble from '@/components/StatusBubble';
 import StatusDot from '@/components/StatusDot';
-import TvSeasonNavClient from '@/components/TvSeasonNavClient';
 
 interface NextUpCardProps {
   item: NextUpItem;
@@ -147,13 +146,6 @@ export default function NextUpCard({ item }: NextUpCardProps) {
           <p className="stalled">Paused {Math.ceil(item.daysStalled / 7)}w ago</p>
         )}
 
-        {isSeries && item.parentTmdbId ? (
-          <TvSeasonNavClient
-            showTmdbId={item.parentTmdbId}
-            currentSeason={item.seasonNumber ?? 1}
-            compact
-          />
-        ) : null}
       </div>
 
       <style jsx>{`
