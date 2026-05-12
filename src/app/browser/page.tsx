@@ -25,7 +25,7 @@ function Section({ title, href, items }: { title: string; href: string; items: B
       </div>
       <div className="media-grid">
         {items.slice(0, 10).map((item) => (
-          <MediaCard key={item.id} item={item} href={href} showStatus />
+          <MediaCard key={item.id} item={item} showStatus />
         ))}
       </div>
     </section>

@@ -12,10 +12,14 @@ export interface NextUpItem {
   totalEpisodes?: number;
   currentProgress?: number;
   reason: 'next_episode' | 'quick_movie' | 'almost_finished' | 'paused_resume';
-  priority: 1 | 2 | 3; // 1 = alta, 2 = média, 3 = baixa
+  priority: 1 | 2 | 3;
   score?: number;
   daysStalled?: number;
-  urgencyScore?: number; // 0-100, quanto mais urgente maior
+  urgencyScore?: number;
+  /** Status na lista (para StatusDot). */
+  listStatus?: string;
+  parentTmdbId?: number | null;
+  seasonNumber?: number | null;
 }
 
 export interface NextUpFilters {
@@ -103,6 +107,9 @@ export async function getNextUpItems(
         score: series.score ?? undefined,
         daysStalled,
         urgencyScore: urgency,
+        listStatus: series.status,
+        parentTmdbId: series.parentTmdbId,
+        seasonNumber: series.seasonNumber,
       });
     }
   }
@@ -141,10 +148,13 @@ export async function getNextUpItems(
         totalEpisodes: total,
         currentProgress,
         reason: 'paused_resume',
-        priority: 1, // sempre alta prioridade
+        priority: 1,
         score: series.score ?? undefined,
         daysStalled,
         urgencyScore: urgency,
+        listStatus: series.status,
+        parentTmdbId: series.parentTmdbId,
+        seasonNumber: series.seasonNumber,
       });
     }
   }
@@ -178,6 +188,7 @@ export async function getNextUpItems(
       score: movie.score ?? undefined,
       daysStalled,
       urgencyScore: urgency,
+      listStatus: movie.status,
     });
   }
 
@@ -210,6 +221,7 @@ export async function getNextUpItems(
       score: movie.score ?? undefined,
       daysStalled,
       urgencyScore: urgency,
+      listStatus: movie.status,
     });
   }
 

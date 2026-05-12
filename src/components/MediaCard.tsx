@@ -1,38 +1,66 @@
- 'use client';
+'use client';
 
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
+import StatusDot from '@/components/StatusDot';
+import SeasonSelector, { type SeasonSummary } from '@/components/SeasonSelector';
 import type { BrowserMediaItem } from '@/lib/browser-filter';
 
 interface MediaCardProps {
   item: BrowserMediaItem;
   href?: string;
   showStatus?: boolean;
+  /** Status da lista do usuário (WATCHING, UPCOMING, …) — exibe StatusDot. */
+  listStatus?: string | null;
 }
 
-export default function MediaCard({ item, href, showStatus = true }: MediaCardProps) {
+export default function MediaCard({
+  item,
+  href,
+  showStatus = true,
+  listStatus = null,
+}: MediaCardProps) {
   const target = href ?? `/titles/${item.linkSlug}`;
   const poster = item.posterPath ? `https://image.tmdb.org/t/p/w300${item.posterPath}` : '';
 
+  const seasonSummaries: SeasonSummary[] | undefined = item.seasonSummaries;
+
   return (
-    <Link href={target} className="media-card">
-      <div className="poster">
-        {showStatus && (
-          <StatusBubble
-            status={item.productionStatus}
-            mediaType={item.type === 'MOVIE' ? 'movie' : 'tv'}
-            size="md"
-          />
-        )}
-        {poster ? <img src={poster} alt={item.title} loading="lazy" /> : <div className="placeholder" />}
-        <div className="overlay">
-          <strong>{item.productionStatus}</strong>
-          {item.releaseDate && <span>{item.releaseDate.split('-')[0]}</span>}
+    <div className="media-card-wrap">
+      <Link href={target} className="media-card">
+        <div className="poster">
+          {showStatus && (
+            <StatusBubble
+              status={item.productionStatus}
+              mediaType={item.type === 'MOVIE' ? 'movie' : 'tv'}
+              size="md"
+            />
+          )}
+          {showStatus && listStatus ? <StatusDot status={listStatus} size="md" position="br" /> : null}
+          {poster ? <img src={poster} alt={item.title} loading="lazy" /> : <div className="placeholder" />}
+          <div className="overlay">
+            <strong>{item.productionStatus}</strong>
+            {item.releaseDate && <span>{item.releaseDate.split('-')[0]}</span>}
+          </div>
         </div>
-      </div>
-      <p>{item.title}</p>
+        <p>{item.title}</p>
+      </Link>
+
+      {item.type === 'TV_SEASON' && seasonSummaries && seasonSummaries.length > 1 ? (
+        <SeasonSelector
+          seasons={seasonSummaries}
+          selectedSeasonId={item.linkSlug}
+          compact
+        />
+      ) : null}
 
       <style jsx>{`
+        .media-card-wrap {
+          display: grid;
+          gap: 8px;
+          min-width: 0;
+        }
+
         .media-card {
           display: block;
           min-width: 0;
@@ -102,6 +130,6 @@ export default function MediaCard({ item, href, showStatus = true }: MediaCardPr
           -webkit-box-orient: vertical;
         }
       `}</style>
-    </Link>
+    </div>
   );
 }

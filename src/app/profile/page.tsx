@@ -8,6 +8,8 @@ import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
 import PersonalGoalsSection from '@/components/PersonalGoalsSection';
 import StatusBubble from '@/components/StatusBubble';
+import StatusDot from '@/components/StatusDot';
+import TvSeasonNavClient from '@/components/TvSeasonNavClient';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
@@ -354,6 +356,8 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
         )}
       </Link>
 
+      <StatusDot status={entry.status} size="sm" position="bl" />
+
       <div style={{
         position: 'absolute', top: 8, right: 6, zIndex: 10,
         display: 'flex', flexDirection: 'column', gap: '5px',
@@ -625,7 +629,12 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
               </div>
               <div className={styles.cardsGrid}>
                 {items.map(e => (
-                  <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />
+                  <div key={e.id} style={{ display: 'grid', gap: 6, width: 135, justifyItems: 'stretch' }}>
+                    <EntryCard entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />
+                    {e.type === 'TV_SEASON' && e.parentTmdbId ? (
+                      <TvSeasonNavClient showTmdbId={e.parentTmdbId} currentSeason={e.seasonNumber ?? 1} compact />
+                    ) : null}
+                  </div>
                 ))}
               </div>
             </div>
@@ -813,7 +822,14 @@ function FavoritesTab({ entries, onEdit, onToggleFav, onUpdateProgress }: {
               <div className={styles.favEmptyText}>No favorite series yet.</div>
             </div>
           )
-          : <div className={styles.favoritesGrid}>{favSeries.map(e => <EntryCard key={e.id} entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />)}</div>
+          : <div className={styles.favoritesGrid}>{favSeries.map(e => (
+            <div key={e.id} style={{ display: 'grid', gap: 6, width: 135, justifyItems: 'stretch' }}>
+              <EntryCard entry={e} onEdit={onEdit} onToggleFav={onToggleFav} onUpdateProgress={onUpdateProgress} />
+              {e.parentTmdbId ? (
+                <TvSeasonNavClient showTmdbId={e.parentTmdbId} currentSeason={e.seasonNumber ?? 1} compact />
+              ) : null}
+            </div>
+          ))}</div>
       )}
       {favType === 'films' && (
         favFilms.length === 0

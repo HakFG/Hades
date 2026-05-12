@@ -4,19 +4,18 @@
 import Link from 'next/link';
 import { NextUpItem } from '@/lib/next-up';
 import StatusBubble from '@/components/StatusBubble';
+import StatusDot from '@/components/StatusDot';
+import TvSeasonNavClient from '@/components/TvSeasonNavClient';
 
 interface NextUpCardProps {
   item: NextUpItem;
 }
 
-/**
- * Gera uma cor de prioridade baseada no score de urgência
- */
 function getPriorityColor(urgency?: number): string {
   if (!urgency) return 'rgba(230, 125, 153, 0.15)';
-  if (urgency >= 70) return 'rgba(255, 71, 87, 0.2)'; // Red - muito urgente
-  if (urgency >= 40) return 'rgba(255, 193, 7, 0.2)'; // Amber - urgente
-  return 'rgba(76, 175, 80, 0.2)'; // Green - normal
+  if (urgency >= 70) return 'rgba(255, 71, 87, 0.2)';
+  if (urgency >= 40) return 'rgba(255, 193, 7, 0.2)';
+  return 'rgba(76, 175, 80, 0.2)';
 }
 
 function getPriorityBorder(urgency?: number): string {
@@ -28,247 +27,256 @@ function getPriorityBorder(urgency?: number): string {
 
 function getUrgencyLabel(urgency?: number): string {
   if (!urgency) return '';
-  if (urgency >= 70) return '🔥 Urgent';
-  if (urgency >= 40) return '⚡ Soon';
-  return '✓ Ready';
+  if (urgency >= 70) return 'Urgent';
+  if (urgency >= 40) return 'Soon';
+  return 'Ready';
 }
 
 export default function NextUpCard({ item }: NextUpCardProps) {
   const isSeries = item.type === 'TV_SEASON';
 
-  let badgeEmoji = '';
   let badgeText = '';
-
   if (item.reason === 'next_episode') {
-    badgeEmoji = '📺';
     badgeText = `Ep ${item.nextEpisodeNumber}`;
   } else if (item.reason === 'paused_resume') {
-    badgeEmoji = '⏸️';
-    badgeText = `Resume • Ep ${item.nextEpisodeNumber}`;
+    badgeText = `Resume · Ep ${item.nextEpisodeNumber}`;
   } else if (item.reason === 'almost_finished') {
-    badgeEmoji = '🏁';
-    badgeText = `Nearly Done • Ep ${item.nextEpisodeNumber}`;
+    badgeText = `Almost done · Ep ${item.nextEpisodeNumber}`;
   } else {
-    badgeEmoji = '🎬';
-    badgeText = 'Watch Now';
+    badgeText = 'Watch now';
   }
 
-  const progressPercent = isSeries && item.currentProgress !== undefined && item.currentProgress !== null && item.totalEpisodes
-    ? (item.currentProgress / item.totalEpisodes) * 100
-    : null;
+  const progressPercent =
+    isSeries &&
+    item.currentProgress !== undefined &&
+    item.currentProgress !== null &&
+    item.totalEpisodes
+      ? (item.currentProgress / item.totalEpisodes) * 100
+      : null;
 
-  const progressText = isSeries && item.currentProgress !== undefined && item.currentProgress !== null && item.totalEpisodes
-    ? `${item.currentProgress}/${item.totalEpisodes}`
-    : null;
+  const progressText =
+    isSeries &&
+    item.currentProgress !== undefined &&
+    item.currentProgress !== null &&
+    item.totalEpisodes
+      ? `${item.currentProgress}/${item.totalEpisodes}`
+      : null;
 
-  const reasonLabel = item.reason === 'next_episode'
-    ? 'Próximo episódio'
-    : item.reason === 'paused_resume'
-      ? 'Retomar'
-      : item.reason === 'almost_finished'
-        ? 'Quase lá'
-        : 'Filme rápido';
+  const reasonLabel =
+    item.reason === 'next_episode'
+      ? 'Next episode'
+      : item.reason === 'paused_resume'
+        ? 'Resume'
+        : item.reason === 'almost_finished'
+          ? 'Almost there'
+          : 'Quick movie';
 
   const priorityColor = getPriorityColor(item.urgencyScore);
   const priorityBorder = getPriorityBorder(item.urgencyScore);
   const urgencyLabel = getUrgencyLabel(item.urgencyScore);
 
+  const poster = item.posterPath
+    ? item.posterPath.startsWith('http')
+      ? item.posterPath
+      : `https://image.tmdb.org/t/p/w300${item.posterPath}`
+    : '';
+
+  const listStatus = item.listStatus ?? 'WATCHING';
+
   return (
-    <Link href={`/titles/${item.slug}`} className="nextup-card-wrapper">
-      <div className="nextup-card">
-        {/* Poster Image */}
-        <div className="nextup-image-wrapper">
+    <div className="nextup-root">
+      <Link href={`/titles/${item.slug}`} className="nextup-link">
+        <div className="poster">
           <StatusBubble
             status={item.productionStatus}
-            mediaType={item.type}
+            mediaType={item.type === 'MOVIE' ? 'movie' : 'tv'}
             size="md"
           />
-          {item.posterPath ? (
-            <img
-              src={`https://image.tmdb.org/t/p/w300${item.posterPath}`}
-              alt={item.title}
-              loading="lazy"
-              className="nextup-image"
-            />
+          <StatusDot status={listStatus} size="md" position="br" />
+
+          {poster ? (
+            <img src={poster} alt={item.title} loading="lazy" decoding="async" />
           ) : (
-            <div className="nextup-placeholder">
-              {isSeries ? '📺' : '🎬'}
-            </div>
+            <div className="placeholder">{isSeries ? '📺' : '🎬'}</div>
           )}
 
-          {/* Urgency Indicator */}
           {item.urgencyScore !== undefined && item.urgencyScore > 0 && (
-            <div className="urgency-indicator" style={{ background: priorityColor }}>
-              <span className="urgency-text">{urgencyLabel}</span>
+            <div className="urgency" style={{ background: priorityColor, borderColor: priorityBorder }}>
+              <span>{urgencyLabel}</span>
             </div>
           )}
 
-          {/* Progress Bar (for series) */}
           {progressPercent !== null && (
-            <div className="progress-bar-container">
-              <div
-                className="progress-bar-fill"
-                style={{
-                  width: `${progressPercent}%`,
-                }}
-              />
+            <div className="prog-track">
+              <div className="prog-fill" style={{ width: `${progressPercent}%` }} />
             </div>
           )}
-        </div>
 
-        {/* Info Section */}
-        <div className="nextup-info">
-          <h4 className="nextup-title" title={item.title}>
-            {item.title}
-          </h4>
-
-          {/* Badge */}
-          <div
-            className="nextup-badge"
-            style={{
-              background: priorityColor,
-              borderColor: priorityBorder,
-            }}
-          >
-            <span className="badge-emoji">{badgeEmoji}</span>
-            <span className="badge-text">{badgeText}</span>
+          <div className="overlay">
+            <strong>{item.productionStatus ?? '—'}</strong>
+            <span>{reasonLabel}</span>
           </div>
-
-          {(item.urgencyScore ?? 0) > 0 && (
-            <div className="nextup-meta" style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
-              <span style={{ color: '#e8e2df', fontSize: '10px', fontWeight: 700 }}>{urgencyLabel}</span>
-              <span style={{ color: 'rgba(220,210,215,0.55)', fontSize: '9px', textTransform: 'uppercase' }}>{reasonLabel}</span>
-            </div>
-          )}
-
-          {/* Progress Text */}
-          {progressText && (
-            <p className="nextup-progress">
-              {progressText} episodes
-            </p>
-          )}
-
-          {/* Days Stalled Info */}
-          {item.daysStalled !== undefined && item.daysStalled > 7 && (
-            <p className="nextup-meta">
-              Paused {Math.ceil(item.daysStalled / 7)}w ago
-            </p>
-          )}
         </div>
+      </Link>
+
+      <div className="info">
+        <h4 className="title" title={item.title}>
+          {item.title}
+        </h4>
+
+        <div
+          className="chip"
+          style={{
+            background: priorityColor,
+            borderColor: priorityBorder,
+          }}
+        >
+          {badgeText}
+        </div>
+
+        {(item.urgencyScore ?? 0) > 0 && (
+          <div className="meta">
+            <span className="urg">{urgencyLabel}</span>
+            <span className="sub">{reasonLabel}</span>
+          </div>
+        )}
+
+        {progressText && <p className="prog-text">{progressText} eps</p>}
+
+        {item.daysStalled !== undefined && item.daysStalled > 7 && (
+          <p className="stalled">Paused {Math.ceil(item.daysStalled / 7)}w ago</p>
+        )}
+
+        {isSeries && item.parentTmdbId ? (
+          <TvSeasonNavClient
+            showTmdbId={item.parentTmdbId}
+            currentSeason={item.seasonNumber ?? 1}
+            compact
+          />
+        ) : null}
       </div>
 
       <style jsx>{`
-        .nextup-card-wrapper {
+        .nextup-root {
+          display: grid;
+          gap: 8px;
+          min-width: 0;
+          background: rgb(52, 49, 49);
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          border-radius: 10px;
+          overflow: hidden;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        }
+        .nextup-root:hover {
+          border-color: rgba(230, 125, 153, 0.4);
+          box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
+          transform: translateY(-4px);
+        }
+
+        .nextup-link {
           display: block;
           text-decoration: none;
-          outline: none;
+          color: inherit;
         }
 
-        .nextup-card {
-          display: flex;
-          flex-direction: column;
-          min-height: 340px;
-          background: linear-gradient(135deg, rgb(52, 49, 49) 0%, rgb(45, 42, 42) 100%);
-          border: 1px solid rgba(230, 125, 153, 0.12);
-          border-radius: 14px;
-          overflow: hidden;
-          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
-          cursor: pointer;
-        }
-
-        .nextup-card-wrapper:hover .nextup-card {
-          transform: translateY(-8px);
-          box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4),
-                      0 0 0 1px rgba(230, 125, 153, 0.3);
-          border-color: rgba(230, 125, 153, 0.4);
-        }
-
-        .nextup-image-wrapper {
+        .poster {
           position: relative;
-          width: 100%;
-          aspect-ratio: 2/3;
+          aspect-ratio: 2 / 3;
           overflow: hidden;
-          background: linear-gradient(135deg, rgb(62, 58, 58) 0%, rgb(52, 49, 49) 100%);
+          background: rgb(58, 55, 55);
         }
 
-        .nextup-image {
+        img,
+        .placeholder {
+          display: block;
           width: 100%;
           height: 100%;
           object-fit: cover;
-          display: block;
-          transition: transform 0.3s ease;
+          transition: transform 0.22s ease;
         }
 
-        .nextup-card-wrapper:hover .nextup-image {
-          transform: scale(1.05);
-        }
-
-        .nextup-placeholder {
-          width: 100%;
-          height: 100%;
+        .placeholder {
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 48px;
-          background: linear-gradient(135deg, rgb(58, 55, 55) 0%, rgb(48, 45, 45) 100%);
+          font-size: 28px;
+          background: linear-gradient(135deg, rgb(62, 58, 58), rgb(48, 45, 45));
         }
 
-        /* Urgency Indicator */
-        .urgency-indicator {
+        .nextup-root:hover img {
+          transform: scale(1.04);
+        }
+
+        .urgency {
           position: absolute;
           top: 0;
           left: 0;
           right: 0;
-          padding: 6px 8px;
-          display: flex;
-          align-items: center;
-          gap: 4px;
+          padding: 5px 8px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           backdrop-filter: blur(4px);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .urgency-text {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 0.3px;
+        .urgency span {
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
           text-transform: uppercase;
-          color: rgb(220, 210, 215);
+          color: rgb(232, 226, 223);
         }
 
-        /* Progress Bar */
-        .progress-bar-container {
+        .prog-track {
           position: absolute;
           bottom: 0;
           left: 0;
           right: 0;
           height: 3px;
-          background: rgba(0, 0, 0, 0.3);
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
+          background: rgba(0, 0, 0, 0.35);
         }
 
-        .progress-bar-fill {
+        .prog-fill {
           height: 100%;
-          background: linear-gradient(90deg, rgb(76, 175, 80) 0%, rgb(75, 192, 192) 100%);
-          transition: width 0.3s ease;
+          background: linear-gradient(90deg, rgb(76, 175, 80), rgb(75, 192, 192));
+          transition: width 0.25s ease;
         }
 
-        /* Info Section */
-        .nextup-info {
-          padding: 14px 14px 16px;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          flex-grow: 1;
-          background: linear-gradient(180deg, rgb(52, 49, 49) 0%, rgb(42, 39, 39) 100%);
+        .overlay {
+          position: absolute;
+          inset: auto 0 0;
+          display: grid;
+          gap: 3px;
+          padding: 28px 8px 10px;
+          background: linear-gradient(transparent, rgba(20, 18, 18, 0.92));
+          opacity: 0;
+          transition: opacity 0.18s ease;
         }
 
-        .nextup-title {
-          font-size: 13px;
-          font-weight: 700;
-          color: rgb(220, 210, 215);
+        .nextup-root:hover .overlay {
+          opacity: 1;
+        }
+
+        .overlay strong {
+          font-size: 10px;
+          color: rgb(232, 226, 223);
+        }
+
+        .overlay span {
+          font-size: 9px;
+          color: rgba(220, 210, 215, 0.65);
+        }
+
+        .info {
+          padding: 0 10px 10px;
+          display: grid;
+          gap: 8px;
+        }
+
+        .title {
           margin: 0;
-          line-height: 1.3;
+          font-size: 12px;
+          font-weight: 800;
+          color: rgb(220, 210, 215);
+          line-height: 1.25;
           overflow: hidden;
           text-overflow: ellipsis;
           display: -webkit-box;
@@ -276,75 +284,54 @@ export default function NextUpCard({ item }: NextUpCardProps) {
           -webkit-box-orient: vertical;
         }
 
-        /* Badge */
-        .nextup-badge {
+        .chip {
           display: inline-flex;
           align-items: center;
-          gap: 5px;
+          width: fit-content;
           font-size: 9px;
           font-weight: 800;
-          letter-spacing: 0.4px;
+          letter-spacing: 0.04em;
           text-transform: uppercase;
           border: 1px solid;
-          border-radius: 16px;
-          padding: 4px 10px;
-          width: fit-content;
-          transition: all 0.2s ease;
+          border-radius: 12px;
+          padding: 3px 8px;
+          color: rgb(232, 226, 223);
         }
 
-        .nextup-card-wrapper:hover .nextup-badge {
-          transform: scale(1.05);
-        }
-
-        .badge-emoji {
-          font-size: 11px;
-          line-height: 1;
-        }
-
-        .badge-text {
-          color: rgb(220, 210, 215);
-          display: block;
-        }
-
-        /* Progress Text */
-        .nextup-progress {
-          font-size: 10px;
-          color: rgba(220, 210, 215, 0.75);
-          margin: 0;
-          font-weight: 600;
-        }
-
-        .nextup-meta {
+        .meta {
           display: flex;
-          align-items: center;
           justify-content: space-between;
           gap: 8px;
+          align-items: center;
+        }
+
+        .urg {
+          color: #e8e2df;
+          font-size: 10px;
+          font-weight: 800;
+        }
+
+        .sub {
+          color: rgba(220, 210, 215, 0.5);
           font-size: 9px;
-          letter-spacing: 0.02em;
-          color: rgba(220, 210, 215, 0.64);
           text-transform: uppercase;
+          font-weight: 700;
         }
 
-        /* Meta Info */
-        .nextup-meta {
-          font-size: 8px;
-          color: rgba(230, 125, 153, 0.7);
+        .prog-text {
           margin: 0;
+          font-size: 10px;
+          color: rgba(220, 210, 215, 0.72);
           font-weight: 600;
-          margin-top: 2px;
         }
 
-        @media (max-width: 640px) {
-          .nextup-title {
-            font-size: 12px;
-          }
-
-          .nextup-badge {
-            font-size: 8px;
-            padding: 3px 8px;
-          }
+        .stalled {
+          margin: 0;
+          font-size: 9px;
+          color: rgba(230, 125, 153, 0.75);
+          font-weight: 600;
         }
       `}</style>
-    </Link>
+    </div>
   );
 }

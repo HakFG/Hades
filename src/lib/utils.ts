@@ -38,3 +38,16 @@ export function entrySlug(e: { type: string; tmdbId: number; parentTmdbId?: numb
   if (e.parentTmdbId && e.seasonNumber) return `tv-${e.parentTmdbId}-s${e.seasonNumber}`;
   return `movie-${e.tmdbId}`;
 }
+
+/** Extrai o path estilo TMDB (/xyz.jpg) a partir de URL completa image.tmdb.org ou path relativo. */
+export function extractTmdbPosterPath(input?: string | null): string | null {
+  if (!input || typeof input !== 'string') return null;
+  const s = input.trim();
+  if (!s) return null;
+  if (s.startsWith('/') && !s.startsWith('//')) return s;
+  if (s.includes('image.tmdb.org')) {
+    const match = s.match(/\/t\/p\/[^/]+\/(.+)$/);
+    if (match?.[1]) return `/${match[1].replace(/^\/+/, '')}`;
+  }
+  return null;
+}

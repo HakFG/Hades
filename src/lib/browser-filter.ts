@@ -20,6 +20,15 @@ export interface BrowserMediaItem {
   popularity?: number | null;
   voteAverage?: number | null;
   linkSlug: string;
+  /** Temporadas TMDB para navegação no card (séries). */
+  seasonSummaries?: Array<{
+    id: string;
+    seasonNumber: number;
+    title: string;
+    episodeCount: number;
+    status: string;
+    href: string;
+  }>;
 }
 
 function endpointFor(filter: string, mediaType: MediaKind) {
@@ -82,6 +91,18 @@ async function hydrateTv(show: any): Promise<BrowserMediaItem | null> {
   const seasonNumber = latest?.season_number ?? 1;
   const productionStatus = normalizeProductionStatus(details.status, 'tv', details.in_production);
 
+  const seasonSummaries = seasons
+    .filter((season: { season_number?: number }) => (season.season_number ?? 0) > 0)
+    .map((season: { season_number: number; episode_count?: number; name?: string; air_date?: string }) => ({
+      id: `tv-${show.id}-s${season.season_number}`,
+      seasonNumber: season.season_number,
+      title: season.name || `Season ${season.season_number}`,
+      episodeCount: season.episode_count ?? 0,
+      status: season.air_date || '—',
+      href: `/titles/tv-${show.id}-s${season.season_number}`,
+    }))
+    .sort((a: { seasonNumber: number }, b: { seasonNumber: number }) => a.seasonNumber - b.seasonNumber);
+
   return {
     id: `tv-${show.id}-s${seasonNumber}`,
     tmdbId: latest?.id ?? show.id,
@@ -97,6 +118,7 @@ async function hydrateTv(show: any): Promise<BrowserMediaItem | null> {
     popularity: details.popularity ?? show.popularity ?? null,
     voteAverage: details.vote_average ?? show.vote_average ?? null,
     linkSlug: `tv-${show.id}-s${seasonNumber}`,
+    seasonSummaries,
   };
 }
 

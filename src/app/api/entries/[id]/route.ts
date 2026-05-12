@@ -65,6 +65,17 @@ export async function PATCH(
     if (body.hidden !== undefined) updateData.hidden = Boolean(body.hidden);
     if (body.isFavorite !== undefined) updateData.isFavorite = Boolean(body.isFavorite);
 
+    // Capa / mídia (atualização silenciosa a partir do TMDB na página do título)
+    if (body.imagePath !== undefined) {
+      const v = body.imagePath;
+      updateData.imagePath =
+        v === null || v === ''
+          ? null
+          : typeof v === 'string'
+            ? v.trim() || null
+            : null;
+    }
+
     // Executa update
     const entry = await prisma.entry.update({
       where: { id },

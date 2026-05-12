@@ -3,7 +3,11 @@ import { recordActivity } from '@/lib/activity';
 import { useState, useEffect, use, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
-import { getOrdinal, buildSeasonTitle, formatScore, scoreColor } from '@/lib/utils';
+import StatusDot from '@/components/StatusDot';
+import SeasonSelector from '@/components/SeasonSelector';
+import type { SeasonSummary } from '@/components/SeasonSelector';
+import { silentPersistPosterIfChanged } from '@/lib/entry-poster-sync';
+import { getOrdinal, buildSeasonTitle, formatScore, scoreColor, extractTmdbPosterPath } from '@/lib/utils';
 import { emitXPNotification } from '@/hooks/useXPNotification';
 import { normalizeProductionStatus } from '@/lib/production-status';
 import {
@@ -1248,17 +1252,19 @@ useEffect(() => {
       if (parsed.kind === 'movie') {
         const [eRes, tRes, tResEn, recResEn] = await Promise.all([
   fetch(`/api/entry/movie-${parsed.movieId}`),
-  fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`),
-  fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=en-US`),
-  fetch(`${TMDB}/movie/${parsed.movieId}/recommendations?api_key=${API_KEY}&language=en-US`),
+  fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`, { cache: 'no-store' }),
+  fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=en-US`, { cache: 'no-store' }),
+  fetch(`${TMDB}/movie/${parsed.movieId}/recommendations?api_key=${API_KEY}&language=en-US`, { cache: 'no-store' }),
 ]);
         if (cancelled) return;
         
         let entryId: string | null = null;
+        let storedEntryImagePath: string | null | undefined;
         if (eRes.ok) {
           const e: EntryData = await eRes.json();
           setEntry(e);
           entryId = e.id;
+          storedEntryImagePath = e.imagePath;
           if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
         }
         if (!tRes.ok) throw new Error('Filme não encontrado no TMDB');
@@ -1271,6 +1277,16 @@ md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
 // ✅ sinopse (md.overview) NÃO é sobrescrita – permanece em pt-BR
         if (cancelled) return;
         setMovie(md);
+
+        if (!cancelled && entryId && md.poster_path) {
+          void silentPersistPosterIfChanged({
+            entryId,
+            storedImagePath: storedEntryImagePath,
+            tmdbPosterPath: md.poster_path,
+            onUpdated: (p) =>
+              setEntry((prev) => (prev && prev.id === entryId ? { ...prev, imagePath: p ?? undefined } : prev)),
+          });
+        }
 
         // ---------- Relations (CORRIGIDO: carrega automáticas + manuais) ----------
         let manualRels: RelationItem[] = [];
@@ -1352,18 +1368,20 @@ manualRels = saved.map((r: any) => {
         // ✅ CORREÇÃO P1#1: Buscar a season também em PT-BR para a sinopse
         const [eRes, sRes, sdResEn, sResEn, sdResPt] = await Promise.all([
   fetch(`/api/entry/tv-${showId}-s${seasonNumber}`),
-  fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`),
-  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=en-US&append_to_response=credits,videos`),
-  fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=en-US`),
-  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=pt-BR`),
+  fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`, { cache: 'no-store' }),
+  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=en-US&append_to_response=credits,videos`, { cache: 'no-store' }),
+  fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=en-US`, { cache: 'no-store' }),
+  fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=pt-BR`, { cache: 'no-store' }),
 ]);
         if (cancelled) return;
         
         let entryId: string | null = null;
+        let storedEntryImagePath: string | null | undefined;
         if (eRes.ok) {
           const e: EntryData = await eRes.json();
           setEntry(e);
           entryId = e.id;
+          storedEntryImagePath = e.imagePath;
           if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
         }
         if (!sRes.ok) throw new Error('Série não encontrada no TMDB');
@@ -1386,6 +1404,21 @@ sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
           seasonData = await sdResPt.json();
         }
         if (seasonData) setSeasonDetail(seasonData);
+
+        const seasonStubPoster =
+          sd?.seasons?.find((s) => s.season_number === seasonNumber)?.poster_path ?? null;
+        const liveTmdbPosterForSync =
+          (seasonData?.poster_path ?? seasonStubPoster ?? sd.poster_path) ?? null;
+
+        if (!cancelled && entryId && liveTmdbPosterForSync) {
+          void silentPersistPosterIfChanged({
+            entryId,
+            storedImagePath: storedEntryImagePath,
+            tmdbPosterPath: liveTmdbPosterForSync,
+            onUpdated: (p) =>
+              setEntry((prev) => (prev && prev.id === entryId ? { ...prev, imagePath: p ?? undefined } : prev)),
+          });
+        }
 
         // ---------- Relations (CORRIGIDO: carrega automáticas + manuais) ----------
         let manualRels: RelationItem[] = [];
@@ -1502,13 +1535,37 @@ manualRels = saved.map((r: any) => {
   const banner      = (isTV?show?.backdrop_path:movie?.backdrop_path)
     ?`https://image.tmdb.org/t/p/original${isTV?show!.backdrop_path:movie!.backdrop_path}`:null;
 
-  // Poster: customPoster (banco) > temporada > série/filme
-  const rawPosterPath=customPoster
-    ??(isTV?(seasonDetail?.poster_path||show?.poster_path):movie?.poster_path)
-    ??null;
-  const poster=rawPosterPath
-    ?(rawPosterPath.startsWith('http')?rawPosterPath:`https://image.tmdb.org/t/p/w500${rawPosterPath}`)
-    :null;
+  // Poster: custom (upload) > TMDB ao vivo (temporada + stub da lista do show) > path TMDB salvo no banco
+  const seasonStubPoster =
+    isTV && show && seasonNumber != null
+      ? show.seasons?.find((s) => s.season_number === seasonNumber)?.poster_path ?? null
+      : null;
+  const liveTmdbPoster = isTV
+    ? (seasonDetail?.poster_path ?? seasonStubPoster ?? show?.poster_path ?? null)
+    : (movie?.poster_path ?? null);
+  const entryPosterTmdb = extractTmdbPosterPath(entry?.imagePath ?? null);
+  const rawPosterPath = customPoster ?? liveTmdbPoster ?? entryPosterTmdb ?? null;
+  const poster = rawPosterPath
+    ? rawPosterPath.startsWith('http')
+      ? rawPosterPath
+      : `https://image.tmdb.org/t/p/w500${rawPosterPath}`
+    : null;
+
+  const titleSeasonNavOptions: SeasonSummary[] =
+    isTV && show && showId != null && seasonNumber != null
+      ? (show.seasons ?? [])
+          .filter((s) => s.season_number > 0)
+          .map((s) => ({
+            id: `tv-${showId}-s${s.season_number}`,
+            seasonNumber: s.season_number,
+            title: s.name || `Season ${s.season_number}`,
+            episodeCount: s.episode_count ?? 0,
+            status: s.air_date ? String(s.air_date) : '—',
+            href: `/titles/tv-${showId}-s${s.season_number}`,
+          }))
+      : [];
+  const selectedSeasonSlug =
+    isTV && showId != null && seasonNumber != null ? `tv-${showId}-s${seasonNumber}` : null;
 
   // ID a ser enviado ao criar uma entrada (prefere entry existente, depois season.id/movie.id)
   const createTmdbId = entry?.tmdbId ?? (isTV ? (seasonDetail?.id ?? show?.seasons?.find(s=>s.season_number===seasonNumber)?.id ?? null) : (movie?.id ?? null));
@@ -1811,6 +1868,7 @@ onClick={async () => {
             {/* Poster + botão de editar capa (aparece no hover) */}
             <div className="tp-poster-wrap" style={{position:'relative',marginBottom:8}}>
               <StatusBubble status={productionStatus} mediaType={isTV ? 'tv' : 'movie'} size="lg" />
+              {entry?.status ? <StatusDot status={entry.status} size="lg" position="br" /> : null}
               {poster
                 ?<img src={poster} style={{width:215,borderRadius:4,boxShadow:'0 6px 24px rgba(0,0,0,.5)',display:'block'}} alt="poster"/>
                 :<div style={{width:215,height:310,background:CARD,borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:13}}>Sem imagem</div>
@@ -1831,6 +1889,16 @@ onClick={async () => {
               style={{background:statusColor(entry?.status),color:'white',padding:10,borderRadius:4,textAlign:'center',fontWeight:700,marginBottom:8,cursor:'pointer',fontSize:13,border:'none',width:'100%',letterSpacing:'.3px'}}>
               {entry?.status??'+ ADICIONAR'}
             </button>
+
+            {isTV && titleSeasonNavOptions.length > 1 ? (
+              <div style={{ marginBottom: 10 }}>
+                <SeasonSelector
+                  seasons={titleSeasonNavOptions}
+                  selectedSeasonId={selectedSeasonSlug}
+                  compact
+                />
+              </div>
+            ) : null}
 
             {/* Info panel */}
             <div style={{background:CARD,borderRadius:4,padding:16,fontSize:13,color:TEXT}}>
@@ -1931,7 +1999,11 @@ onClick={async () => {
         <CoverModal
           entryId={entry.id}
           current={customPoster??rawPosterPath??null}
-          onSaved={p=>{setCustomPoster(p);setShowCoverEdit(false);}}
+          onSaved={(p) => {
+            if (p && !String(p).includes('image.tmdb.org')) setCustomPoster(p);
+            else setCustomPoster(null);
+            setShowCoverEdit(false);
+          }}
           onClose={()=>setShowCoverEdit(false)}
         />
       )}
@@ -1958,7 +2030,15 @@ onClick={async () => {
             const slug = isTV ? `tv-${showId}-s${seasonNumber}` : `movie-${movie?.id ?? (parsed as any).movieId}`;
             try{
               const r = await fetch(`/api/entry/${slug}`);
-              if(r.ok){ const newE = await r.json(); setEntry(newE); if(newE.imagePath) setCustomPoster(newE.imagePath); }
+              if (r.ok) {
+                const newE = await r.json();
+                setEntry(newE);
+                if (newE.imagePath && !String(newE.imagePath).includes('image.tmdb.org')) {
+                  setCustomPoster(newE.imagePath);
+                } else {
+                  setCustomPoster(null);
+                }
+              }
             }catch(e){}
             setEditorOpen(false);
           }}

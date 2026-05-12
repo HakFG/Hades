@@ -259,13 +259,19 @@ async function HomePageContent() {
           animation: fadeUp 0.5s ease-out both;
         }
 
-        /* ── Grid para 5 cards por linha (com largura fixa) ── */
+        /* ── Grid responsivo para cards laterais ── */
         .cards-grid-5 {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(150px, 160px));
-          gap: 20px;
-          justify-content: center;
+          grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+          gap: 14px;
           width: 100%;
+        }
+
+        @media (min-width: 1200px) {
+          .cards-grid-5 {
+            grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+            gap: 16px;
+          }
         }
 
         /* ── Wrapper do card com animação de hover ── */
@@ -279,98 +285,11 @@ async function HomePageContent() {
         }
 
         /* Força os cards a herdarem o hover e aplica borda brilhante */
-        .card-hover-effect:hover .airing-card,
-        .card-hover-effect:hover .nextup-card,
+        .card-hover-effect:hover .airing-root,
+        .card-hover-effect:hover .nextup-root,
         .card-hover-effect:hover > * {
           border-color: rgba(230,125,153, 0.7) !important;
           box-shadow: 0 20px 28px -12px rgba(0,0,0,0.5), 0 0 0 2px rgba(230,125,153, 0.3) !important;
-        }
-
-        /* Centraliza o conteúdo do card */
-        .airing-card, .nextup-card {
-          text-align: center;
-        }
-        .airing-card img, .nextup-card img {
-          width: 100%;
-          aspect-ratio: 2/3;
-          object-fit: cover;
-          border-radius: 8px;
-        }
-        .airing-card .airing-info, .nextup-card .airing-info {
-          padding: 12px 8px;
-          text-align: center;
-        }
-        .airing-card .airing-title {
-          font-size: 12px;
-          font-weight: 700;
-          white-space: normal;
-          overflow: hidden;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          line-height: 1.3;
-          margin-bottom: 6px;
-        }
-        .airing-card .airing-ep,
-        .nextup-card .airing-ep {
-          font-size: 13px;
-          font-weight: 700;
-          color: rgb(230,125,153);
-          margin: 4px 0;
-        }
-        .airing-card .airing-prod,
-        .nextup-card .airing-prod {
-          font-size: 11px;
-          opacity: 0.8;
-        }
-
-        /* Área de progresso e botão (hover) – precisa que os componentes tenham estas classes */
-        .progress-area {
-          display: none;
-          margin-top: 10px;
-          flex-direction: column;
-          align-items: center;
-          gap: 6px;
-        }
-        .card-hover-effect:hover .progress-area {
-          display: flex;
-        }
-        .card-hover-effect:hover .airing-ep,
-        .card-hover-effect:hover .airing-prod {
-          display: none;
-        }
-        .progress-bar {
-          width: 90%;
-          height: 4px;
-          background: rgba(255,255,255,0.2);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-        .progress-fill {
-          height: 100%;
-          width: 0%;
-          background: linear-gradient(90deg, rgb(230,125,153), rgb(245,90,130));
-          border-radius: 4px;
-          transition: width 0.2s;
-        }
-        .add-episode-btn {
-          background: rgb(230,125,153);
-          border: none;
-          color: white;
-          font-size: 18px;
-          font-weight: bold;
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: transform 0.1s ease, background 0.2s;
-        }
-        .add-episode-btn:hover {
-          background: rgb(245,90,130);
-          transform: scale(1.1);
         }
 
         /* ── Seção headers ── */
