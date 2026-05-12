@@ -11,7 +11,7 @@ import StatusBubble from '@/components/StatusBubble';
 import { entryStatusToBubbleStatus } from '@/lib/series-status';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
-import { MessageCircle, RotateCcw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MessageCircle, Pin, RotateCcw, X } from 'lucide-react';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -128,6 +128,13 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const ALL_STATUSES: StatusKey[] = ['WATCHING', 'COMPLETED', 'PAUSED', 'DROPPED', 'PLANNING', 'REWATCHING', 'UPCOMING'];
+
+function favoriteOrder(a: Entry, b: Entry): number {
+  const rankA = a.favoriteRank ?? Number.MAX_SAFE_INTEGER;
+  const rankB = b.favoriteRank ?? Number.MAX_SAFE_INTEGER;
+  if (rankA !== rankB) return rankA - rankB;
+  return a.title.localeCompare(b.title);
+}
 
 function relativeDate(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -607,6 +614,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
   onToggleFav: (e: Entry) => void;
   onUpdateProgress?: (entryId: string, newProgress: number) => void;
 }) {
+  const sortStorageKey = `hades.profile.sort.${type}`;
   const [statusFilter, setStatusFilter] = useState<StatusKey | 'ALL'>('ALL');
   const [formatFilter, setFormatFilter] = useState('ALL');
   const [genreFilter, setGenreFilter] = useState('ALL');
@@ -616,6 +624,25 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sortSaved, setSortSaved] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(sortStorageKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { sortBy?: string; sortDir?: 'asc' | 'desc' };
+      if (saved.sortBy) setSortBy(saved.sortBy);
+      if (saved.sortDir === 'asc' || saved.sortDir === 'desc') setSortDir(saved.sortDir);
+      setSortSaved(true);
+    } catch {
+      /* ignore invalid local preferences */
+    }
+  }, [sortStorageKey]);
+
+  const saveSortPreference = () => {
+    window.localStorage.setItem(sortStorageKey, JSON.stringify({ sortBy, sortDir }));
+    setSortSaved(true);
+  };
 
   const formatOptions = type === 'TV_SEASON'
     ? [{ value: 'ALL', label: 'All Formats' }, { value: 'TV', label: 'TV' }, { value: 'SPECIAL', label: 'Special' }]
@@ -797,7 +824,7 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div className={styles.filterSectionTitle}>Sort</div>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value)} className={styles.filterSelect} style={{ marginBottom: '8px' }}>
+              <select value={sortBy} onChange={e => { setSortBy(e.target.value); setSortSaved(false); }} className={styles.filterSelect} style={{ marginBottom: '8px' }}>
                 {[
                   { value: 'title', label: 'Title' },
                   { value: 'updatedAt', label: 'Last Updated' },
@@ -810,9 +837,21 @@ function MediaListTab({ entries, type, onEdit, onToggleFav, onUpdateProgress }: 
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
-              <button onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')} className={styles.sortDirBtn}>
-                {sortDir === 'asc' ? '▲ Ascending' : '▼ Descending'}
-              </button>
+              <div className={styles.sortControlsRow}>
+                <button onClick={() => { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); setSortSaved(false); }} className={styles.sortDirBtn}>
+                  {sortDir === 'asc' ? 'Ascending' : 'Descending'}
+                </button>
+                <button
+                  type="button"
+                  onClick={saveSortPreference}
+                  className={`${styles.sortPinBtn} ${sortSaved ? styles.sortPinBtnSaved : ''}`}
+                  title={`Save this ${type === 'MOVIE' ? 'films' : 'series'} sort as default`}
+                  aria-label="Save sort preference"
+                >
+                  <Pin size={13} strokeWidth={2.4} />
+                </button>
+              </div>
+              {sortSaved && <div className={styles.sortSavedHint}>Default saved</div>}
             </div>
             <button
               onClick={() => {
@@ -855,8 +894,8 @@ function FavoritesTab({ entries, onEdit, onToggleFav, onUpdateProgress }: {
   onUpdateProgress?: (entryId: string, newProgress: number) => void;
 }) {
   const [favType, setFavType] = useState<'series' | 'films'>('series');
-  const favSeries = entries.filter(e => e.isFavorite && e.type === 'TV_SEASON');
-  const favFilms = entries.filter(e => e.isFavorite && e.type === 'MOVIE');
+  const favSeries = entries.filter(e => e.isFavorite && e.type === 'TV_SEASON').sort(favoriteOrder);
+  const favFilms = entries.filter(e => e.isFavorite && e.type === 'MOVIE').sort(favoriteOrder);
 
   if (favSeries.length === 0 && favFilms.length === 0) {
     return (
@@ -1333,11 +1372,12 @@ function ActivityItemEntry({ activity, entry, onDelete }: { activity: ActivityLo
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
-function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityLog, activityVisible, onLoadMore, onDeleteActivity }: {
+function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, onMoveFavorite, activityLog, activityVisible, onLoadMore, onDeleteActivity }: {
   entries: Entry[];
   onEdit: (e: Entry) => void;
   onToggleFav: (e: Entry) => void;
   onUpdateProgress?: (entryId: string, newProgress: number) => void;
+  onMoveFavorite: (entry: Entry, direction: -1 | 1) => void;
   activityLog: ActivityLog[];
   activityVisible: number;
   onLoadMore: () => void;
@@ -1345,8 +1385,8 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
 }) {
   const series = entries.filter(e => e.type === 'TV_SEASON');
   const films = entries.filter(e => e.type === 'MOVIE');
-  const favSeries = series.filter(e => e.isFavorite);
-  const favFilms = films.filter(e => e.isFavorite);
+  const favSeries = series.filter(e => e.isFavorite).sort(favoriteOrder);
+  const favFilms = films.filter(e => e.isFavorite).sort(favoriteOrder);
 
   const mean = (arr: Entry[]) => {
     const scored = arr.filter(e => e.score > 0);
@@ -1364,20 +1404,30 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
           <div className={styles.favGroup}>
             <div className={styles.favGroupTitle}>Favorite Series</div>
             <div className={styles.favGrid}>
-              {favSeries.slice(0, 6).map(e => (
-                <Link key={e.id} href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
-                  <StatusBubble status={entryStatusToBubbleStatus(e)} size="sm" />
-                  <div
-                    className={styles.favPosterImg}
-                    style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
-                  />
-                  <div className={styles.favPosterLabel}>
-                    <div className={styles.favPosterTitle}>{e.title}</div>
+              {favSeries.slice(0, 10).map((e, index) => (
+                <div key={e.id} className={styles.favPosterShell}>
+                  <Link href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
+                    <StatusBubble status={entryStatusToBubbleStatus(e)} size="sm" />
+                    <div
+                      className={styles.favPosterImg}
+                      style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
+                    />
+                    <div className={styles.favPosterLabel}>
+                      <div className={styles.favPosterTitle}>{e.title}</div>
+                    </div>
+                  </Link>
+                  <div className={styles.favOrderControls}>
+                    <button type="button" disabled={index === 0} onClick={() => onMoveFavorite(e, -1)} title="Move left">
+                      <ChevronLeft size={13} />
+                    </button>
+                    <button type="button" disabled={index === favSeries.length - 1} onClick={() => onMoveFavorite(e, 1)} title="Move right">
+                      <ChevronRight size={13} />
+                    </button>
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
-            {favSeries.length > 6 && <div className={styles.favMore}>+{favSeries.length - 6} more</div>}
+            {favSeries.length > 10 && <div className={styles.favMore}>+{favSeries.length - 10} more</div>}
           </div>
         )}
 
@@ -1385,20 +1435,30 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
           <div className={styles.favGroup}>
             <div className={styles.favGroupTitle}>Favorite Films</div>
             <div className={styles.favGrid}>
-              {favFilms.slice(0, 6).map(e => (
-                <Link key={e.id} href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
-                  <StatusBubble status={entryStatusToBubbleStatus(e)} size="sm" />
-                  <div
-                    className={styles.favPosterImg}
-                    style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
-                  />
-                  <div className={styles.favPosterLabel}>
-                    <div className={styles.favPosterTitle}>{e.title}</div>
+              {favFilms.slice(0, 10).map((e, index) => (
+                <div key={e.id} className={styles.favPosterShell}>
+                  <Link href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
+                    <StatusBubble status={entryStatusToBubbleStatus(e)} size="sm" />
+                    <div
+                      className={styles.favPosterImg}
+                      style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
+                    />
+                    <div className={styles.favPosterLabel}>
+                      <div className={styles.favPosterTitle}>{e.title}</div>
+                    </div>
+                  </Link>
+                  <div className={styles.favOrderControls}>
+                    <button type="button" disabled={index === 0} onClick={() => onMoveFavorite(e, -1)} title="Move left">
+                      <ChevronLeft size={13} />
+                    </button>
+                    <button type="button" disabled={index === favFilms.length - 1} onClick={() => onMoveFavorite(e, 1)} title="Move right">
+                      <ChevronRight size={13} />
+                    </button>
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
-            {favFilms.length > 6 && <div className={styles.favMore}>+{favFilms.length - 6} more</div>}
+            {favFilms.length > 10 && <div className={styles.favMore}>+{favFilms.length - 10} more</div>}
           </div>
         )}
 
@@ -1599,16 +1659,45 @@ function ProfileContent() {
 
   async function toggleFav(entry: Entry) {
     const next = !entry.isFavorite;
-    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, isFavorite: next } : e));
+    const sameTypeFavorites = entries.filter(e => e.isFavorite && e.type === entry.type);
+    const nextRank = next ? Math.max(0, ...sameTypeFavorites.map(e => e.favoriteRank ?? 0)) + 1 : null;
+    setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, isFavorite: next, favoriteRank: nextRank } : e));
     const res = await fetch(`/api/entries/${entry.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isFavorite: next }),
+      body: JSON.stringify({ isFavorite: next, favoriteRank: nextRank }),
     });
     if (res.ok) {
       const updated = await res.json();
       emitXPNotification(updated.gamification);
     }
+  }
+
+  async function moveFavorite(entry: Entry, direction: -1 | 1) {
+    const favorites = entries
+      .filter(e => e.isFavorite && e.type === entry.type)
+      .sort(favoriteOrder);
+    const index = favorites.findIndex(e => e.id === entry.id);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= favorites.length) return;
+
+    const reordered = [...favorites];
+    [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
+    const rankMap = new Map(reordered.map((item, idx) => [item.id, idx + 1]));
+
+    setEntries(prev => prev.map(e => (
+      rankMap.has(e.id) ? { ...e, favoriteRank: rankMap.get(e.id)! } : e
+    )));
+
+    await Promise.all(
+      reordered.map((item, idx) =>
+        fetch(`/api/entries/${item.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ favoriteRank: idx + 1 }),
+        }),
+      ),
+    );
   }
 
   async function updateProgress(entryId: string, newProgress: number) {
@@ -1725,6 +1814,7 @@ function ProfileContent() {
             onEdit={setEditingEntry}
             onToggleFav={toggleFav}
             onUpdateProgress={updateProgress}
+            onMoveFavorite={moveFavorite}
             activityLog={activityLog}
             activityVisible={activityVisible}
             onLoadMore={() => setActivityVisible(v => v + 15)}

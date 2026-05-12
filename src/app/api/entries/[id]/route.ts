@@ -65,6 +65,10 @@ export async function PATCH(
     // Hidden e Favorite
     if (body.hidden !== undefined) updateData.hidden = Boolean(body.hidden);
     if (body.isFavorite !== undefined) updateData.isFavorite = Boolean(body.isFavorite);
+    if (body.favoriteRank !== undefined) {
+      const rank = Number(body.favoriteRank);
+      updateData.favoriteRank = Number.isFinite(rank) && rank > 0 ? Math.floor(rank) : null;
+    }
 
     // Capa / mídia (atualização silenciosa a partir do TMDB na página do título)
     if (body.imagePath !== undefined) {
