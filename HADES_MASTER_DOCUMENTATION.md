@@ -84,7 +84,7 @@ Regra principal da bolinha:
 - Browser e filtros de producao estao implementados.
 - `/api/status-analysis` existe para diagnostico do sistema visual.
 - `/api/sync/manual` existe para sincronizacao manual e consulta de logs.
-- O `profile` chama `/api/entries?refresh=tmdb` no carregamento inicial/F5, sincronizando capas, episodios, contagem e `productionStatus` antes de montar os cards.
+- O `profile` chama `/api/entries` no carregamento inicial/F5 e nao bloqueia a tela com chamadas ao TMDB. Os cards usam dados locais e calculo local de bolinha para abrir rapido.
 - A pagina `titles/[id]` busca `/api/entry/{slug}` com `cache: 'no-store'`; essa rota sincroniza a entrada individual com TMDB antes de responder.
 - Scheduler TMDB roda via `src/instrumentation.ts`, chamando `startTmdbSyncScheduler()` no runtime Node.js.
 - Metas pessoais nao sao mais concluidas automaticamente por sincronizacao.
@@ -347,7 +347,8 @@ model Entry {
 
 Uso em tempo real/F5:
 
-- `/api/entries?refresh=tmdb` executa `syncAllEntriesWithTmdb()` antes de devolver os dados. O `profile` usa essa rota no carregamento inicial para que cards recebam capa, episodios e bolinha atualizados com TMDB.
+- `/api/entries` e leve por padrao: consulta o banco, inclui temporadas/episodios salvos e calcula `seasonStatus` localmente com `entryStatusToBubbleStatus()`, sem chamar TMDB.
+- `/api/entries?refresh=tmdb` ainda existe para sync completo sob demanda, mas nao deve ser usado no carregamento automatico do profile porque pode ficar pesado em bibliotecas grandes.
 - `/api/entry/[id]` e `/api/entry/by-slug/[slug]` executam `syncEntryWithTmdb(entry.id)` antes de responder, com fallback para dados locais se o TMDB falhar. Isso mantem `titles/[id]` atualizado ao dar F5.
 - Capas customizadas fora do TMDB sao preservadas por `isCustomNonTmdbPoster()`; capas TMDB antigas podem ser substituidas pelo poster atual do TMDB.
 

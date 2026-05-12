@@ -1497,7 +1497,7 @@ function ProfileContent() {
     setLoading(true);
     try {
       const [eRes, pRes, aRes] = await Promise.all([
-        fetch('/api/entries?refresh=tmdb', { cache: 'no-store' }),
+        fetch('/api/entries', { cache: 'no-store' }),
         fetch('/api/profile', { cache: 'no-store' }),
         fetch('/api/activity', { cache: 'no-store' }),
       ]);

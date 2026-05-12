@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { syncEntryVisualStatus } from '@/lib/status-sync';
+import { entryStatusToBubbleStatus } from '@/lib/series-status';
 import { syncAllEntriesWithTmdb } from '@/lib/tmdb-sync';
 
 // GET /api/entries - Buscar todas as entries do usuário
@@ -40,19 +40,15 @@ export async function GET(request: Request) {
       },
       orderBy: { updatedAt: 'desc' },
     });
-    // Garante que datas sejam strings ISO ou null
-    const serialized = await Promise.all(entries.map(async entry => {
-      const liveStatus = await syncEntryVisualStatus(entry);
-
-      return {
-        ...entry,
-        productionStatus: liveStatus.productionStatus,
-        seasonStatus: liveStatus.bubbleStatus,
-        startDate: entry.startDate?.toISOString().split('T')[0] ?? null,
-        finishDate: entry.finishDate?.toISOString().split('T')[0] ?? null,
-        createdAt: entry.createdAt.toISOString(),
-        updatedAt: entry.updatedAt.toISOString(),
-      };
+    // Garante que datas sejam strings ISO ou null.
+    // Importante: por padrao esta rota nao chama TMDB. O profile precisa abrir rapido.
+    const serialized = entries.map(entry => ({
+      ...entry,
+      seasonStatus: entryStatusToBubbleStatus(entry),
+      startDate: entry.startDate?.toISOString().split('T')[0] ?? null,
+      finishDate: entry.finishDate?.toISOString().split('T')[0] ?? null,
+      createdAt: entry.createdAt.toISOString(),
+      updatedAt: entry.updatedAt.toISOString(),
     }));
     return NextResponse.json(serialized);
   } catch (error) {
