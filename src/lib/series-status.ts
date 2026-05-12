@@ -75,12 +75,20 @@ export function resolveSeriesStatusDot(
     return { color: '#f39c12', label: 'Not Yet Aired', pulse: false };
   }
 
+  if (s === 'Rumored') {
+    return { color: '#ef4444', label: 'Rumored', pulse: false };
+  }
+
   if (s === 'Returning Series') {
     return { color: '#3db4f2', label: 'Returning Series', pulse: false };
   }
 
   if (s === 'In Production') {
     return { color: '#a855f7', label: 'In Production', pulse: false };
+  }
+
+  if (s === 'Post Production') {
+    return { color: '#8b5cf6', label: 'Post Production', pulse: false };
   }
 
   if (s === 'Canceled' || s === 'Cancelled') {
@@ -115,6 +123,8 @@ export function productionStatusToDisplayStatus(
     'Canceled':         'Canceled',
     'Cancelled':        'Canceled',
     'In Production':    'In Production',
+    'Post Production':  'Post Production',
+    'Rumored':          'Rumored',
     'Planned':          'Not Yet Aired',
     'Released':         'Finished',
     'Pilot':            'Pilot',

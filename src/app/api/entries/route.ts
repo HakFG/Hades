@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getLiveBubbleStatusWithFallback } from '@/lib/tmdb-status';
+import { syncEntryVisualStatus } from '@/lib/status-sync';
 
 // GET /api/entries - Buscar todas as entries do usuário
 export async function GET(request: Request) {
@@ -36,11 +36,12 @@ export async function GET(request: Request) {
     });
     // Garante que datas sejam strings ISO ou null
     const serialized = await Promise.all(entries.map(async entry => {
-      const seasonStatus = await getLiveBubbleStatusWithFallback(entry);
+      const liveStatus = await syncEntryVisualStatus(entry);
 
       return {
         ...entry,
-        seasonStatus,
+        productionStatus: liveStatus.productionStatus,
+        seasonStatus: liveStatus.bubbleStatus,
         startDate: entry.startDate?.toISOString().split('T')[0] ?? null,
         finishDate: entry.finishDate?.toISOString().split('T')[0] ?? null,
         createdAt: entry.createdAt.toISOString(),
