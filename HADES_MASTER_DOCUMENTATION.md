@@ -1,1016 +1,691 @@
-# HADES — Documentação Master Completa
+# HADES - Documentacao Master
 
-**Versão:** 4.0 (Mai 2026)  
-**Status:** Em Desenvolvimento Ativo  
-**Última Atualização:** 12 de Maio de 2026
-
----
-
-## 📑 Sumário Executivo
-
-Hades é um aplicativo Next.js avançado para rastreamento de séries, filmes e gamificação pessoal com sincronização em tempo real com TMDB, sistema visual inteligente de status de produção e 100+ conquistas personalizadas.
-
-**Pilares do Projeto:**
-- ✅ Rastreamento completo de mídia (séries, filmes, documentários)
-- ✅ Sistema de gamificação com XP, níveis e desafios
-- ✅ Metas pessoais inteligentes com IA
-- ✅ Sincronização em tempo real com TMDB (Fase 1 — concluída)
-- ✅ Status visual com bolinhas de produção (Fase 2 — concluída e refinada)
-- ✅ Filtros avançados por status de produção
-- ✅ 100+ conquistas baseadas em comportamento do usuário (Fase 5 — concluída)
-- ✅ Sistema de temporadas com visibilidade condicional (Fase 4 — concluída)
-- ✅ Interface visual inspirada em AniList
+**Versao:** 5.0
+**Status:** Em desenvolvimento ativo
+**Ultima atualizacao:** 12 de maio de 2026
+**Projeto:** Next.js + Prisma + PostgreSQL para rastreamento de filmes, series/temporadas, gamificacao pessoal e sincronizacao com TMDB.
 
 ---
 
-## 🎯 Índice
+## Sumario Executivo
 
-1. [Visão Geral](#visão-geral)
-2. [Status Atual do Projeto](#status-atual-do-projeto)
-3. [Arquitetura do Projeto](#arquitetura-do-projeto)
+Hades e um aplicativo Next.js inspirado em interfaces como AniList para acompanhar filmes, series e temporadas, registrar progresso, pontuacoes, favoritos, relacoes entre titulos, atividade, metas pessoais, desafios e conquistas. O estado atual do codigo mostra que o sistema de bolinhas de status foi refatorado de forma ampla: ele nao e mais uma simples bolinha de `productionStatus`, e sim um sistema visual unificado baseado em `seasonStatus`, episodios com data de exibicao, `productionStatus` normalizado e snapshots ao vivo do TMDB.
+
+O sistema agora separa dois conceitos:
+
+- **Status de watch do usuario:** `WATCHING`, `COMPLETED`, `PAUSED`, `DROPPED`, `PLANNING`, `REWATCHING`, `UPCOMING`. Esse status continua aparecendo como barra/cor/acoes de lista.
+- **Status visual de exibicao/producao:** `Airing`, `Not Yet Aired`, `Finished`, `Returning Series`, `In Production`, `Planned`, `Post Production`, `Rumored`, `Canceled`, `Pilot`, `Ended`, `Released`. Esse status alimenta a `StatusBubble`.
+
+Regra principal da bolinha:
+
+- `Airing` mostra bolinha verde pulsante.
+- `Not Yet Aired`/`Planned`, `Returning Series`, `In Production`, `Post Production`, `Rumored`, `Canceled` e `Pilot` mostram bolinhas coloridas.
+- `Finished`, `Ended` e `Released` nao mostram bolinha.
+
+---
+
+## Indice
+
+1. [Estado Atual](#estado-atual)
+2. [Concluido vs Pendente](#concluido-vs-pendente)
+3. [Arquitetura](#arquitetura)
 4. [Banco de Dados](#banco-de-dados)
-5. [Bugs Conhecidos](#bugs-conhecidos)
-6. [Sistema Visual - Bolinhas de Status](#sistema-visual---bolinhas-de-status)
-7. [Sistema de Sincronização em Tempo Real](#sistema-de-sincronização-em-tempo-real)
-8. [Melhorias Visuais](#melhorias-visuais)
-9. [Sistema de Filtragem Avançado](#sistema-de-filtragem-avançado)
-10. [Sistema de Temporadas](#sistema-de-temporadas)
-11. [100+ Conquistas](#100-conquistas)
-12. [Página de Browser Aprimorada](#página-de-browser-aprimorada)
-13. [Features Existentes](#features-existentes)
-14. [Checklist de Implementação](#checklist-de-implementação)
+5. [Sistema de Bolinhas de Status](#sistema-de-bolinhas-de-status)
+6. [Sincronizacao TMDB](#sincronizacao-tmdb)
+7. [Browser e Filtros](#browser-e-filtros)
+8. [Temporadas e Relacoes](#temporadas-e-relacoes)
+9. [Gamificacao, Conquistas e Metas](#gamificacao-conquistas-e-metas)
+10. [Rotas de API](#rotas-de-api)
+11. [Checklist Atualizado](#checklist-atualizado)
+12. [Pendencias Reais](#pendencias-reais)
+13. [Como Rodar](#como-rodar)
 
 ---
 
-## 📚 Visão Geral
+## Estado Atual
 
-## 🧠 Status Atual do Projeto
+### Fases concluidas
 
-### Fases Concluídas
+- **Fase 1 - Sincronizacao TMDB:** concluida. `src/lib/tmdb-sync.ts` sincroniza entradas individuais e todas as entradas, usa fila com concorrencia 5, grava `SyncLog`, atualiza metadados e chama `syncEntrySeasonEpisodes()` para series.
+- **Fase 2 - Bolinhas de status:** concluida e refatorada. `StatusBubble.tsx` virou uma casca visual simples; a regra real vive em `src/lib/series-status.ts`, `src/lib/tmdb-status.ts` e `src/lib/status-sync.ts`.
+- **Fase 3 - Filtros por production status:** concluida. `ProductionFilterBar.tsx`, `production-status.ts` e `browser-filter.ts` estao implementados e integrados no browser dinamico.
+- **Fase 4 - Sistema de temporadas:** concluida para o escopo atual. Temporadas/episodios existem na camada de dados e aparecem principalmente na pagina de titulo; cards/listagens usam apenas o status visual necessario.
+- **Fase 5 - 100+ conquistas:** concluida. `src/lib/achievements.ts` esta expandido e a UI tem `AchievementToast`.
+- **Fase 6 - Browser aprimorado:** concluida. `/browser` exibe secoes por padrao e `/browser/[filter]` aceita filtros via query string.
+- **Personal Goals - bug de conclusao automatica:** corrigido. `syncGoalProgress()` atualiza somente `current`; concluir meta depende da acao explicita `action: 'complete'`.
 
-- ✅ **Fase 1 — Sincronização TMDB**: `tmdb-sync.ts` implementado, agendador cron ativo, tabela `SyncLog` criada, rota `/api/sync` funcional.
-- ✅ **Fase 2 — Bolinhas de Status (StatusBubble)**: componente implementado em `src/components/StatusBubble.tsx`, integrado a todos os cards. **Refinamento aplicado em Mai/2026**: bolinha não renderiza para `Released` (filmes) e `Ended` (séries) — estados "normais" não precisam de indicador visual, igual ao sistema do AniList.
-- ✅ **Fase 4 — Sistema de Temporadas**: visibilidade de temporadas e relações reduzida no frontend. `relations` visível apenas em `titles/[id]`. Season pills removidas de profile, cards e modais. `ListEditor.tsx` revisado.
-- ✅ **Fase 5 — 100+ Conquistas**: `achievements.ts` expandido, `AchievementEngine` integrado às ações do usuário, UI de conquistas e toasts de desbloqueio implementados.
+### Parcialmente concluido
 
-### Alterações Recentes (Mai/2026)
+- **Fase 7 - Melhorias visuais:** parcialmente concluida. `MediaCard`, `AiringProgressCard` e `NextUpCard` ja usam o novo `StatusBubble` e layouts com overlay/progresso. Ainda falta uma rodada dedicada de QA visual em breakpoints e padronizacao de estilos.
 
-- `StatusBubble.tsx` refinado: adicionada lógica de `SILENT_STATUSES` — `Released` e `Ended` retornam `null`, sem renderizar bolinha. Comportamento inteligente idêntico ao AniList.
-- `StatusDot` removido de `src/app/profile/page.tsx` (`EntryCard`): bolinhas de watching/completed/paused/etc não existem mais nos cards do profile. A barra de cor no topo do card já indica o status de watch do usuário.
-- Import de `StatusDot` removido do `profile/page.tsx`.
+### Pendente
 
-### Pendências Imediatas
-
-- [ ] Validar que `StatusDot` também foi removido de outros componentes que não sejam o profile (ex: `AiringProgressCard`, `NextUpCard`, `MediaCard`) caso esteja sendo usado.
-- [ ] Confirmar que o comportamento de `relations` permanece apenas no tab de detalhes de título após as últimas alterações.
-- [ ] Revisar se há uso residual de `StatusDot` em outros lugares do app que não fazem sentido após a mudança de escopo.
-
-### Bugs Recentes
-
-- **Bug #2**: Malformed JSX comment em `src/app/titles/[id]/page.tsx` após remover season UI. ✅ Corrigido.
-- **Bug #3**: Possível UI residual de `season` / `episode` em `ListEditor.tsx` e modais de adicionar título. Necessita validação final.
-
-### Notas Técnicas
-
-- `StatusBubble` usa `SILENT_STATUSES = new Set(['Released', 'Ended'])` — se o status normalizado estiver nesse set, o componente retorna `null`. Sem bolinha, sem espaço ocupado.
-- A barra de cor no topo do `EntryCard` (profile) continua existindo e indica o status de watch (`WATCHING`, `COMPLETED`, etc) via `STATUS_COLOR`. Esse é o único indicador de status de watch nos cards.
-- A camada de dados continua suportando temporada/episódio para evitar regressão no histórico de progresso.
-
-### Estado Atual
-
-- `npm run build` passou sem erros.
-- Fases 1, 2 (com refinamento), 4 e 5 concluídas.
-- Fases 3, 6, 7 e 8 pendentes.
+- **Fase 8 - QA & otimizacao:** pendente. Falta rodar uma validacao completa atualizada, incluindo build/lint, navegacao manual, testes em mobile/desktop e verificacao de performance das chamadas TMDB.
 
 ---
 
-### Tecnologias Principais
+## Concluido vs Pendente
 
-```
-Frontend:
-- Next.js 16.2.4 (App Router)
-- React 19.2.4
-- TypeScript 6
-- Tailwind CSS 4 + PostCSS
-- CSS global customizado
+### Concluido
 
-Backend:
-- Node.js / Next.js API Routes
-- Prisma 6.19.3 ORM
-- PostgreSQL
+- `StatusDot` nao aparece mais como componente usado nos cards. O nome ainda existe apenas como tipo/interface (`StatusDotConfig`) dentro da logica de status.
+- `StatusBubble` esta integrado em:
+  - `src/app/page.tsx`
+  - `src/app/profile/page.tsx`
+  - `src/app/search/page.tsx`
+  - `src/app/titles/[id]/page.tsx`
+  - `src/components/MediaCard.tsx`
+  - `src/components/AiringProgressCard.tsx`
+  - `src/components/NextUpCard.tsx`
+  - `src/components/StaffComponents/StaffRolesSection.tsx`
+- `Released`, `Ended` e `Finished` nao renderizam bolinha.
+- Series usam status real da temporada quando possivel (`Airing`, `Finished`, `Not Yet Aired`), calculado por datas de episodios.
+- Filmes usam `productionStatus` normalizado do TMDB.
+- Browser e filtros de producao estao implementados.
+- `/api/status-analysis` existe para diagnostico do sistema visual.
+- `/api/sync/manual` existe para sincronizacao manual e consulta de logs.
+- O `profile` chama `/api/entries?refresh=tmdb` no carregamento inicial/F5, sincronizando capas, episodios, contagem e `productionStatus` antes de montar os cards.
+- A pagina `titles/[id]` busca `/api/entry/{slug}` com `cache: 'no-store'`; essa rota sincroniza a entrada individual com TMDB antes de responder.
+- Scheduler TMDB roda via `src/instrumentation.ts`, chamando `startTmdbSyncScheduler()` no runtime Node.js.
+- Metas pessoais nao sao mais concluidas automaticamente por sincronizacao.
 
-Integrações Externas:
-- TMDB API (dados de mídia)
-- RSS Feed (notícias de entretenimento)
+### Falta validar ou melhorar
 
-Build & Deploy:
-- ESLint para linting
-- Next.js Build otimizado
-```
-
-### Funcionalidades Principais
-
-1. **Rastreamento de Mídia**: Adicione, edite e acompanhe séries, filmes e documentários
-2. **Gamificação**: XP, níveis, badges e desafios diários
-3. **Metas Pessoais**: Defina e acompanhe metas com assistência de IA
-4. **Sincronização em Tempo Real**: Atualização automática de dados do TMDB
-5. **Status Visual**: Bolinhas de produção inteligentes (invisíveis para Released/Ended)
-6. **Filtros Inteligentes**: Filtragem por status de produção
-7. **Sistema de Temporadas**: Acompanhamento de temporadas restrito a páginas de título
-8. **Sistema de Favoritos**: Marque títulos e staff como favoritos
-9. **Backup/Restore**: Exporte e importe dados completos
-10. **Atividade**: Log de todas as interações
+- Rodar `npm run build` e `npm run lint` apos esta atualizacao de documentacao.
+- Verificar visualmente a `StatusBubble` em `/`, `/profile`, `/search`, `/browser`, `/browser/[filter]`, `/titles/[id]` e paginas de staff.
+- Confirmar em dados reais do banco se entradas antigas receberam `productionStatus` correto apos sync.
+- Avaliar cache/rate limit do TMDB em `browser-filter.ts`, porque cada secao hidrata detalhes de varios titulos.
+- Padronizar textos/idioma da UI, que mistura ingles e portugues em alguns pontos.
+- Corrigir mojibake/caracteres quebrados que aparecem em alguns arquivos-fonte e textos renderizados.
 
 ---
 
-## 🏗️ Arquitetura do Projeto
+## Arquitetura
 
-### Estrutura de Pastas Atual
+### Stack
 
-```
+- **Next.js:** 16.2.4 com App Router
+- **React:** 19.2.4
+- **TypeScript:** 6
+- **Prisma:** 6.19.3
+- **Banco:** PostgreSQL
+- **Estilo:** Tailwind CSS 4/PostCSS + CSS global + CSS-in-JS em componentes
+- **Icones:** `lucide-react`
+- **Sync:** `node-cron` + `p-queue`
+- **Dados externos:** TMDB API
+
+### Estrutura principal
+
+```txt
 hades/
-├── prisma/
-│   ├── schema.prisma              (Modelos de dados)
-│   └── migrations/                (Histórico de schema)
-├── public/                        (Assets estáticos)
-├── src/
-│   ├── app/
-│   │   ├── api/                   (API routes)
-│   │   │   ├── activity/          (activity logs)
-│   │   │   ├── add-media/         (API para adicionar mídia)
-│   │   │   ├── backup/            (export/import de dados)
-│   │   │   ├── entries/           (operações de coleção de títulos)
-│   │   │   ├── entry/             (operações de título único)
-│   │   │   ├── gamification/      (XP, desafios, metas)
-│   │   │   ├── next-up/           (dados de próximo a assistir)
-│   │   │   ├── notifications/     (notificações do usuário)
-│   │   │   ├── profile/           (perfil do usuário)
-│   │   │   ├── refresh-all/       (sincronização completa)
-│   │   │   ├── relations/         (relações entre títulos)
-│   │   │   ├── seasons/           (dados de temporadas)
-│   │   │   ├── staff/             (dados de staff)
-│   │   │   ├── sync/              (sincronização TMDB)
-│   │   │   └── update-entry/      (atualização de título)
-│   │   ├── browser/page.tsx       (browser principal e filtros)
-│   │   ├── gamification/page.tsx  (painel de gamificação)
-│   │   ├── globals.css            (estilos globais)
-│   │   ├── layout.tsx             (layout e inicialização global)
-│   │   ├── page.tsx               (home)
-│   │   ├── profile/page.tsx       (página de perfil do usuário)
-│   │   ├── search/page.tsx        (busca de títulos)
-│   │   ├── staff/page.tsx         (lista de staff)
-│   │   ├── staff/[id]/page.tsx    (detalhes de staff)
-│   │   └── titles/[id]/page.tsx   (detalhes de título)
-│   ├── components/
-│   │   ├── AchievementToast.tsx
-│   │   ├── AiringProgressCard.tsx
-│   │   ├── ChallengeToast.tsx
-│   │   ├── ChallengeWidget.tsx
-│   │   ├── EpisodeGrid.tsx
-│   │   ├── ListEditor.tsx
-│   │   ├── MediaCard.tsx
-│   │   ├── NextUpCard.tsx
-│   │   ├── NotificationPanel.tsx
-│   │   ├── PersonalGoalModal.tsx
-│   │   ├── PersonalGoalsSection.tsx
-│   │   ├── ProductionFilterBar.tsx
-│   │   ├── SeasonSelector.tsx
-│   │   ├── StaffComponents/
-│   │   ├── StatusBubble.tsx       ← bolinha de produção inteligente
-│   │   ├── StatusDot.tsx          ← NÃO usar em cards de profile/lista
-│   │   ├── TvSeasonNavClient.tsx
-│   │   ├── XPProgressBar.tsx
-│   │   ├── XPToastHost.tsx
-│   │   └── xp-progress.module.css
-│   └── lib/
-│       ├── achievements.ts
-│       ├── activity.ts
-│       ├── browser-filter.ts
-│       ├── challenge-generator.ts
-│       ├── challenge-tracker.ts
-│       ├── entry-poster-sync.ts
-│       ├── gamification.ts
-│       ├── level-system.ts
-│       ├── next-up.ts
-│       ├── notifications.ts
-│       ├── personal-goals.ts
-│       ├── prisma.ts
-│       ├── production-status.ts   ← cores e tipos de produção
-│       ├── relations-manager.ts
-│       ├── seasons.ts
-│       ├── staff.ts
-│       ├── tmdb-airing.ts
-│       ├── tmdb-sync.ts           ← sincronização com TMDB
-│       ├── tmdb-titles.ts
-│       ├── tmdb.ts
-│       ├── utils.ts
-│       └── xp-calculator.ts
-├── package.json
-├── tsconfig.json
-├── next.config.ts
-├── postcss.config.mjs
-├── eslint.config.mjs
-├── next-env.d.ts
-└── .env
+  prisma/
+    schema.prisma
+    migrations/
+  public/
+  src/
+    app/
+      api/
+      browser/
+      browser/[filter]/
+      gamification/
+      profile/
+      search/
+      staff/
+      staff/[id]/
+      titles/[id]/
+      layout.tsx
+      page.tsx
+      globals.css
+    components/
+      AchievementToast.tsx
+      AiringProgressCard.tsx
+      ChallengeToast.tsx
+      ChallengeWidget.tsx
+      EpisodeGrid.tsx
+      ListEditor.tsx
+      MediaCard.tsx
+      NextUpCard.tsx
+      NotificationPanel.tsx
+      PersonalGoalModal.tsx
+      PersonalGoalsSection.tsx
+      ProductionFilterBar.tsx
+      SeasonSelector.tsx
+      StatusBubble.tsx
+      TvSeasonNavClient.tsx
+      XPProgressBar.tsx
+      XPToastHost.tsx
+      StaffComponents/
+    hooks/
+      useXPNotification.ts
+    lib/
+      achievements.ts
+      activity.ts
+      browser-filter.ts
+      challenge-generator.ts
+      challenge-tracker.ts
+      entry-poster-sync.ts
+      gamification.ts
+      level-system.ts
+      next-up.ts
+      notifications.ts
+      personal-goals.ts
+      prisma.ts
+      production-status.ts
+      relations-manager.ts
+      seasons.ts
+      series-status.ts
+      staff.ts
+      status-sync.ts
+      tmdb-airing.ts
+      tmdb-status.ts
+      tmdb-sync.ts
+      tmdb-titles.ts
+      tmdb.ts
+      utils.ts
+      xp-calculator.ts
+    instrumentation.ts
 ```
-
-### Rotas de API Principais
-
-- `/api/activity` — logs de atividade do usuário
-- `/api/add-media` — adicionar nova mídia ao catálogo
-- `/api/backup` — exportação e importação de dados
-- `/api/entries` — CRUD e listagem de entradas
-- `/api/entry` — operações individuais de entrada
-- `/api/gamification` — XP, conquistas, desafios e metas
-- `/api/next-up` — dados de próximos episódios/títulos
-- `/api/notifications` — notificações do usuário
-- `/api/profile` — carregamento e atualização de perfil
-- `/api/refresh-all` — sincronização completa de dados
-- `/api/relations` — relações entre títulos
-- `/api/seasons` — temporadas e dados relacionados
-- `/api/staff` — busca e dados de staff
-- `/api/sync` — sincronização manual TMDB
-- `/api/update-entry` — atualizar campos de entrada específicos
-
-### Dependências e Ferramentas
-
-- `next` 16.2.4
-- `react` 19.2.4
-- `typescript` 6
-- `tailwindcss` 4
-- `prisma` 6.19.3
-- `node-cron` + `p-queue` para agendamento e fila de sincronização
-- `lucide-react` para ícones
-- `clsx` para composição condicional de classes
-- `isomorphic-fetch` para chamadas HTTP compatíveis cliente/servidor
-
-### Scripts Principais
-
-- `npm run dev` — inicia o servidor de desenvolvimento
-- `npm run build` — gera Prisma Client e compila o app para produção
-- `npm run start` — inicia o servidor de produção
-- `npm run lint` — executa ESLint
-- `postinstall` — `prisma generate`
 
 ---
 
-## 🗄️ Banco de Dados
+## Banco de Dados
 
-### Schema Atual (`prisma/schema.prisma`)
+### Modelos principais
 
-O schema real implementado usa os seguintes modelos principais:
+O `schema.prisma` atual contem:
+
+- `Entry`: titulo/temporada/filme salvo na lista.
+- `Relation`: relacoes entre entradas e titulos TMDB.
+- `Profile`: perfil principal.
+- `UserGamification`: XP e nivel.
+- `GamificationActivityLog`: historico de XP.
+- `StreakData`: sequencia de atividade.
+- `UserChallenge`: desafios ativos.
+- `ChallengeCompletion`: conclusoes de desafios.
+- `ActivityLog`: timeline de alteracoes de media.
+- `PersonalGoal`: metas pessoais.
+- `Season`: dados de temporadas.
+- `Episode`: episodios.
+- `SyncLog`: logs da sincronizacao TMDB.
+
+### Campos importantes em `Entry`
 
 ```prisma
-enum MediaStatus {
-  WATCHING
-  COMPLETED
-  PAUSED
-  DROPPED
-  PLANNING
-  REWATCHING
-  UPCOMING
-}
-
-enum MediaType {
-  MOVIE
-  TV_SEASON
-}
-
 model Entry {
-  id             String      @id @default(cuid())
-  tmdbId         Int         @unique
-  parentTmdbId   Int?
-  seasonNumber   Int?
-  title          String
-  type           MediaType
-  status         MediaStatus @default(PLANNING)
-  score          Float       @default(0)
-  progress       Int         @default(0)
-  totalEpisodes  Int?
-  totalSeasons   Int?
-  episodeRuntime Int?
-
-  startDate    DateTime?
-  finishDate   DateTime?
-  rewatchCount Int       @default(0)
-
-  synopsis         String?   @db.Text
-  releaseDate      String?
-  endDate          String?
-  lastAirDate      String?
-  format           String?
-  rating           Float?
-  popularity       Float?
-  imagePath        String?
-  bannerPath       String?
-  logoPath         String?
-  customImage      String?
-  genres           String?
-  studio           String?
-  networks         String?
-  languages        String?
-  staff            Json?
-  productionStatus String    @default("Released")
+  id               String      @id @default(cuid())
+  tmdbId           Int         @unique
+  parentTmdbId     Int?
+  seasonNumber     Int?
+  title            String
+  type             MediaType
+  status           MediaStatus @default(PLANNING)
+  score            Float       @default(0)
+  progress         Int         @default(0)
+  totalEpisodes    Int?
+  totalSeasons     Int?
+  episodeRuntime   Int?
+  productionStatus String      @default("Released")
   lastSyncedAt     DateTime?
+  hasNewEpisodes   Boolean     @default(false)
+  isFavorite       Boolean     @default(false)
+  favoriteRank     Int?
 
-  notes          String? @db.Text
-  private        Boolean @default(false)
-  hidden         Boolean @default(false)
-  hasNewEpisodes Boolean @default(false)
-
-  isFavorite   Boolean @default(false)
-  favoriteRank Int?
-
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
-
-  relationsFrom Relation[] @relation("SourceRelations")
-  relationsTo   Relation[] @relation("TargetRelations")
-  seasons       Season[]
-  episodes      Episode[]
-  syncLogs      SyncLog[]
+  seasons          Season[]
+  episodes         Episode[]
+  syncLogs         SyncLog[]
 }
+```
 
-model Profile {
-  id          String   @id @default("main")
-  username    String   @default("My Profile")
-  bio         String?
-  avatarUrl   String?
-  bannerUrl   String?
-  avatarColor String   @default("#3db4f2")
-  updatedAt   DateTime @updatedAt
-  createdAt   DateTime @default(now())
-}
+### Indices relevantes
 
-model SyncLog {
-  id            String   @id @default(cuid())
-  entryId       String
-  changedFields String[] @default([])
-  status        String
-  errorMessage  String?  @db.Text
-  syncedAt      DateTime @default(now())
+- `Entry.status`
+- `Entry.type`
+- `Entry.tmdbId`
+- `Entry.parentTmdbId`
+- `Entry.productionStatus`
+- `Entry.lastSyncedAt`
+- `Season.status`
+- `SyncLog.status`
 
-  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-}
+---
 
-model Season {
-  id           String   @id @default(cuid())
-  entryId      String
-  tmdbId       Int?
-  parentTmdbId Int
-  seasonNumber Int
-  title        String
-  overview     String?  @db.Text
-  posterPath   String?
-  airDate      String?
-  episodeCount Int      @default(0)
-  status       String   @default("Unknown")
+## Sistema de Bolinhas de Status
 
-  entry    Entry     @relation(...)
-  episodes Episode[]
+### Arquivos responsaveis
 
-  @@unique([entryId, seasonNumber])
-}
+- `src/components/StatusBubble.tsx`: renderiza a bolinha no canto escolhido.
+- `src/lib/series-status.ts`: regra central de conversao entre status e bolinha.
+- `src/lib/tmdb-status.ts`: busca snapshot ao vivo no TMDB e calcula status de temporada.
+- `src/lib/status-sync.ts`: sincroniza `productionStatus` e dados de `Season` com base no snapshot ao vivo.
+- `src/lib/production-status.ts`: normaliza statuses oficiais do TMDB para filmes e series.
 
-model Episode {
-  id            String    @id @default(cuid())
-  entryId       String
-  seasonId      String?
-  tmdbId        Int?
-  parentTmdbId  Int
-  seasonNumber  Int
-  episodeNumber Int
-  title         String
-  overview      String?   @db.Text
-  stillPath     String?
-  airDate       String?
-  runtime       Int?
-  watched       Boolean   @default(false)
-  watchedAt     DateTime?
+### Regra visual atual
 
-  entry  Entry   @relation(...)
-  season Season? @relation(...)
+| Status de entrada | Bolinha | Cor | Observacao |
+| --- | --- | --- | --- |
+| `Airing` | Sim | `#2ecc71` | Pulsante |
+| `Not Yet Aired` | Sim | `#f39c12` | Temporada ainda nao estreou |
+| `Planned` | Sim | `#f39c12` | Planejado |
+| `Rumored` | Sim | `#ef4444` | Filme em rumor |
+| `Returning Series` | Sim | `#3db4f2` | Serie em retorno |
+| `In Production` | Sim | `#a855f7` | Em producao |
+| `Post Production` | Sim | `#8b5cf6` | Pos-producao |
+| `Canceled`/`Cancelled` | Sim | `#6b7280` | Cancelado |
+| `Pilot` | Sim | `#3b82f6` | Piloto |
+| `Finished` | Nao | - | Estado normal/finalizado |
+| `Ended` | Nao | - | Estado normal/finalizado |
+| `Released` | Nao | - | Estado normal/finalizado |
 
-  @@unique([entryId, seasonNumber, episodeNumber])
+### Como o status e escolhido
+
+`entryStatusToBubbleStatus(entry)` segue esta prioridade:
+
+1. Usa `entry.seasonStatus`, se existir.
+2. Para `TV_SEASON`, tenta achar a temporada correspondente em `entry.seasons`.
+3. Calcula status por episodios:
+   - nenhum episodio exibido: `Not Yet Aired`
+   - todos exibidos: `Finished`
+   - parte exibida: `Airing`
+4. Usa status salvo da temporada (`Season.status`) com correcao por `airDate`.
+5. Cai para `productionStatusToDisplayStatus(entry.productionStatus)`.
+
+### Snapshot ao vivo do TMDB
+
+`getLiveBubbleStatusSnapshot(entry)` faz:
+
+- Para series:
+  - busca `/tv/{showId}`
+  - busca `/tv/{showId}/season/{seasonNumber}`
+  - normaliza `productionStatus`
+  - calcula `bubbleStatus` a partir dos episodios
+- Para filmes:
+  - busca `/movie/{tmdbId}`
+  - normaliza `productionStatus`
+  - converte para status visual
+
+### Uso por tela
+
+- **Home (`src/app/page.tsx`):** usa bolinhas em cards de recentes/listas.
+- **Profile (`src/app/profile/page.tsx`):** cards usam `StatusBubble` para status visual; status de watch continua separado.
+- **Search (`src/app/search/page.tsx`):** resultados mostram bolinha baseada em TMDB/status calculado.
+- **Titles (`src/app/titles/[id]/page.tsx`):** poster principal mostra bolinha baseada em `seasonStatus` ou `productionStatus`.
+- **Browser:** `MediaCard` usa `seasonStatus ?? productionStatus`.
+- **Next Up/Airing:** usam `seasonStatus ?? productionStatus`.
+- **Staff roles:** mostra bolinha nos cards de obras.
+
+---
+
+## Sincronizacao TMDB
+
+### Arquivos
+
+- `src/lib/tmdb-sync.ts`
+- `src/lib/seasons.ts`
+- `src/lib/status-sync.ts`
+- `src/lib/tmdb-status.ts`
+- `src/instrumentation.ts`
+- `src/app/api/sync/manual/route.ts`
+
+### Comportamento
+
+`syncEntryWithTmdb(entryId)`:
+
+- busca a entrada no banco;
+- valida `NEXT_PUBLIC_TMDB_API_KEY`;
+- consulta TMDB de filme ou serie;
+- para TV, consulta tambem a temporada;
+- normaliza `productionStatus`;
+- atualiza titulo, poster, banner, sinopse, datas, episodios, runtime, generos, estudio, redes, idiomas, popularidade, rating e `hasNewEpisodes`;
+- chama `syncEntrySeasonEpisodes(entry.id)` para TV;
+- grava `SyncLog` com `changedFields`.
+
+`syncAllEntriesWithTmdb()`:
+
+- busca entradas ordenadas por `lastSyncedAt` e `updatedAt`;
+- usa `PQueue` com concorrencia 5;
+- retorna total, sincronizadas e falhas.
+
+Uso em tempo real/F5:
+
+- `/api/entries?refresh=tmdb` executa `syncAllEntriesWithTmdb()` antes de devolver os dados. O `profile` usa essa rota no carregamento inicial para que cards recebam capa, episodios e bolinha atualizados com TMDB.
+- `/api/entry/[id]` e `/api/entry/by-slug/[slug]` executam `syncEntryWithTmdb(entry.id)` antes de responder, com fallback para dados locais se o TMDB falhar. Isso mantem `titles/[id]` atualizado ao dar F5.
+- Capas customizadas fora do TMDB sao preservadas por `isCustomNonTmdbPoster()`; capas TMDB antigas podem ser substituidas pelo poster atual do TMDB.
+
+`startTmdbSyncScheduler()`:
+
+- evita dupla inicializacao com `globalThis.__hadesTmdbSyncStarted`;
+- agenda sync a cada 6 horas: `0 */6 * * *`.
+
+### Inicializacao
+
+O scheduler nao e mais iniciado no `layout.tsx`. Ele roda por `src/instrumentation.ts`:
+
+```ts
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { startTmdbSyncScheduler } = await import('@/lib/tmdb-sync');
+    startTmdbSyncScheduler();
+  }
 }
 ```
 
 ---
 
-## 🐛 Bugs Conhecidos
+## Browser e Filtros
 
-### Bug #1: Personal Goals — Conclusão Automática
+### Estado atual
 
-**Descrição:**
-Sistema está completando automaticamente metas pessoais sem ação explícita do usuário.
+O browser aprimorado esta implementado.
 
-**Localização:**
-- `src/components/PersonalGoalsSection.tsx`
+- `/browser`: renderiza secoes iniciais:
+  - Trending Movies
+  - Popular Movies
+  - Trending Series
+  - Upcoming Movies
+  - Popular Series
+- `/browser/[filter]`: renderiza resultados filtraveis com `ProductionFilterBar`.
+- Query string aceita:
+  - `type=movie` ou `type=tv`
+  - `filter=All` ou lista separada por virgula, como `In%20Production,Post%20Production,Planned`
+
+### Arquivos
+
+- `src/app/browser/page.tsx`
+- `src/app/browser/[filter]/page.tsx`
+- `src/app/browser/[filter]/FilteredBrowserClient.tsx`
+- `src/components/ProductionFilterBar.tsx`
+- `src/lib/browser-filter.ts`
+- `src/lib/production-status.ts`
+
+### Statuses filtraveis
+
+Filmes:
+
+- `Rumored`
+- `Planned`
+- `In Production`
+- `Post Production`
+- `Released`
+- `Canceled`
+
+Series:
+
+- `Planned`
+- `In Production`
+- `Returning Series`
+- `Pilot`
+- `Ended`
+- `Canceled`
+
+---
+
+## Temporadas e Relacoes
+
+### Temporadas
+
+O banco suporta temporadas e episodios com os modelos `Season` e `Episode`. A UI de detalhe de titulo (`src/app/titles/[id]/page.tsx`) e a fonte principal para:
+
+- abas de episodios;
+- progresso por episodio;
+- poster/titulo/sinopse da temporada;
+- calculo de `seasonStatus`;
+- criacao/edicao de entrada da temporada.
+
+### ListEditor
+
+`src/components/ListEditor.tsx` ainda mostra:
+
+- `Season {seasonNumber}` para entradas `TV_SEASON`;
+- `Episode Progress / totalEpisodes`.
+
+Isso e esperado para o editor de lista. Nao ha mais evidencia de "season pills" residuais nos cards de listagem. O antigo Bug #3 deixa de ser bug aberto e vira apenas ponto de QA visual.
+
+### Relacoes
+
+Relacoes sao carregadas e exibidas em `src/app/titles/[id]/page.tsx`. O codigo combina:
+
+- relacoes automaticas;
+- relacoes manuais salvas;
+- prequelas/sequels/colecoes;
+- temporadas anterior/proxima para TV.
+
+O profile apenas mostra resumo/restauracao em fluxos de backup/importacao, nao cards de relacoes como superficie principal.
+
+---
+
+## Gamificacao, Conquistas e Metas
+
+### Gamificacao
+
+Componentes e libs relevantes:
+
+- `src/lib/gamification.ts`
+- `src/lib/xp-calculator.ts`
+- `src/lib/level-system.ts`
+- `src/lib/challenge-generator.ts`
+- `src/lib/challenge-tracker.ts`
+- `src/components/XPProgressBar.tsx`
+- `src/components/XPToastHost.tsx`
+- `src/components/ChallengeWidget.tsx`
+- `src/components/ChallengeToast.tsx`
+
+### Conquistas
+
+- Definidas em `src/lib/achievements.ts`.
+- Toast visual em `src/components/AchievementToast.tsx`.
+- O arquivo contem 100+ definicoes/entradas de conquistas.
+
+### Metas pessoais
+
+Arquivos:
+
 - `src/lib/personal-goals.ts`
+- `src/components/PersonalGoalsSection.tsx`
+- `src/components/PersonalGoalModal.tsx`
 - `src/app/api/gamification/personal-goals/route.ts`
 
-**Problema Raiz:**
-- `syncGoalProgress()` em `personal-goals.ts` está atualizando `current` com base em dados reais
-- Função não deve completar automaticamente, apenas sincronizar valor de progresso
+Estado atual:
 
-**Solução:**
-```typescript
-// ✅ CORRETO — apenas sincronizar valor, nunca marcar como completo
-export async function syncGoalProgress(goalId: string) {
-  const goal = await prisma.personalGoal.findUnique({ where: { id: goalId } })
-  const realProgress = await calculateRealProgress(goal)
+- `syncGoalProgress('main')` roda no GET da API de metas.
+- Ele atualiza somente o campo `current`.
+- Ele nao marca `completed`.
+- A conclusao usa `markGoalComplete(id)` apenas quando a API recebe `action: 'complete'`.
 
-  await prisma.personalGoal.update({
-    where: { id: goalId },
-    data: { current: realProgress }
-    // ❌ NUNCA chamar markGoalComplete() aqui
-  })
-}
-```
+Status do antigo bug de auto-conclusao:
 
-**Status:** ⚠️ Pendente de validação
+- **Corrigido no codigo.**
+- Ainda recomendado validar manualmente no app com uma meta cujo progresso real ja passou do target.
 
 ---
 
-### Bug #3: UI Residual de Temporada em ListEditor
+## Rotas de API
 
-**Descrição:**
-Possível renderização de season pills ou controles de temporada/episódio no `ListEditor.tsx` e nos modais de adição de título.
+Principais rotas atuais:
 
-**Localização:**
-- `src/components/ListEditor.tsx`
-
-**Status:** ⚠️ Pendente de validação final
-
----
-
-## 🎨 Sistema Visual - Bolinhas de Status
-
-### Comportamento Inteligente (Estilo AniList)
-
-A `StatusBubble` segue o mesmo princípio do sistema de bolinhas do AniList: **só exibe bolinha para statuses que precisam de atenção ou indicam algo fora do estado padrão**. Títulos já lançados ou encerrados não recebem indicador visual — eles são a maioria e não precisam de destaque.
-
-**Regra central:** `Released` (filmes) e `Ended` (séries) = sem bolinha. Qualquer outro status = bolinha colorida.
-
-### Tabela de Cores — Filmes
-
-| Status | Bolinha | Hex | Descrição |
-|--------|---------|-----|-----------|
-| Rumored | 🔴 Vermelho | `#ef4444` | Rumor de produção |
-| Planned | 🟠 Laranja | `#f97316` | Planejado |
-| In Production | 🟡 Amarelo | `#eab308` | Em produção |
-| Post Production | 🟣 Roxo | `#a855f7` | Pós-produção |
-| Released | _(sem bolinha)_ | — | Lançado — estado normal |
-| Canceled | ⚫ Cinza | `#6b7280` | Cancelado |
-
-### Tabela de Cores — Séries
-
-| Status | Bolinha | Hex | Descrição |
-|--------|---------|-----|-----------|
-| Planned | 🔴 Vermelho | `#ef4444` | Planejada |
-| In Production | 🟠 Laranja | `#f97316` | Em produção |
-| Returning Series | 🟢 Verde | `#22c55e` | Retornando |
-| Pilot | 🔵 Azul | `#3b82f6` | Piloto |
-| Ended | _(sem bolinha)_ | — | Finalizada — estado normal |
-| Canceled | ⚫ Preto | `#000000` | Cancelada |
-
-### Componente `StatusBubble.tsx` (implementação atual)
-
-```typescript
-// src/components/StatusBubble.tsx
-
-import {
-  PRODUCTION_STATUS_COLORS,
-  type MediaKind,
-  type ProductionStatus,
-} from '@/lib/production-status';
-
-// Statuses que NÃO exibem bolinha — são o estado "normal" de cada tipo
-const SILENT_STATUSES = new Set<string>(['Released', 'Ended']);
-
-interface StatusBubbleProps {
-  status?: ProductionStatus | string | null;
-  mediaType?: MediaKind | 'MOVIE' | 'TV_SEASON';
-  size?: 'sm' | 'md' | 'lg';
-  className?: string;
-}
-
-const SIZE_MAP = {
-  sm: { size: 8,  offset: 5 },
-  md: { size: 12, offset: 7 },
-  lg: { size: 16, offset: 9 },
-};
-
-export default function StatusBubble({
-  status,
-  mediaType,
-  size = 'sm',
-  className,
-}: StatusBubbleProps) {
-  const normalized = (
-    status ||
-    (mediaType === 'MOVIE' || mediaType === 'movie' ? 'Released' : 'Ended')
-  ) as ProductionStatus;
-
-  // Released e Ended não renderizam bolinha
-  if (SILENT_STATUSES.has(normalized)) return null;
-
-  const color = PRODUCTION_STATUS_COLORS[normalized] ?? '#6b7280';
-  const dimensions = SIZE_MAP[size];
-
-  return (
-    <span
-      className={className}
-      title={normalized}
-      aria-label={`Production status: ${normalized}`}
-      style={{
-        position: 'absolute',
-        top:    dimensions.offset,
-        left:   dimensions.offset,
-        width:  dimensions.size,
-        height: dimensions.size,
-        borderRadius:    '50%',
-        backgroundColor: color,
-        border:    '1px solid rgba(255,255,255,0.55)',
-        zIndex:    12,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.45)',
-        pointerEvents: 'none',
-      }}
-    />
-  );
-}
-```
-
-### Integração em Cards
-
-`StatusBubble` é usado em todos os cards do site via:
-```tsx
-<StatusBubble
-  status={entry.productionStatus}
-  mediaType={entry.type}
-  size="sm"
-/>
-```
-
-A bolinha fica no canto superior esquerdo do poster (`position: absolute`, `top/left: offset`). O card pai precisa de `position: relative`.
-
-### StatusDot — Uso Restrito
-
-`StatusDot` (bolinha de watching/completed/paused/etc) **NÃO deve ser usado em cards de listagem ou profile**. Foi removido de `profile/page.tsx`. A barra de cor no topo do `EntryCard` já cumpre essa função visualmente.
-
-`StatusDot` pode ser usado apenas onde fizer sentido contextual explícito (ex: badges específicos de gamificação).
+- `/api/activity`
+- `/api/activity/[id]`
+- `/api/activity/export`
+- `/api/activity/import`
+- `/api/add-media`
+- `/api/backup/full-export`
+- `/api/backup/full-import`
+- `/api/entries`
+- `/api/entries/[id]`
+- `/api/entries/import`
+- `/api/entry/[id]`
+- `/api/entry/by-slug/[slug]`
+- `/api/gamification/award-xp`
+- `/api/gamification/bootstrap-xp`
+- `/api/gamification/challenges`
+- `/api/gamification/personal-goals`
+- `/api/gamification/reset-daily-challenges`
+- `/api/gamification/user-stats`
+- `/api/next-up`
+- `/api/notifications`
+- `/api/profile`
+- `/api/profile/export`
+- `/api/profile/import`
+- `/api/refresh-all`
+- `/api/relations`
+- `/api/relations/export`
+- `/api/relations/import`
+- `/api/seasons/[entryId]`
+- `/api/staff/[id]`
+- `/api/staff/search`
+- `/api/status-analysis`
+- `/api/sync/manual`
+- `/api/update-entry`
 
 ---
 
-## ⚡ Sistema de Sincronização em Tempo Real
+## Checklist Atualizado
 
-### Estratégia de Sincronização
+### Fase 1 - Sincronizacao TMDB
 
-**Tipo 1: Sincronização Periódica (Background)**
-- Executada a cada 6 horas via `node-cron`
-- Atualiza todos os títulos cadastrados
-- Processa em fila com limite de 5 requisições paralelas (`p-queue`)
-
-**Tipo 2: Sincronização on-demand**
-- Usuário clica em "atualizar" manualmente
-- Rota: `POST /api/sync/manual` com `{ entryId }`
-
-**Tipo 3: Sincronização ao adicionar título**
-- Busca dados iniciais completos do TMDB ao criar entry
-- Salva com `lastSyncedAt`
-
-### Implementação Principal
-
-```typescript
-// src/lib/tmdb-sync.ts
-
-import cron from 'node-cron'
-import PQueue from 'p-queue'
-import { prisma } from './prisma'
-import { fetchTMDBData } from './tmdb'
-
-const syncQueue = new PQueue({ concurrency: 5 })
-
-export async function syncEntryWithTMDB(entryId: string) {
-  try {
-    const entry = await prisma.entry.findUnique({ where: { id: entryId } })
-    if (!entry) throw new Error('Entry not found')
-
-    const tmdbData = await fetchTMDBData(entry.tmdbId, entry.type)
-    const changes: Record<string, unknown> = {}
-    const changedFields: string[] = []
-
-    if (tmdbData.title !== entry.title) {
-      changes.title = tmdbData.title; changedFields.push('title')
-    }
-    if (tmdbData.posterPath !== entry.imagePath) {
-      changes.imagePath = tmdbData.posterPath; changedFields.push('imagePath')
-    }
-    if (tmdbData.productionStatus !== entry.productionStatus) {
-      changes.productionStatus = tmdbData.productionStatus
-      changedFields.push('productionStatus')
-    }
-
-    if (changedFields.length > 0) {
-      await prisma.entry.update({
-        where: { id: entryId },
-        data: { ...changes, lastSyncedAt: new Date() }
-      })
-      await prisma.syncLog.create({
-        data: { entryId, changedFields, status: 'success' }
-      })
-    } else {
-      await prisma.entry.update({
-        where: { id: entryId },
-        data: { lastSyncedAt: new Date() }
-      })
-    }
-
-    return { success: true, changedFields }
-  } catch (error: any) {
-    await prisma.syncLog.create({
-      data: { entryId, status: 'failed', errorMessage: error.message }
-    })
-    return { success: false, changedFields: [], error: error.message }
-  }
-}
-
-export async function syncAllEntries() {
-  const entries = await prisma.entry.findMany({ select: { id: true } })
-  for (const entry of entries) {
-    syncQueue.add(() => syncEntryWithTMDB(entry.id))
-  }
-  await syncQueue.onIdle()
-}
-
-export function initSyncScheduler() {
-  cron.schedule('0 */6 * * *', async () => {
-    await syncAllEntries()
-  })
-}
-```
-
-### Inicialização no App
-
-```typescript
-// src/app/layout.tsx
-import { initSyncScheduler } from '@/lib/tmdb-sync'
-
-if (typeof window === 'undefined') {
-  initSyncScheduler()
-}
-```
-
----
-
-## 🎨 Melhorias Visuais
-
-### Cards de Mídia — Grid Responsivo
-
-```css
-.media-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
-  padding: 24px;
-}
-
-@media (max-width: 1400px) { .media-grid { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 1024px) { .media-grid { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 768px)  { .media-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 480px)  { .media-grid { grid-template-columns: 1fr; } }
-```
-
-### EntryCard — Profile (`profile/page.tsx`)
-
-Estrutura do card nos status de produção:
-- **Barra de cor no topo** (4px) indica o status de watch (`STATUS_COLOR[entry.status]`)
-- **StatusBubble** no canto superior esquerdo indica o production status (invisível para Released/Ended)
-- **Sem StatusDot** — removido. A barra de cor já cumpre essa função
-
-```tsx
-// Estrutura do EntryCard (simplificada)
-<div style={{ position: 'relative', ... }}>
-  {/* Barra de status de watch */}
-  <div style={{ background: STATUS_COLOR[entry.status], height: '4px', ... }} />
-  
-  {/* Bolinha de production status (invisível para Released/Ended) */}
-  <StatusBubble status={entry.productionStatus} mediaType={entry.type} size="sm" />
-
-  {/* Poster + overlay + progresso + score */}
-  <Link href={...}>...</Link>
-
-  {/* Botões de favorito e editar (visíveis no hover) */}
-</div>
-```
-
----
-
-## 🔍 Sistema de Filtragem Avançado
-
-### Filtros por Status de Produção
-
-```typescript
-// src/components/ProductionFilterBar.tsx
-
-const MOVIE_FILTERS = ['All', 'Rumored', 'Planned', 'In Production', 'Post Production', 'Released', 'Canceled']
-const TV_FILTERS    = ['All', 'Returning Series', 'Planned', 'In Production', 'Ended', 'Canceled', 'Pilot']
-
-interface FilterBarProps {
-  mediaType: 'movie' | 'tv'
-  selectedFilters: string[]
-  onFilterChange: (filters: string[]) => void
-}
-```
-
-### Lógica de Filtragem
-
-```typescript
-// src/lib/browser-filter.ts
-
-export async function getFilteredEntries(
-  mediaType: 'MOVIE' | 'TV_SEASON',
-  statuses?: string[]
-) {
-  return prisma.entry.findMany({
-    where: {
-      type: mediaType,
-      ...(statuses && statuses.length > 0 && statuses[0] !== 'All'
-        ? { productionStatus: { in: statuses } }
-        : {})
-    }
-  })
-}
-```
-
----
-
-## 📺 Sistema de Temporadas
-
-### Visibilidade Condicional (Comportamento Atual)
-
-| Contexto | Temporadas | Relações |
-|----------|-----------|----------|
-| `titles/[id]/page.tsx` | ✅ Visível | ✅ Visível |
-| `profile/page.tsx` | ❌ Oculto | ❌ Oculto |
-| `browser/page.tsx` | ❌ Oculto | ❌ Oculto |
-| Cards / modais de lista | ❌ Oculto | ❌ Oculto |
-
-### Modelos no Banco
-
-```prisma
-model Season {
-  id, entryId, tmdbId, parentTmdbId, seasonNumber
-  title, overview, posterPath, airDate, episodeCount, status
-  episodes Episode[]
-}
-
-model Episode {
-  id, entryId, seasonId, tmdbId, parentTmdbId
-  seasonNumber, episodeNumber, title, overview
-  stillPath, airDate, runtime, watched, watchedAt
-}
-```
-
-A camada de dados continua completa para evitar regressão. Apenas a renderização foi restringida.
-
----
-
-## 🏆 100+ Conquistas
-
-### Sistema Implementado
-
-As conquistas são definidas em `src/lib/achievements.ts` e desbloqueadas pelo `AchievementEngine` integrado às ações do usuário.
-
-```typescript
-export type AchievementType =
-  | 'milestone' | 'streak' | 'collection' | 'rating'
-  | 'discovery' | 'social' | 'seasonal' | 'expert' | 'secret'
-
-interface Achievement {
-  id: string
-  name: string
-  description: string
-  icon: string
-  category: AchievementType
-  xpReward: number
-  requirement: (stats: UserStats) => boolean
-  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
-}
-```
-
-Desbloqueio automático ao atingir o `requirement`. Toast de notificação via `AchievementToast.tsx`.
-
----
-
-## 🌐 Página de Browser Aprimorada
-
-A página `/browser` exibe dados por padrão (sem necessidade de busca ativa) e suporta filtros de production status via `ProductionFilterBar`.
-
-Rota dinâmica `/browser/[filter]/page.tsx` aceita filtros pré-selecionados via URL.
-
----
-
-## ✨ Features Existentes
-
-### 1. Rastreamento de Mídia
-- Adicionar, editar, deletar títulos
-- Suporta séries (`TV_SEASON`) e filmes (`MOVIE`)
-- Sincronização com TMDB para informações atualizadas
-- Status: Watching, Completed, Paused, Dropped, Planning, Rewatching, Upcoming
-
-### 2. Gamificação
-- Sistema de XP e níveis
-- Desafios diários, semanais e mensais
-- Badges e conquistas (100+)
-- Streak tracking
-- Sistema de notificações
-
-### 3. Metas Pessoais
-- Criar metas customizadas
-- Assistência de IA para sugerir metas
-- Progresso em tempo real
-- XP como recompensa
-- Deadlines e alertas
-
-### 4. Atividade
-- Log de todas as interações
-- Histórico de mudanças com agrupamento de episódios consecutivos
-- Timeline de atividades
-
-### 5. Backup & Restore
-- Export completo do banco
-- Import de dados
-- Recuperação de dados
-
-### 6. Sistema de Relações
-- Prequelas e sequelas
-- Spinoffs, adaptações, títulos relacionados
-- Visível apenas em `titles/[id]`
-
-### 7. Staff & Criadores
-- Busca de atores e criadores
-- Páginas de detalhe de staff
-- Histórico de obras e favoritar staff
-
-### 8. Sistema de Favoritos
-- Marcar títulos como favoritos com ranking
-- Marcar staff como favoritos
-- Aba dedicada no profile
-
----
-
-## ✅ Checklist de Implementação
-
-### Fase 1: Sistema de Sincronização ✅ CONCLUÍDA
-- [x] Instalar `node-cron` e `p-queue`
 - [x] Criar `src/lib/tmdb-sync.ts`
-- [x] Criar tabela `SyncLog` no banco
-- [x] Implementar agendador de sincronização
-- [x] Criar rota API `/api/sync`
-- [x] Testes de sincronização
+- [x] Usar fila com concorrencia 5
+- [x] Criar/usar `SyncLog`
+- [x] Atualizar metadados de filmes e series
+- [x] Sincronizar episodios de temporada
+- [x] Criar sync manual em `/api/sync/manual`
+- [x] Iniciar scheduler por `src/instrumentation.ts`
 
-### Fase 2: Bolinhas de Status ✅ CONCLUÍDA + REFINADA
-- [x] Criar componente `StatusBubble.tsx`
-- [x] Adicionar campo `productionStatus` a `Entry`
-- [x] Integrar `StatusBubble` em todos os cards
-- [x] Criar migração Prisma
-- [x] **Refinamento**: `Released` e `Ended` não renderizam bolinha (comportamento AniList)
-- [x] **Refinamento**: `StatusDot` removido de `profile/page.tsx` — barra de cor já indica status de watch
-- [ ] Validar que `StatusDot` foi removido de outros componentes de listagem onde não faz sentido
+### Fase 2 - Bolinhas de status
 
-### Fase 3: Sistema de Filtragem (pendente)
-- [ ] Criar `ProductionFilterBar.tsx`
-- [ ] Implementar lógica de filtros em `browser-filter.ts`
-- [ ] Atualizar API routes para aceitar filtros
-- [ ] Integrar filtros em browser page
-- [ ] Testes de filtros
+- [x] Criar `StatusBubble.tsx`
+- [x] Remover dependencia de `StatusDot` visual antigo
+- [x] Centralizar regra em `series-status.ts`
+- [x] Criar status ao vivo em `tmdb-status.ts`
+- [x] Criar sincronizacao visual em `status-sync.ts`
+- [x] Nao renderizar para `Finished`, `Ended`, `Released`
+- [x] Renderizar `Airing` com pulso
+- [x] Integrar Home/Profile/Search/Titles/Browser/NextUp/Airing/Staff
 
-### Fase 4: Sistema de Temporadas ✅ CONCLUÍDA
-- [x] Revisar visibilidade de temporada e relação no frontend
-- [x] Remover season pills de profile, cards e modal de título
-- [x] Manter `relations` visíveis apenas em `titles/[id]`
-- [x] Validar que a remoção de UI não quebrou layout nem funcionalidades
-- [ ] Revisão final de `ListEditor.tsx` (Bug #3 — pendente de validação)
+### Fase 3 - Filtros por production status
 
-### Fase 5: 100+ Conquistas ✅ CONCLUÍDA
-- [x] Expandir `achievements.ts` para 100+ conquistas
-- [x] Criar `AchievementEngine` para checking
-- [x] Integrar em todas as ações do usuário
-- [x] Criar UI de visualização de conquistas
-- [x] Toasts de desbloqueio
+- [x] Criar `ProductionFilterBar.tsx`
+- [x] Criar `production-status.ts`
+- [x] Implementar `browser-filter.ts`
+- [x] Integrar filtros em `/browser/[filter]`
+- [x] Suportar query string de filtros
 
-### Fase 6: Browser Aprimorado (pendente)
-- [ ] Refatorar `/browser/page.tsx` para exibir dados por padrão
-- [ ] Criar `/browser/[filter]/page.tsx` dinâmica
-- [ ] Implementar filtros de production status
-- [ ] Links entre páginas
-- [ ] Testes de navegação e otimização de performance
+### Fase 4 - Temporadas
 
-### Fase 7: Melhorias Visuais (pendente)
-- [ ] Atualizar `AiringProgressCard.tsx` com novo layout
-- [ ] Atualizar `NextUpCard.tsx`
-- [ ] Criar `MediaCard.module.css`
-- [ ] Implementar overlay hover
-- [ ] Responsividade (5 col → 4 col → 3 col → 2 col → 1 col)
-- [ ] Testes em múltiplos breakpoints
+- [x] Manter `Season` e `Episode` no banco
+- [x] Exibir episodios na pagina de titulo
+- [x] Calcular status real por episodios
+- [x] Remover bolinhas/pills de temporada que poluiam cards
+- [x] Manter `ListEditor` com progresso de episodio para TV
 
-### Fase 8: QA & Otimização (pendente)
-- [ ] Testes integrais de todas as features
-- [ ] Performance profiling
-- [ ] Otimização de queries
-- [ ] Cache estratégico
-- [ ] Bug fixes (Bug #1 e Bug #3)
-- [ ] Documentação final
+### Fase 5 - Conquistas
 
----
+- [x] Expandir `achievements.ts`
+- [x] Integrar toast de conquista
+- [x] Manter XP, desafios e logs
 
-## 📊 Diagrama de Arquitetura
+### Fase 6 - Browser
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Cliente (React)                      │
-├─────────────────────────────────────────────────────────────┤
-│  page.tsx  Profile  Browser  Gamification  Staff  Titles   │
-│        ↓       ↓        ↓          ↓         ↓       ↓     │
-│  Components (Cards, Modals, StatusBubble, Forms, etc)      │
-└───────────────────────────────────────────────────────────┬─┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│                    Next.js API Routes                       │
-├─────────────────────────────────────────────────────────────┤
-│  /api/entries   /api/gamification   /api/sync   /api/staff │
-│      ↓                 ↓                ↓            ↓     │
-│   entries            XP/goals      TMDB Sync    staff data │
-└────────────┬─────────────────────────────────────────────┬──┘
-             ↓                                              ↓
-       ┌──────────────────────────────────────────────────┐
-       │           Camada de Lógica (src/lib)             │
-       ├──────────────────────────────────────────────────┤
-       │ tmdb-sync.ts  gamification.ts  achievements.ts   │
-       │ production-status.ts  personal-goals.ts  ...     │
-       └────────────────┬───────────────────────────┬─────┘
-                        ↓                           ↓
-       ┌──────────────────────────────────────────────────┐
-       │            Prisma ORM + PostgreSQL               │
-       ├──────────────────────────────────────────────────┤
-       │  Entry  Profile  UserGamification  PersonalGoal  │
-       │  Season  Episode  SyncLog  ActivityLog           │
-       └──────────────────────────────────────────────────┘
-                        ↓
-       ┌──────────────────────────────────────────────────┐
-       │          APIs Externas (TMDB, etc)               │
-       └──────────────────────────────────────────────────┘
-```
+- [x] `/browser` com secoes iniciais
+- [x] `/browser/[filter]` dinamico
+- [x] Cards com `StatusBubble`
+- [x] Filtros por status de producao
+
+### Fase 7 - Visual
+
+- [x] Atualizar `MediaCard`
+- [x] Atualizar `AiringProgressCard`
+- [x] Atualizar `NextUpCard`
+- [x] Adicionar overlay hover em cards principais
+- [ ] QA visual em desktop/mobile
+- [ ] Padronizar idioma/textos quebrados
+- [ ] Avaliar extracao de estilos repetidos para CSS/module compartilhado
+
+### Fase 8 - QA & otimizacao
+
+- [ ] Rodar `npm run lint`
+- [ ] Rodar `npm run build`
+- [ ] Testar rotas principais manualmente
+- [ ] Testar `StatusBubble` com exemplos reais de cada status
+- [ ] Testar sync manual para uma entrada e para todas
+- [ ] Validar cache/rate limit do browser
+- [ ] Revisar performance das chamadas em `browser-filter.ts`
+- [ ] Corrigir caracteres quebrados/mojibake remanescentes
 
 ---
 
-## 🚀 Começando
+## Pendencias Reais
 
-### Pré-requisitos
+### Alta prioridade
+
+- **QA de build/lint:** rodar `npm run build` e `npm run lint` depois das ultimas mudancas.
+- **Validacao visual das bolinhas:** garantir que cada tela mostra bolinha apenas quando deveria.
+- **Dados antigos:** rodar `/api/sync/manual` ou sync geral para atualizar `productionStatus` legado.
+
+### Media prioridade
+
+- **Performance do browser:** `getFilteredEntriesByBrowser()` hidrata ate 30 itens e busca detalhe individual no TMDB; isso pode ficar caro.
+- **Cache e revalidacao:** revisar `revalidate` e estrategia de `fetch` para reduzir chamadas externas.
+- **Padronizacao visual:** alguns cards usam estilos inline/CSS-in-JS repetidos.
+
+### Baixa prioridade
+
+- **Idioma da interface:** ha mistura de ingles/portugues (`Browse`, `Film`, `Season`, `Episode Progress`, etc.).
+- **Mojibake:** alguns textos/comentarios aparecem com caracteres quebrados em arquivos-fonte.
+- **Testes automatizados:** ainda nao ha suite dedicada para status visual, filtros e sync.
+
+---
+
+## Como Rodar
+
+### Variaveis
 
 ```bash
-# Node.js 18+ / npm 9+
-node -v
-npm -v
-
-# Variáveis de Ambiente
 NEXT_PUBLIC_TMDB_API_KEY=your_api_key_here
+NEXT_PUBLIC_TMDB_BASE_URL=https://api.themoviedb.org/3
 DATABASE_URL=postgresql://user:password@localhost:5432/hades
 ```
 
-### Setup Inicial
+### Comandos
 
 ```bash
-# 1. Instalar dependências
 npm install
-
-# 2. Configurar banco de dados
+npx prisma generate
 npx prisma migrate deploy
-
-# 3. Fazer seed do banco (opcional)
-npx prisma db seed
-
-# 4. Rodar em dev
 npm run dev
-
-# 5. Abrir http://localhost:3000
 ```
 
+### Validacao recomendada
+
+```bash
+npm run lint
+npm run build
+```
+
+### Rotas para verificar manualmente
+
+- `http://localhost:3000/`
+- `http://localhost:3000/profile`
+- `http://localhost:3000/search`
+- `http://localhost:3000/browser`
+- `http://localhost:3000/browser/trending-tv?type=tv&filter=All`
+- `http://localhost:3000/browser/upcoming-movies?type=movie&filter=In%20Production,Post%20Production,Planned`
+- `http://localhost:3000/gamification`
+
 ---
 
-## 📝 Notas Importantes
+## Notas Importantes
 
-1. **Bolinhas**: `StatusBubble` é inteligente — não renderiza para `Released` e `Ended`. Apenas statuses relevantes exibem indicador visual.
-2. **StatusDot**: removido dos cards de listagem/profile. Não deve ser reintroduzido. A barra de cor no topo do card indica o status de watch.
-3. **Sincronização**: automática a cada 6 horas + manual on-demand via `/api/sync`.
-4. **Performance**: fila de sincronização com max 5 requisições paralelas.
-5. **Conquistas**: desbloqueadas automaticamente ao atingir o requirement, com toast de notificação.
-6. **Temporadas**: dados completos no banco, mas renderização restrita à página `titles/[id]`.
-7. **Relations**: visível apenas em `titles/[id]`, nunca em cards ou listagens.
+1. `StatusBubble` nao decide sozinha o significado do status; ela delega para `resolveSeriesStatusDot()`.
+2. `Finished`, `Ended` e `Released` sao silenciosos por design.
+3. O status de watch do usuario nao deve ser confundido com status visual de exibicao/producao.
+4. `StatusDot` nao deve ser reintroduzido nos cards. Se for necessario um indicador visual, usar `StatusBubble`.
+5. Series devem preferir status de temporada/episodios antes do status geral da serie.
+6. Filmes devem usar `productionStatus` normalizado do TMDB.
+7. Metas pessoais so devem ser concluidas por acao explicita do usuario.
+8. A sincronizacao automatica e iniciada por instrumentation, nao pelo layout.
 
 ---
 
-**Versão:** 4.0  
-**Última Atualização:** 12 de Maio de 2026  
-**Status:** ✅ Fases 1, 2, 4, 5 concluídas — Fases 3, 6, 7, 8 pendentes
+**Versao:** 5.0
+**Ultima atualizacao:** 12 de maio de 2026
+**Resumo:** Fases 1, 2, 3, 4, 5 e 6 concluidas; Fase 7 parcialmente concluida; Fase 8 pendente.

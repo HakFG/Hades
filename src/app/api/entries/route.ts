@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { syncEntryVisualStatus } from '@/lib/status-sync';
+import { syncAllEntriesWithTmdb } from '@/lib/tmdb-sync';
 
 // GET /api/entries - Buscar todas as entries do usuário
 export async function GET(request: Request) {
@@ -8,10 +9,15 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type');
     const production = searchParams.get('productionStatus');
+    const refresh = searchParams.get('refresh');
     const statuses = production
       ?.split(',')
       .map((item) => item.trim())
       .filter((item) => item && item !== 'All');
+
+    if (refresh === 'tmdb') {
+      await syncAllEntriesWithTmdb();
+    }
 
     const entries = await prisma.entry.findMany({
       where: {

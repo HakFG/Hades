@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { normalizeProductionStatus } from '@/lib/production-status';
 import { syncEntrySeasonEpisodes } from '@/lib/seasons';
 import { buildSeasonTitle } from '@/lib/utils';
+import { isCustomNonTmdbPoster } from '@/lib/entry-poster-sync';
 
 const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
@@ -83,7 +84,9 @@ export async function syncEntryWithTmdb(entryId: string) {
       ? {
           title: buildSeasonTitle(media.name ?? entry.title, entry.seasonNumber ?? 1),
           productionStatus,
-          imagePath: season?.poster_path ?? entry.imagePath ?? media.poster_path ?? null,
+          imagePath: isCustomNonTmdbPoster(entry.imagePath)
+            ? entry.imagePath
+            : season?.poster_path ?? media.poster_path ?? entry.imagePath ?? null,
           bannerPath: media.backdrop_path ?? null,
           synopsis: season?.overview || media.overview || null,
           releaseDate: season?.air_date || entry.releaseDate || media.first_air_date || null,
@@ -106,7 +109,9 @@ export async function syncEntryWithTmdb(entryId: string) {
       : {
           title: media.title ?? entry.title,
           productionStatus,
-          imagePath: media.poster_path ?? null,
+          imagePath: isCustomNonTmdbPoster(entry.imagePath)
+            ? entry.imagePath
+            : media.poster_path ?? entry.imagePath ?? null,
           bannerPath: media.backdrop_path ?? null,
           synopsis: media.overview || null,
           releaseDate: media.release_date || null,

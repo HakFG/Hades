@@ -1249,7 +1249,7 @@ useEffect(() => {
     try {
       if (parsed.kind === 'movie') {
         const [eRes, tRes, tResEn, recResEn] = await Promise.all([
-  fetch(`/api/entry/movie-${parsed.movieId}`),
+  fetch(`/api/entry/movie-${parsed.movieId}`, { cache: 'no-store' }),
   fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos`, { cache: 'no-store' }),
   fetch(`${TMDB}/movie/${parsed.movieId}?api_key=${API_KEY}&language=en-US`, { cache: 'no-store' }),
   fetch(`${TMDB}/movie/${parsed.movieId}/recommendations?api_key=${API_KEY}&language=en-US`, { cache: 'no-store' }),
@@ -1365,7 +1365,7 @@ manualRels = saved.map((r: any) => {
         const { showId, seasonNumber } = parsed;
         // ✅ CORREÇÃO P1#1: Buscar a season também em PT-BR para a sinopse
         const [eRes, sRes, sdResEn, sResEn, sdResPt] = await Promise.all([
-  fetch(`/api/entry/tv-${showId}-s${seasonNumber}`),
+  fetch(`/api/entry/tv-${showId}-s${seasonNumber}`, { cache: 'no-store' }),
   fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=pt-BR&append_to_response=credits,videos,recommendations`, { cache: 'no-store' }),
   fetch(`${TMDB}/tv/${showId}/season/${seasonNumber}?api_key=${API_KEY}&language=en-US&append_to_response=credits,videos`, { cache: 'no-store' }),
   fetch(`${TMDB}/tv/${showId}?api_key=${API_KEY}&language=en-US`, { cache: 'no-store' }),

@@ -11,6 +11,7 @@ import StatusBubble from '@/components/StatusBubble';
 import { entryStatusToBubbleStatus } from '@/lib/series-status';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
+import { MessageCircle, RotateCcw, X } from 'lucide-react';
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -164,7 +165,11 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
   onUpdateProgress?: (entryId: string, newProgress: number) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
   const poster = imgUrl(entry.imagePath);
+  const noteText = entry.notes?.trim() ?? '';
+  const hasNotes = noteText.length > 0;
+  const hasRewatch = entry.rewatchCount > 0;
   
   // Exibição do progresso: para séries, se completou mostra apenas o total
   let progressDisplay = ''
@@ -220,8 +225,12 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
         cursor: 'pointer',
         transition: 'transform 0.2s ease, box-shadow 0.2s ease',
       }}
+      className={styles.entryCard}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setNoteOpen(false);
+      }}
     >
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
@@ -231,6 +240,38 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
         status={entryStatusToBubbleStatus(entry)}
         size="sm"
       />
+
+      {hasNotes && (
+        <button
+          type="button"
+          className={`${styles.cardNoteTrigger} ${noteOpen ? styles.cardNoteTriggerActive : ''}`}
+          title={noteText}
+          aria-label={`Notes for ${entry.title}`}
+          aria-expanded={noteOpen}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setNoteOpen((v) => !v);
+          }}
+        >
+          <MessageCircle size={14} strokeWidth={2.4} />
+          <span className={styles.cardTooltip}>{noteText}</span>
+        </button>
+      )}
+
+      {hasRewatch && (
+        <div
+          className={styles.cardRewatchBadge}
+          title={`${entry.rewatchCount} ${entry.rewatchCount === 1 ? 'rewatch' : 'rewatches'}`}
+          aria-label={`${entry.rewatchCount} ${entry.rewatchCount === 1 ? 'rewatch' : 'rewatches'}`}
+        >
+          <RotateCcw size={13} strokeWidth={2.6} />
+          <span>{entry.rewatchCount}</span>
+          <span className={styles.cardTooltip}>
+            {entry.rewatchCount} {entry.rewatchCount === 1 ? 'rewatch' : 'rewatches'}
+          </span>
+        </div>
+      )}
 
       <Link href={`/titles/${entrySlug(entry)}`} style={{ display: 'block', height: '100%', width: '100%', textDecoration: 'none' }}>
         <div style={{
@@ -363,8 +404,36 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
         )}
       </Link>
 
+      {noteOpen && (
+        <div
+          className={styles.cardNotePopover}
+          role="dialog"
+          aria-label={`Notes for ${entry.title}`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          <div className={styles.cardNoteHeader}>
+            <strong>{entry.title}</strong>
+            <button
+              type="button"
+              aria-label="Close notes"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setNoteOpen(false);
+              }}
+            >
+              <X size={13} strokeWidth={2.4} />
+            </button>
+          </div>
+          <p>{noteText}</p>
+        </div>
+      )}
+
       <div style={{
-        position: 'absolute', top: 8, right: 6, zIndex: 10,
+        position: 'absolute', top: hasRewatch ? 42 : 8, right: 6, zIndex: 10,
         display: 'flex', flexDirection: 'column', gap: '5px',
         opacity: hovered ? 1 : 0,
         transform: hovered ? 'translateX(0)' : 'translateX(10px)',
@@ -1428,7 +1497,7 @@ function ProfileContent() {
     setLoading(true);
     try {
       const [eRes, pRes, aRes] = await Promise.all([
-        fetch('/api/entries', { cache: 'no-store' }),
+        fetch('/api/entries?refresh=tmdb', { cache: 'no-store' }),
         fetch('/api/profile', { cache: 'no-store' }),
         fetch('/api/activity', { cache: 'no-store' }),
       ]);
