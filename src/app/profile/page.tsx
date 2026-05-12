@@ -8,7 +8,6 @@ import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
 import PersonalGoalsSection from '@/components/PersonalGoalsSection';
 import StatusBubble from '@/components/StatusBubble';
-import StatusDot from '@/components/StatusDot';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
@@ -354,8 +353,6 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
           </div>
         )}
       </Link>
-
-      <StatusDot status={entry.status} size="sm" position="bl" />
 
       <div style={{
         position: 'absolute', top: 8, right: 6, zIndex: 10,

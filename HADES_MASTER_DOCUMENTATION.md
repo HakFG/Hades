@@ -18,7 +18,7 @@ Hades é um aplicativo Next.js avançado para rastreamento de séries, filmes e 
 - ✅ Status visual com bolinhas de produção
 - ✅ Filtros avançados por status de produção
 - ✅ 100+ conquistas baseadas em comportamento do usuário
-- ✅ Sistema de temporadas imbutido em todo o site
+- ✅ Sistema de temporadas com visibilidade condicional: UI reduzida fora das páginas de título
 - ✅ Interface visual inspirada em AniList
 
 ---
@@ -26,22 +26,68 @@ Hades é um aplicativo Next.js avançado para rastreamento de séries, filmes e 
 ## 🎯 Índice
 
 1. [Visão Geral](#visão-geral)
-2. [Arquitetura do Projeto](#arquitetura-do-projeto)
-3. [Banco de Dados](#banco-de-dados)
-4. [Bugs Conhecidos](#bugs-conhecidos)
-5. [Sistema Visual - Bolinhas de Status](#sistema-visual---bolinhas-de-status)
-6. [Sistema de Sincronização em Tempo Real](#sistema-de-sincronização-em-tempo-real)
-7. [Melhorias Visuais](#melhorias-visuais)
-8. [Sistema de Filtragem Avançado](#sistema-de-filtragem-avançado)
-9. [Sistema de Temporadas](#sistema-de-temporadas)
-10. [100+ Conquistas](#100-conquistas)
-11. [Página de Browser Aprimorada](#página-de-browser-aprimorada)
-12. [Features Existentes](#features-existentes)
-13. [Checklist de Implementação](#checklist-de-implementação)
+2. [Status Atual do Projeto](#status-atual-do-projeto)
+3. [Arquitetura do Projeto](#arquitetura-do-projeto)
+4. [Banco de Dados](#banco-de-dados)
+5. [Bugs Conhecidos](#bugs-conhecidos)
+6. [Sistema Visual - Bolinhas de Status](#sistema-visual---bolinhas-de-status)
+7. [Sistema de Sincronização em Tempo Real](#sistema-de-sincronização-em-tempo-real)
+8. [Melhorias Visuais](#melhorias-visuais)
+9. [Sistema de Filtragem Avançado](#sistema-de-filtragem-avançado)
+10. [Sistema de Temporadas](#sistema-de-temporadas)
+11. [100+ Conquistas](#100-conquistas)
+12. [Página de Browser Aprimorada](#página-de-browser-aprimorada)
+13. [Features Existentes](#features-existentes)
+14. [Checklist de Implementação](#checklist-de-implementação)
 
 ---
 
 ## 📚 Visão Geral
+
+## 🧠 Status Atual do Projeto
+
+- Recentes alterações focadas em reduzir visualização de **temporadas** e **relações** em todo o frontend.
+- `relations` permanece visível apenas na página de `titles/[id]`; removido de listagens, cards e outras telas.
+- Season pills como “S18 eps S28 eps” foram removidas do modal de título e de cards de perfil.
+- Temporadas foram removidas de `src/components/MediaCard.tsx`, `AiringProgressCard.tsx`, `NextUpCard.tsx`, `src/app/profile/page.tsx` e `src/app/titles/[id]/page.tsx`.
+- Corrigido bug de sintaxe JSX em `src/app/titles/[id]/page.tsx` causado por comentário mal fechado.
+- Build validada com sucesso via `npm run build`.
+
+### Pendências Imediatas
+
+- [ ] Revisar `src/components/ListEditor.tsx` para remover completamente os campos de temporada/episódio, se desejar.
+- [ ] Garantir que a adição/edição de título não renderize season pills ou controles de temporada indesejados.
+- [ ] Confirmar que o comportamento de `relations` permanece apenas no tab de detalhes de título.
+- [ ] Atualizar documentação de usuário e fluxos para refletir a nova visibilidade de temporadas.
+
+### Bugs Recentes
+
+- **Bug #2**: Malformed JSX comment em `src/app/titles/[id]/page.tsx` após remover season UI. Corrigido.
+- **Bug #3**: Possível UI residual de `season` / `episode` em `ListEditor.tsx` e modais de adicionar título. Necessita validação.
+
+### Notas Técnicas
+
+- A remoção de `SeasonSelector` e `TvSeasonNavClient` foi aplicada em todas as páginas de listagem/row.
+- A interface continua usando o modelo de `Entry` com campos de temporada, mas a renderização destes campos foi restringida conforme novo escopo.
+
+### Estado Atual
+
+- `npm run build` passou sem erros.
+- As alterações estão implementadas no frontend, mas precisam de validação funcional completa em modais de edição e lista.
+
+### Próximo Passo
+
+- Finalizar inspeção de `ListEditor.tsx` e ajustar a checklist de implementação para refletir a redução do sistema de temporadas.
+
+### Observação
+
+- Mesmo com a UI reduzida, a camada de dados ainda suporta temporada/episódio para evitar regressão em título e histórico de progresso.
+
+### Resultados
+
+- UX mais limpa para usuários que não querem season pills fora do contexto de título.
+- Relações continuam acessíveis apenas onde fazem sentido.
+
 
 ### Tecnologias Principais
 
@@ -84,70 +130,176 @@ Build & Deploy:
 
 ## 🏗️ Arquitetura do Projeto
 
-### Estrutura de Pastas
+### Visão Geral
+
+Hades é uma aplicação Next.js com App Router, usando React 19, TypeScript 6 e Prisma para a camada de dados. A arquitetura é dividida em:
+
+- `src/app/` — páginas, layouts e rotas de API
+- `src/components/` — componentes reutilizáveis de UI
+- `src/lib/` — lógica de negócio e integrações
+- `prisma/` — esquema e migrações de banco de dados
+- `public/` — assets estáticos
+
+A aplicação usa rotas do Next.js em estilo App Router para separar UI e backend, com `page.tsx` e `route.ts` em diretórios de rotas.
+
+### Estrutura de Pastas Atual
 
 ```
 hades/
 ├── prisma/
 │   ├── schema.prisma              (Modelos de dados)
-│   └── migrations/                (Histórico de banco)
-├── public/                         (Assets estáticos)
+│   └── migrations/                (Histórico de schema)
+├── public/                        (Assets estáticos)
 ├── src/
 │   ├── app/
-│   │   ├── api/                   (Rotas backend)
-│   │   │   ├── activity/          (Logs de atividade)
+│   │   ├── api/                   (API routes)
+│   │   │   ├── activity/          (activity logs)
+│   │   │   ├── add-media/         (API para adicionar mídia)
+│   │   │   ├── backup/            (export/import de dados)
+│   │   │   ├── entries/           (operações de coleção de títulos)
+│   │   │   ├── entry/             (operações de título único)
 │   │   │   ├── gamification/      (XP, desafios, metas)
-│   │   │   ├── staff/             (Dados de staff)
-│   │   │   ├── entries/           (CRUD de títulos)
-│   │   │   ├── backup/            (Export/import)
-│   │   │   └── sync/              (Sincronização TMDB) [NOVO]
-│   │   ├── page.tsx               (Home)
-│   │   ├── profile/page.tsx       (Perfil do usuário)
-│   │   ├── search/page.tsx        (Busca)
-│   │   ├── browser/page.tsx       (Browse com filtros) [MELHORADO]
-│   │   ├── gamification/page.tsx  (Painel de gamificação)
-│   │   ├── staff/page.tsx         (Staff)
-│   │   ├── staff/[id]/page.tsx    (Detalhes de staff)
-│   │   ├── titles/[id]/page.tsx   (Detalhes de título)
-│   │   ├── layout.tsx             (Layout global)
-│   │   └── globals.css            (Estilos globais)
+│   │   │   ├── next-up/           (dados de próximo a assistir)
+│   │   │   ├── notifications/      (notificações do usuário)
+│   │   │   ├── profile/           (perfil do usuário)
+│   │   │   ├── refresh-all/       (sincronização completa)
+│   │   │   ├── relations/         (relações entre títulos)
+│   │   │   ├── seasons/           (dados de temporadas)
+│   │   │   ├── staff/             (dados de staff)
+│   │   │   ├── sync/              (sincronização TMDB)
+│   │   │   └── update-entry/      (atualização de título)
+│   │   ├── browser/page.tsx       (browser principal e filtros)
+│   │   ├── gamification/page.tsx  (painel de gamificação)
+│   │   ├── globals.css            (estilos globais)
+│   │   ├── layout.tsx             (layout e inicialização global)
+│   │   ├── page.tsx               (home)
+│   │   ├── profile/page.tsx       (página de perfil do usuário)
+│   │   ├── search/page.tsx        (busca de títulos)
+│   │   ├── staff/page.tsx         (lista de staff)
+│   │   ├── staff/[id]/page.tsx    (detalhes de staff)
+│   │   └── titles/[id]/page.tsx   (detalhes de título)
 │   ├── components/
-│   │   ├── AiringProgressCard.tsx (Card de em exibição)
-│   │   ├── NextUpCard.tsx         (Card de próximo)
-│   │   ├── StatusDot.tsx          (Bolinha de status) [NOVO]
-│   │   ├── StatusBubble.tsx       (Bolinha de produção) [NOVO]
-│   │   ├── SeasonSelector.tsx     (Seletor de temporadas) [NOVO]
-│   │   ├── PersonalGoalsSection.tsx
-│   │   ├── PersonalGoalModal.tsx
+│   │   ├── AchievementToast.tsx
+│   │   ├── AiringProgressCard.tsx
+│   │   ├── ChallengeToast.tsx
 │   │   ├── ChallengeWidget.tsx
+│   │   ├── EpisodeGrid.tsx
+│   │   ├── ListEditor.tsx
+│   │   ├── MediaCard.tsx
+│   │   ├── NextUpCard.tsx
 │   │   ├── NotificationPanel.tsx
+│   │   ├── PersonalGoalModal.tsx
+│   │   ├── PersonalGoalsSection.tsx
+│   │   ├── ProductionFilterBar.tsx
+│   │   ├── SeasonSelector.tsx
+│   │   ├── StaffComponents/        (componentes de staff específicos)
+│   │   ├── StatusBubble.tsx
+│   │   ├── StatusDot.tsx
+│   │   ├── TvSeasonNavClient.tsx
 │   │   ├── XPProgressBar.tsx
 │   │   ├── XPToastHost.tsx
-│   │   ├── AchievementToast.tsx
-│   │   ├── ChallengeToast.tsx
-│   │   ├── ListEditor.tsx
-│   │   └── StaffComponents/
+│   │   └── xp-progress.module.css
 │   └── lib/
-│       ├── prisma.ts              (Cliente Prisma)
-│       ├── tmdb.ts                (Integração TMDB)
-│       ├── tmdb-airing.ts         (Dados de exibição)
-│       ├── tmdb-titles.ts         (Dados de títulos)
-│       ├── tmdb-sync.ts           (Sincronização) [NOVO]
-│       ├── gamification.ts        (Lógica de XP)
-│       ├── personal-goals.ts      (Metas pessoais)
-│       ├── achievements.ts        (100+ conquistas) [EXPANDIDO]
-│       ├── production-status.ts   (Status de produção) [NOVO]
-│       ├── seasons.ts             (Lógica de temporadas) [NOVO]
-│       └── ...
+│       ├── achievements.ts        (conquistas e lógica de desbloqueio)
+│       ├── activity.ts            (registro de atividade)
+│       ├── browser-filter.ts      (lógica de filtragem do browser)
+│       ├── challenge-generator.ts (geração de desafios)
+│       ├── challenge-tracker.ts   (rastreio de progresso de desafios)
+│       ├── entry-poster-sync.ts   (sincronização de poster/títulos)
+│       ├── gamification.ts        (pontos e níveis)
+│       ├── level-system.ts        (sistema de níveis)
+│       ├── next-up.ts             (lógica de próximo a assistir)
+│       ├── notifications.ts       (notificações do usuário)
+│       ├── personal-goals.ts      (metas pessoais)
+│       ├── prisma.ts             (cliente Prisma)
+│       ├── production-status.ts   (status de produção e cores)
+│       ├── relations-manager.ts   (relações entre títulos)
+│       ├── seasons.ts            (lógica de temporadas)
+│       ├── staff.ts              (data layer de staff)
+│       ├── tmdb-airing.ts        (dados de exibição do TMDB)
+│       ├── tmdb-sync.ts          (sincronização com TMDB)
+│       ├── tmdb-titles.ts        (dados de títulos TMDB)
+│       ├── tmdb.ts               (integração básica com TMDB)
+│       ├── utils.ts              (utilitários diversos)
+│       └── xp-calculator.ts      (cálculo de XP e métricas)
 ├── package.json
 ├── tsconfig.json
 ├── next.config.ts
 ├── postcss.config.mjs
 ├── eslint.config.mjs
+├── next-env.d.ts
 └── .env
 ```
 
+### Camadas da Aplicação
+
+- `src/app/` contém a camada de apresentação e as rotas de API do Next.js.
+- `src/components/` contém componentes reutilizáveis de interface, incluindo cards, modais, widgets e controls.
+- `src/lib/` contém regras de negócio, integração com TMDB, sincronização, gamificação, metas e gestão de dados.
+- `prisma/` contém modelo de dados, migrações e schema para PostgreSQL.
+
+### Rotas de API Principais
+
+- `/api/activity` — logs de atividade do usuário
+- `/api/add-media` — adicionar nova mídia ao catálogo
+- `/api/backup` — exportação e importação de dados
+- `/api/entries` — CRUD e listagem de entradas
+- `/api/entry` — operações individuais de entrada
+- `/api/gamification` — XP, conquistas, desafios e metas
+- `/api/next-up` — dados de próximos episódios/títulos
+- `/api/notifications` — notificações do usuário
+- `/api/profile` — carregamento e atualização de perfil
+- `/api/refresh-all` — sincronização completa de dados
+- `/api/relations` — relações entre títulos
+- `/api/seasons` — temporadas e dados relacionados
+- `/api/staff` — busca e dados de staff
+- `/api/sync` — sincronização manual TMDB
+- `/api/update-entry` — atualizar campos de entrada específicos
+
+### Páginas e Layouts
+
+- `src/app/page.tsx` — Home com overview, cards e atalhos
+- `src/app/profile/page.tsx` — perfil do usuário com progresso e metas
+- `src/app/search/page.tsx` — busca de títulos por nome
+- `src/app/browser/page.tsx` — navegação e filtragem de catálogo
+- `src/app/gamification/page.tsx` — painel de desafios, XP e conquistas
+- `src/app/staff/page.tsx` — lista de elenco/produção
+- `src/app/staff/[id]/page.tsx` — detalhes de staff
+- `src/app/titles/[id]/page.tsx` — detalhes de título, relações e histórico
+- `src/app/layout.tsx` — wrapper global e inicialização de providers
+- `src/app/globals.css` — estilos globais da aplicação
+
+### Dependências e Ferramentas
+
+- `next` 16.2.4
+- `react` 19.2.4
+- `typescript` 6
+- `tailwindcss` 4
+- `prisma` 6.19.3
+- `node-cron` + `p-queue` para agendamento e fila de sincronização
+- `lucide-react` para ícones
+- `clsx` para composição condicional de classes
+- `isomorphic-fetch` para chamadas HTTP compatíveis cliente/servidor
+- `@types/*` para tipagens
+- `eslint` e `eslint-config-next` para linting
+
+### Scripts Principais
+
+- `npm run dev` — inicia o servidor de desenvolvimento
+- `npm run build` — gera Prisma Client e compila o app para produção
+- `npm run start` — inicia o servidor de produção
+- `npm run lint` — executa ESLint
+- `postinstall` — `prisma generate`
+
+### Observações Arquiteturais
+
+- O App Router permite usar rotas de API e páginas dentro da mesma árvore de diretórios.
+- Os componentes de UI são separados de `src/lib/` para manter a lógica de negócio independente da renderização.
+- A sincronização TMDB foi implementada como `src/lib/tmdb-sync.ts` e exposta por `/api/sync`.
+- A arquitetura mantém suporte a temporadas e relações, mas a visibilidade dessas features foi ajustada para reduzir clutter fora de páginas de título.
+
 ---
+
 
 ## 🗄️ Banco de Dados
 
@@ -2058,13 +2210,13 @@ export default function FilteredBrowserPage({ params }: Props) {
 - [ ] Testes de filtros
 
 ### Fase 4: Sistema de Temporadas (Semana 4-5)
-- [ ] Criar modelos `Season` e `Episode` no Prisma
-- [ ] Criar tabelas no banco
-- [ ] Fazer migração
-- [ ] Criar `SeasonSelector.tsx` e `EpisodeGrid.tsx`
-- [ ] Integrar em page.tsx, profile/page.tsx, browser
-- [ ] Sincronizar seasons com TMDB
-- [ ] Testes
+- [ ] Revisar visibilidade de temporada e relação no frontend
+- [ ] Remover season pills de profile, cards e modal de título
+- [ ] Ajustar `ListEditor.tsx` para não exibir campos de temporada/episódio indesejados
+- [ ] Manter `relations` visíveis apenas em `titles/[id]`
+- [ ] Validar que a remoção de UI não quebrou layout nem funcionalidades
+- [ ] Testes de regressão para profile, browser e titles
+- [ ] Atualizar documentação de usuário com comportamento atual de temporada
 
 ### Fase 5: 100+ Conquistas (Semana 5-6)
 - [ ] Expandir `achievements.ts` para 100+ conquistas
@@ -2181,7 +2333,7 @@ npm run dev
 3. **Performance**: Fila de sincronização com max 5 requisições paralelas
 4. **Conquistas**: Desbloqueadas automaticamente ao atingir requirement
 5. **Browser**: Dados visíveis por padrão, click redireciona para filtrado
-6. **Seasons**: Sistema imbutido em home, profile, browser, detalhes
+6. **Seasons**: Sistema de temporadas com visibilidade condicional — removido de profile, browser e cards; mantido apenas nas páginas de título quando aplicável.
 
 ---
 
