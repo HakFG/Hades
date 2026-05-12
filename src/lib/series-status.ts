@@ -147,7 +147,7 @@ function normalizeSeasonStatusFromStoredData(
 function seasonEpisodesToTitleStatus(
   episodes?: Array<{ airDate?: string | null }> | null,
 ): string | null {
-  if (!episodes?.length) return null;
+  if (!episodes) return null;
 
   const today = todayIso();
   const datedEpisodes = episodes.filter((episode) => episode.airDate);
@@ -165,6 +165,8 @@ function seasonEpisodesToTitleStatus(
  * filmes ou entradas sem Season, cai no status oficial do titulo.
  */
 export function entryStatusToBubbleStatus(entry: EntryStatusSource): string | null {
+  if (entry.seasonStatus) return entry.seasonStatus;
+
   if (entry.type === 'TV_SEASON') {
     const matchingSeason = entry.seasons?.find((season) => (
       entry.seasonNumber == null || season.seasonNumber === entry.seasonNumber

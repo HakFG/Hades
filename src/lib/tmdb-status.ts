@@ -19,7 +19,7 @@ function todayIso() {
 }
 
 export function titlePageSeasonStatus(episodes?: TmdbEpisode[] | null): string | null {
-  if (!episodes?.length) return null;
+  if (!episodes) return null;
 
   const today = todayIso();
   const aired = episodes.filter((episode) => episode.air_date && episode.air_date <= today);

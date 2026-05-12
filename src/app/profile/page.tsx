@@ -1428,9 +1428,9 @@ function ProfileContent() {
     setLoading(true);
     try {
       const [eRes, pRes, aRes] = await Promise.all([
-        fetch('/api/entries'),
-        fetch('/api/profile'),
-        fetch('/api/activity'),
+        fetch('/api/entries', { cache: 'no-store' }),
+        fetch('/api/profile', { cache: 'no-store' }),
+        fetch('/api/activity', { cache: 'no-store' }),
       ]);
       if (eRes.ok) setEntries(await eRes.json());
       if (pRes.ok) setProfile(await pRes.json());
@@ -1440,7 +1440,10 @@ function ProfileContent() {
 
   const silentRefresh = useCallback(async () => {
     try {
-      const [eRes, pRes] = await Promise.all([fetch('/api/entries'), fetch('/api/profile')]);
+      const [eRes, pRes] = await Promise.all([
+        fetch('/api/entries', { cache: 'no-store' }),
+        fetch('/api/profile', { cache: 'no-store' }),
+      ]);
       if (eRes.ok) setEntries(await eRes.json());
       if (pRes.ok) setProfile(await pRes.json());
     } catch (err) { console.error(err); }
