@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { entryStatusToBubbleStatus } from '@/lib/series-status';
 
 // GET /api/entries - Buscar todas as entries do usuário
 export async function GET(request: Request) {
@@ -17,16 +18,35 @@ export async function GET(request: Request) {
         ...(type === 'MOVIE' || type === 'TV_SEASON' ? { type } : {}),
         ...(statuses?.length ? { productionStatus: { in: statuses } } : {}),
       },
+      include: {
+        seasons: {
+          select: {
+            status: true,
+            airDate: true,
+            seasonNumber: true,
+            episodes: {
+              select: { airDate: true },
+              orderBy: { episodeNumber: 'asc' },
+            },
+          },
+          orderBy: { seasonNumber: 'asc' },
+        },
+      },
       orderBy: { updatedAt: 'desc' },
     });
     // Garante que datas sejam strings ISO ou null
-    const serialized = entries.map(entry => ({
-      ...entry,
-      startDate: entry.startDate?.toISOString().split('T')[0] ?? null,
-      finishDate: entry.finishDate?.toISOString().split('T')[0] ?? null,
-      createdAt: entry.createdAt.toISOString(),
-      updatedAt: entry.updatedAt.toISOString(),
-    }));
+    const serialized = entries.map(entry => {
+      const seasonStatus = entryStatusToBubbleStatus(entry);
+
+      return {
+        ...entry,
+        seasonStatus,
+        startDate: entry.startDate?.toISOString().split('T')[0] ?? null,
+        finishDate: entry.finishDate?.toISOString().split('T')[0] ?? null,
+        createdAt: entry.createdAt.toISOString(),
+        updatedAt: entry.updatedAt.toISOString(),
+      };
+    });
     return NextResponse.json(serialized);
   } catch (error) {
     console.error('[GET /api/entries] Erro:', error);

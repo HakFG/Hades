@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { getOrdinal } from '@/lib/utils';
 import { getNextUpItems } from '@/lib/next-up';
+import { entryStatusToBubbleStatus } from '@/lib/series-status';
 import NextUpCard from '@/components/NextUpCard';
 import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
@@ -83,6 +84,20 @@ async function getHomeData() {
 
   const myWatching = await prisma.entry.findMany({
     where: { status: 'WATCHING', type: 'TV_SEASON' },
+    include: {
+      seasons: {
+        select: {
+          status: true,
+          airDate: true,
+          seasonNumber: true,
+          episodes: {
+            select: { airDate: true },
+            orderBy: { episodeNumber: 'asc' },
+          },
+        },
+        orderBy: { seasonNumber: 'asc' },
+      },
+    },
     take: 6,
   });
   const airingPromises = myWatching.map(async (entry) => {
@@ -91,7 +106,13 @@ async function getHomeData() {
       { next: { revalidate: 3600 } }
     );
     const data = await res.json();
-    return { ...entry, nextEpisode: data?.next_episode_to_air ?? null, inProduction: data?.in_production ?? false, backdrop: data?.backdrop_path ?? null };
+    return {
+      ...entry,
+      seasonStatus: entryStatusToBubbleStatus(entry),
+      nextEpisode: data?.next_episode_to_air ?? null,
+      inProduction: data?.in_production ?? false,
+      backdrop: data?.backdrop_path ?? null,
+    };
   });
   let airingResults = await Promise.all(airingPromises);
   airingResults = airingResults.filter(e => e.nextEpisode !== null);
@@ -179,9 +200,27 @@ async function getHomeData() {
       status: 'WATCHING',
       NOT: { id: { in: Array.from(airingEntryIds) } }
     },
+    include: {
+      seasons: {
+        select: {
+          status: true,
+          airDate: true,
+          seasonNumber: true,
+          episodes: {
+            select: { airDate: true },
+            orderBy: { episodeNumber: 'asc' },
+          },
+        },
+        orderBy: { seasonNumber: 'asc' },
+      },
+    },
     orderBy: { updatedAt: 'desc' },
     take: 6,
   });
+  const inProgressWithStatus = inProgressEntries.map((entry) => ({
+    ...entry,
+    seasonStatus: entryStatusToBubbleStatus(entry),
+  }));
 
   const nextUpItems = await getNextUpItems(4);
 
@@ -191,7 +230,7 @@ async function getHomeData() {
   const uniqueNews = Array.from(new Map(newsResults.flat().map(item => [item.title, item])).values())
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 8);
 
-  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressEntries, nextUp: nextUpItems };
+  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressWithStatus, nextUp: nextUpItems };
 }
 
 // ─── Componente principal com layout corrigido ────────────────────────────────

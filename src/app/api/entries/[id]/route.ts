@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { awardXP, type AwardXPResult } from '@/lib/gamification';
+import { entryStatusToBubbleStatus } from '@/lib/series-status';
 
 // Helper para converter string de data para Date ou null
 function parseDate(dateStr: string | null | undefined): Date | null {
@@ -80,6 +81,20 @@ export async function PATCH(
     const entry = await prisma.entry.update({
       where: { id },
       data: updateData,
+      include: {
+        seasons: {
+          select: {
+            status: true,
+            airDate: true,
+            seasonNumber: true,
+            episodes: {
+              select: { airDate: true },
+              orderBy: { episodeNumber: 'asc' },
+            },
+          },
+          orderBy: { seasonNumber: 'asc' },
+        },
+      },
     });
 
     const gamification: AwardXPResult[] = [];
@@ -184,6 +199,7 @@ export async function PATCH(
     // Normaliza datas para YYYY-MM-DD antes de retornar ao front-end
     const formatted = {
       ...entry,
+      seasonStatus: entryStatusToBubbleStatus(entry),
       startDate: entry.startDate
         ? (entry.startDate as Date).toISOString().split('T')[0]
         : null,

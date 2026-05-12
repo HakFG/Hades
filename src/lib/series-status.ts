@@ -31,6 +31,21 @@ export interface StatusDotConfig {
   pulse: boolean;
 }
 
+export interface EntryStatusSource {
+  type?: string | null;
+  productionStatus?: string | null;
+  seasonStatus?: string | null;
+  seasonNumber?: number | null;
+  seasons?: Array<{
+    status?: string | null;
+    airDate?: string | null;
+    seasonNumber?: number | null;
+    episodes?: Array<{
+      airDate?: string | null;
+    }> | null;
+  }> | null;
+}
+
 /** Statuses que NÃO devem exibir bolinha */
 const SILENT_STATUSES = new Set([
   'Finished',
@@ -106,4 +121,66 @@ export function productionStatusToDisplayStatus(
   };
 
   return directMap[s] ?? null;
+}
+
+function todayIso() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function normalizeSeasonStatusFromStoredData(
+  seasonStatus?: string | null,
+  airDate?: string | null,
+  productionStatus?: string | null,
+): string | null {
+  const stored = seasonStatus?.trim();
+
+  if (airDate) {
+    if (airDate > todayIso()) return 'Not Yet Aired';
+    if (!stored || stored === 'Unknown' || stored === 'Not Yet Aired') return 'Airing';
+  }
+
+  if (stored && stored !== 'Unknown') return stored;
+
+  return null;
+}
+
+function seasonEpisodesToTitleStatus(
+  episodes?: Array<{ airDate?: string | null }> | null,
+): string | null {
+  if (!episodes?.length) return null;
+
+  const today = todayIso();
+  const datedEpisodes = episodes.filter((episode) => episode.airDate);
+  const airedEpisodes = datedEpisodes.filter((episode) => episode.airDate! <= today);
+
+  if (!airedEpisodes.length) return 'Not Yet Aired';
+  if (datedEpisodes.length === episodes.length && airedEpisodes.length === episodes.length) return 'Finished';
+  return 'Airing';
+}
+
+/**
+ * Fonte unificada para todos os cards do site. Para series/temporadas,
+ * usa primeiro o status real salvo na tabela Season e recalcula a virada
+ * de data de Not Yet Aired para Airing no cliente/servidor atual. Para
+ * filmes ou entradas sem Season, cai no status oficial do titulo.
+ */
+export function entryStatusToBubbleStatus(entry: EntryStatusSource): string | null {
+  if (entry.type === 'TV_SEASON') {
+    const matchingSeason = entry.seasons?.find((season) => (
+      entry.seasonNumber == null || season.seasonNumber === entry.seasonNumber
+    ));
+
+    const episodeStatus = seasonEpisodesToTitleStatus(matchingSeason?.episodes);
+    if (episodeStatus) return episodeStatus;
+
+    const status = normalizeSeasonStatusFromStoredData(
+      entry.seasonStatus ?? matchingSeason?.status,
+      matchingSeason?.airDate,
+      entry.productionStatus,
+    );
+
+    if (status) return status;
+  }
+
+  return productionStatusToDisplayStatus(entry.productionStatus);
 }

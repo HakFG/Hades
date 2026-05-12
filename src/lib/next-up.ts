@@ -1,15 +1,6 @@
 // src/lib/next-up.ts
 import { prisma } from './prisma';
-import { productionStatusToDisplayStatus } from './series-status';
-
-/**
- * Mapeia o productionStatus armazenado no banco para o status de exibição
- * usado pelo StatusBubble. Séries com "Returning Series" aparecem como
- * "Returning Series"; "Ended"/"Released" → null (sem bolinha).
- */
-function deriveSeasonStatus(productionStatus?: string | null): string | null {
-  return productionStatusToDisplayStatus(productionStatus);
-}
+import { entryStatusToBubbleStatus } from './series-status';
 
 export interface NextUpItem {
   id: string;
@@ -88,6 +79,20 @@ export async function getNextUpItems(
       type: 'TV_SEASON',
       totalEpisodes: { not: null },
     },
+    include: {
+      seasons: {
+        select: {
+          status: true,
+          airDate: true,
+          seasonNumber: true,
+          episodes: {
+            select: { airDate: true },
+            orderBy: { episodeNumber: 'asc' },
+          },
+        },
+        orderBy: { seasonNumber: 'asc' },
+      },
+    },
     orderBy: [{ status: 'asc' }, { updatedAt: 'asc' }],
   });
 
@@ -111,7 +116,7 @@ export async function getNextUpItems(
         type: 'TV_SEASON',
         posterPath: series.imagePath,
         productionStatus: series.productionStatus,
-        seasonStatus: deriveSeasonStatus(series.productionStatus),
+        seasonStatus: entryStatusToBubbleStatus(series),
         nextEpisodeNumber: currentProgress + 1,
         totalEpisodes: total,
         currentProgress,
@@ -135,6 +140,20 @@ export async function getNextUpItems(
       totalEpisodes: { not: null },
       progress: { gt: 0 },
     },
+    include: {
+      seasons: {
+        select: {
+          status: true,
+          airDate: true,
+          seasonNumber: true,
+          episodes: {
+            select: { airDate: true },
+            orderBy: { episodeNumber: 'asc' },
+          },
+        },
+        orderBy: { seasonNumber: 'asc' },
+      },
+    },
     orderBy: { updatedAt: 'asc' },
   });
 
@@ -157,7 +176,7 @@ export async function getNextUpItems(
         type: 'TV_SEASON',
         posterPath: series.imagePath,
         productionStatus: series.productionStatus,
-        seasonStatus: deriveSeasonStatus(series.productionStatus),
+        seasonStatus: entryStatusToBubbleStatus(series),
         nextEpisodeNumber: currentProgress + 1,
         totalEpisodes: total,
         currentProgress,

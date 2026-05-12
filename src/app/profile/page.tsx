@@ -8,7 +8,7 @@ import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
 import PersonalGoalsSection from '@/components/PersonalGoalsSection';
 import StatusBubble from '@/components/StatusBubble';
-import { productionStatusToDisplayStatus } from '@/lib/series-status';
+import { entryStatusToBubbleStatus } from '@/lib/series-status';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
@@ -55,6 +55,15 @@ interface Entry {
   rating?: number | null;
   popularity?: number;
   productionStatus?: string | null;
+  seasonStatus?: string | null;
+  seasons?: Array<{
+    status?: string | null;
+    airDate?: string | null;
+    seasonNumber?: number | null;
+    episodes?: Array<{
+      airDate?: string | null;
+    }> | null;
+  }> | null;
   studio?: string | null;
   format?: string | null;
   runtime?: number | null;
@@ -219,7 +228,7 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
         background: STATUS_COLOR[entry.status] ?? '#c9d0d8', zIndex: 4,
       }} />
       <StatusBubble
-        status={productionStatusToDisplayStatus(entry.productionStatus)}
+        status={entryStatusToBubbleStatus(entry)}
         size="sm"
       />
 

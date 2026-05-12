@@ -4,7 +4,6 @@
 import Link from 'next/link';
 import { NextUpItem } from '@/lib/next-up';
 import StatusBubble from '@/components/StatusBubble';
-import StatusDot from '@/components/StatusDot';
 
 interface NextUpCardProps {
   item: NextUpItem;
@@ -80,8 +79,6 @@ export default function NextUpCard({ item }: NextUpCardProps) {
       : `https://image.tmdb.org/t/p/w300${item.posterPath}`
     : '';
 
-  const listStatus = item.listStatus ?? 'WATCHING';
-
   return (
     <div className="nextup-root">
       <Link href={`/titles/${item.slug}`} className="nextup-link">
@@ -91,7 +88,6 @@ export default function NextUpCard({ item }: NextUpCardProps) {
             size="md"
             position="tl"
           />
-          <StatusDot status={listStatus} size="sm" position="br" />
 
           {poster ? (
             <img src={poster} alt={item.title} loading="lazy" decoding="async" />
