@@ -20,6 +20,8 @@ export interface NextUpItem {
   productionStatus?: string | null;
   /** Status real de exibição: 'Airing' | 'Not Yet Aired' | 'Finished' | 'Returning Series' | ... */
   seasonStatus?: string | null;
+  /** Status de lista do usuário: WATCHING, PAUSED, PLANNING, etc. */
+  listStatus?: string | null;
   nextEpisodeNumber?: number;
   totalEpisodes?: number;
   currentProgress?: number;
@@ -118,6 +120,7 @@ export async function getNextUpItems(
         score: series.score ?? undefined,
         daysStalled,
         urgencyScore: urgency,
+        listStatus: series.status,
         parentTmdbId: series.parentTmdbId,
         seasonNumber: series.seasonNumber,
       });
@@ -163,6 +166,7 @@ export async function getNextUpItems(
         score: series.score ?? undefined,
         daysStalled,
         urgencyScore: urgency,
+        listStatus: series.status,
         parentTmdbId: series.parentTmdbId,
         seasonNumber: series.seasonNumber,
       });
@@ -194,6 +198,7 @@ export async function getNextUpItems(
       posterPath: movie.imagePath,
       productionStatus: movie.productionStatus,
       seasonStatus: null, // filmes não têm airing status
+      listStatus: movie.status,
       reason: 'quick_movie',
       priority: 3,
       score: movie.score ?? undefined,
@@ -227,6 +232,7 @@ export async function getNextUpItems(
       posterPath: movie.imagePath,
       productionStatus: movie.productionStatus,
       seasonStatus: null,
+      listStatus: movie.status,
       reason: 'quick_movie',
       priority: 2,
       score: movie.score ?? undefined,
