@@ -3,6 +3,7 @@
 
 import Link from 'next/link';
 import { NextUpItem } from '@/lib/next-up';
+import StatusBubble from '@/components/StatusBubble';
 
 interface NextUpCardProps {
   item: NextUpItem;
@@ -77,6 +78,11 @@ export default function NextUpCard({ item }: NextUpCardProps) {
       <div className="nextup-card">
         {/* Poster Image */}
         <div className="nextup-image-wrapper">
+          <StatusBubble
+            status={item.productionStatus}
+            mediaType={item.type}
+            size="md"
+          />
           {item.posterPath ? (
             <img
               src={`https://image.tmdb.org/t/p/w300${item.posterPath}`}

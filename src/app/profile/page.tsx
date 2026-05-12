@@ -7,6 +7,7 @@ import { formatScore, scoreColor, imgUrl, entrySlug } from '@/lib/utils';
 import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
 import PersonalGoalsSection from '@/components/PersonalGoalsSection';
+import StatusBubble from '@/components/StatusBubble';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
@@ -52,6 +53,7 @@ interface Entry {
   genres?: string | null;
   rating?: number | null;
   popularity?: number;
+  productionStatus?: string | null;
   studio?: string | null;
   format?: string | null;
   runtime?: number | null;
@@ -215,6 +217,11 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
         position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
         background: STATUS_COLOR[entry.status] ?? '#c9d0d8', zIndex: 4,
       }} />
+      <StatusBubble
+        status={entry.productionStatus}
+        mediaType={entry.type}
+        size="sm"
+      />
 
       <Link href={`/titles/${entrySlug(entry)}`} style={{ display: 'block', height: '100%', width: '100%', textDecoration: 'none' }}>
         <div style={{

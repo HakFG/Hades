@@ -2,9 +2,21 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 // GET /api/entries - Buscar todas as entries do usuário
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const type = searchParams.get('type');
+    const production = searchParams.get('productionStatus');
+    const statuses = production
+      ?.split(',')
+      .map((item) => item.trim())
+      .filter((item) => item && item !== 'All');
+
     const entries = await prisma.entry.findMany({
+      where: {
+        ...(type === 'MOVIE' || type === 'TV_SEASON' ? { type } : {}),
+        ...(statuses?.length ? { productionStatus: { in: statuses } } : {}),
+      },
       orderBy: { updatedAt: 'desc' },
     });
     // Garante que datas sejam strings ISO ou null

@@ -591,7 +591,113 @@ export const ACHIEVEMENTS: Achievement[] = [
     xpReward: 1000,
     trigger: { type: 'favorites_count', target: 100 },
   },
+  ...buildGeneratedAchievements(),
 ];
+
+function rarityForTarget(target: number): AchievementRarity {
+  if (target >= 500 || target === 365) return 'legendary';
+  if (target >= 100) return 'epic';
+  if (target >= 25) return 'rare';
+  return 'common';
+}
+
+function xpForTarget(target: number, base: number) {
+  return Math.max(50, Math.round((target * base) / 25) * 25);
+}
+
+function buildGeneratedAchievements(): Achievement[] {
+  const episodeTargets = [25, 75, 150, 300, 750, 1500, 2500, 4000, 7500, 10000];
+  const seriesTargets = [5, 15, 35, 75, 150, 300, 750, 1000];
+  const completedTargets = [2, 3, 15, 35, 75, 150, 250];
+  const movieTargets = [2, 15, 35, 75, 150, 250, 500];
+  const streakTargets = [5, 10, 21, 45, 90, 180, 250];
+  const scoreTargets = [2, 3, 7, 15, 50, 100];
+  const xpTargets = [2500, 5000, 25000, 75000, 150000, 250000, 500000];
+  const favoriteTargets = [3, 5, 15, 35, 75, 150, 250];
+
+  return [
+    ...episodeTargets.map<Achievement>((target) => ({
+      id: `episodes_extra_${target}`,
+      name: `${target.toLocaleString('pt-BR')} Episodios`,
+      description: `${target.toLocaleString('pt-BR')} episodios assistidos`,
+      howToUnlock: `Marque ${target.toLocaleString('pt-BR')} episodios como assistidos.`,
+      icon: 'TV',
+      rarity: rarityForTarget(target),
+      xpReward: xpForTarget(target, 2),
+      trigger: { type: 'total_episodes', target },
+    })),
+    ...seriesTargets.map<Achievement>((target) => ({
+      id: `series_extra_${target}`,
+      name: `${target} Series na Biblioteca`,
+      description: `${target} temporadas ou series adicionadas`,
+      howToUnlock: `Adicione ${target} temporadas ou series ao catalogo.`,
+      icon: 'LIB',
+      rarity: rarityForTarget(target),
+      xpReward: xpForTarget(target, 12),
+      trigger: { type: 'total_series', target },
+    })),
+    ...completedTargets.map<Achievement>((target) => ({
+      id: `completed_extra_${target}`,
+      name: `${target} Finais Alcancados`,
+      description: `${target} series completas`,
+      howToUnlock: `Complete ${target} temporadas ou series.`,
+      icon: 'END',
+      rarity: rarityForTarget(target),
+      xpReward: xpForTarget(target, 22),
+      trigger: { type: 'completed_series_count', target },
+    })),
+    ...movieTargets.map<Achievement>((target) => ({
+      id: `movies_extra_${target}`,
+      name: `${target} Filmes Vistos`,
+      description: `${target} filmes completos`,
+      howToUnlock: `Marque ${target} filmes como completos.`,
+      icon: 'FILM',
+      rarity: rarityForTarget(target),
+      xpReward: xpForTarget(target, 16),
+      trigger: { type: 'total_movies', target },
+    })),
+    ...streakTargets.map<Achievement>((target) => ({
+      id: `streak_extra_${target}`,
+      name: `${target} Dias de Streak`,
+      description: `Streak de ${target} dias`,
+      howToUnlock: `Mantenha atividade por ${target} dias consecutivos.`,
+      icon: 'FIRE',
+      rarity: rarityForTarget(target),
+      xpReward: xpForTarget(target, 18),
+      trigger: { type: 'streak_days', target },
+    })),
+    ...scoreTargets.map<Achievement>((target) => ({
+      id: `score10_extra_${target}`,
+      name: `${target} Notas Perfeitas`,
+      description: `${target} titulos com nota 10`,
+      howToUnlock: `Avalie ${target} titulos diferentes com nota 10.`,
+      icon: '10',
+      rarity: rarityForTarget(target),
+      xpReward: xpForTarget(target, 60),
+      trigger: { type: 'score_10_count', target },
+    })),
+    ...xpTargets.map<Achievement>((target) => ({
+      id: `xp_extra_${target}`,
+      name: `${target.toLocaleString('pt-BR')} XP Total`,
+      description: `${target.toLocaleString('pt-BR')} XP acumulados`,
+      howToUnlock: `Acumule ${target.toLocaleString('pt-BR')} XP total.`,
+      icon: 'XP',
+      rarity: rarityForTarget(target / 1000),
+      xpReward: xpForTarget(target / 100, 8),
+      trigger: { type: 'total_xp', target },
+    })),
+    ...favoriteTargets.map<Achievement>((target) => ({
+      id: `favorites_extra_${target}`,
+      name: `${target} Favoritos`,
+      description: `${target} titulos favoritados`,
+      howToUnlock: `Favorite ${target} titulos.`,
+      icon: 'HEART',
+      rarity: rarityForTarget(target),
+      xpReward: xpForTarget(target, 10),
+      trigger: { type: 'favorites_count', target },
+    })),
+  ];
+}
 
 // ── Checagem de quais achievements foram desbloqueados ─────────────────────────
 

@@ -2,8 +2,10 @@
 import { recordActivity } from '@/lib/activity';
 import { useState, useEffect, use, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import StatusBubble from '@/components/StatusBubble';
 import { getOrdinal, buildSeasonTitle, formatScore, scoreColor } from '@/lib/utils';
 import { emitXPNotification } from '@/hooks/useXPNotification';
+import { normalizeProductionStatus } from '@/lib/production-status';
 import {
   fetchTitleData,
   getAutoRelations,
@@ -181,6 +183,7 @@ interface EntryData {
   imagePath?:string|null; startDate?:string|null; finishDate?:string|null;
   rewatchCount?:number; notes?:string|null; hidden?:boolean;
   releaseDate?:string|null; endDate?:string|null;
+  productionStatus?:string|null;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -898,7 +901,7 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   const[showCoverEdit, setShowCoverEdit] =useState(false);
   // customPoster: capa sobrescrita pelo usuário (salva no banco)
   const[customPoster,  setCustomPoster]  =useState<string|null>(null);
-  const[activeTab,     setActiveTab]     =useState<'overview'|'characters'|'staff'|'videos'>('overview');
+  const[activeTab,     setActiveTab]     =useState<'overview'|'episodes'|'characters'|'staff'|'videos'>('overview');
   const[loading,       setLoading]       =useState(true);
   const[error,         setError]         =useState<string|null>(null);
   const[editorOpen,    setEditorOpen]    =useState(false);
@@ -1575,10 +1578,16 @@ manualRels = saved.map((r: any) => {
   const genresList    =(isTV?show?.genres:movie?.genres)??[];
   const studios       =(isTV?show?.production_companies:movie?.production_companies)??[];
   const formatDisplay =isTV&&show?getFormat(show.networks??[],show.production_companies??[]):'Movie';
+  const productionStatus = entry?.productionStatus || normalizeProductionStatus(
+    isTV ? show?.status : movie?.status,
+    isTV ? 'tv' : 'movie',
+    isTV ? show?.in_production : undefined,
+  );
 
   // Sidebar rows — inclui Producers (empresas) como campo separado
   const sidebarRows:([string,React.ReactNode])[]=[
     ['Format',formatDisplay],
+    ['Production',productionStatus],
     ...(isTV&&show?[['Season',`${getOrdinal(seasonNumber!)} Season`] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
     ...(isTV&&seasonStatus?[['Status',seasonStatus] as [string,React.ReactNode]]:(!isTV&&movie?.status?[['Status',movie.status] as [string,React.ReactNode]]:[] as [string,React.ReactNode][])),
     ...(seasonAirDate?[['Air Date',new Date(seasonAirDate+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})] as [string,React.ReactNode]]:[] as [string,React.ReactNode][]),
@@ -1782,6 +1791,9 @@ onClick={async () => {
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
+  const tabs: Array<'overview'|'episodes'|'characters'|'staff'|'videos'> =
+    isTV ? ['overview','episodes','characters','staff','videos'] : ['overview','characters','staff','videos'];
+
   return(
     <div style={{background:BG,minHeight:'100vh',fontFamily:'Overpass,sans-serif',color:TEXT}}>
       {/* BANNER */}
@@ -1798,6 +1810,7 @@ onClick={async () => {
 
             {/* Poster + botão de editar capa (aparece no hover) */}
             <div className="tp-poster-wrap" style={{position:'relative',marginBottom:8}}>
+              <StatusBubble status={productionStatus} mediaType={isTV ? 'tv' : 'movie'} size="lg" />
               {poster
                 ?<img src={poster} style={{width:215,borderRadius:4,boxShadow:'0 6px 24px rgba(0,0,0,.5)',display:'block'}} alt="poster"/>
                 :<div style={{width:215,height:310,background:CARD,borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:13}}>Sem imagem</div>
@@ -1839,7 +1852,7 @@ onClick={async () => {
 
             {/* Tabs */}
             <div style={{display:'flex',borderBottom:'1px solid rgba(255,255,255,.07)',marginBottom:25}}>
-              {(['overview','characters','staff','videos']as const).map(tab=>(
+              {tabs.map(tab=>(
                 <span key={tab} className="tp-tab"
                   onClick={()=>setActiveTab(tab)}
                   style={{padding:'12px 20px',fontSize:14,cursor:'pointer',fontWeight:activeTab===tab?700:500,color:activeTab===tab?ACCENT:MUTED,borderBottom:activeTab===tab?`2px solid ${ACCENT}`:'2px solid transparent',userSelect:'none',whiteSpace:'nowrap'}}>
@@ -1849,6 +1862,30 @@ onClick={async () => {
             </div>
 
             {activeTab==='overview'&&<OverviewTab/>}
+
+            {activeTab==='episodes'&&(
+              <div className="anim-fade-in">
+                {!seasonEpisodes.length
+                  ?<div style={{textAlign:'center',color:MUTED,padding:40,fontSize:14}}>Nenhum episodio disponivel.</div>
+                  :<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10}}>
+                    {seasonEpisodes.map(ep=>{
+                      const watched=(entry?.progress??0)>=ep.episode_number;
+                      return(
+                        <div key={ep.id} style={{
+                          minHeight:76,padding:10,borderRadius:6,
+                          background:watched?'rgba(46,204,113,.14)':CARD,
+                          border:`1px solid ${watched?'rgba(46,204,113,.42)':'rgba(255,255,255,.06)'}`,
+                        }}>
+                          <div style={{fontSize:11,fontWeight:800,color:watched?'#2ecc71':ACCENT,marginBottom:5}}>EP {ep.episode_number}</div>
+                          <div style={{fontSize:12,fontWeight:700,color:TEXT,lineHeight:1.25,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{ep.name}</div>
+                          {ep.air_date&&<div style={{fontSize:10,color:MUTED,marginTop:6}}>{new Date(ep.air_date+'T00:00:00').toLocaleDateString('pt-BR')}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                }
+              </div>
+            )}
 
             {activeTab==='characters'&&(
               <div className="anim-fade-in">

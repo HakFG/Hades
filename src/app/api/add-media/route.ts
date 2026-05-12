@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
 import { awardXP } from '@/lib/gamification';
+import { normalizeProductionStatus } from '@/lib/production-status';
 
 const TMDB    = 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
@@ -182,6 +183,9 @@ const showName = seriesDataEn.name ?? seriesData.name ?? title.trim();
         bannerPath: seriesData.backdrop_path ?? null,
         rating:     typeof seriesData.vote_average === 'number' ? seriesData.vote_average : null,
         popularity: typeof seriesData.popularity   === 'number' ? seriesData.popularity   : 0,
+        productionStatus: normalizeProductionStatus(seriesData.status, 'tv', seriesData.in_production),
+        totalSeasons: typeof seriesData.number_of_seasons === 'number' ? seriesData.number_of_seasons : null,
+        networks: (seriesData.networks ?? []).map((n: any) => n.name).join(', '),
       };
 
       const seasons: TmdbSeasonSummary[] = ((seriesData.seasons ?? []) as TmdbSeasonSummary[])
@@ -213,6 +217,7 @@ const showName = seriesDataEn.name ?? seriesData.name ?? title.trim();
             releaseDate,
             endDate,
             ...extra,
+            lastSyncedAt: new Date(),
           },
           create: {
             tmdbId:        season.id,
@@ -226,6 +231,7 @@ const showName = seriesDataEn.name ?? seriesData.name ?? title.trim();
             releaseDate,
             endDate,
             ...extra,
+            lastSyncedAt: new Date(),
           },
         });
       });
@@ -260,8 +266,14 @@ const showName = seriesDataEn.name ?? seriesData.name ?? title.trim();
   fetch(`${TMDB}/tv/${parentTmdbId}?api_key=${API_KEY}&language=en-US`),
 ]);
 const seriesEnName = seriesEnRes.ok
-  ? ((await seriesEnRes.json()).name ?? null)
+  ? ((await seriesEnRes.clone().json()).name ?? null)
   : null;
+const seriesEnData = seriesEnRes.ok ? await seriesEnRes.json() : null;
+const productionStatus = normalizeProductionStatus(
+  seriesEnData?.status,
+  'tv',
+  seriesEnData?.in_production,
+);
 // Reconstrói o título em inglês se possível
 const englishTitle = seriesEnName
   ? buildSeasonTitle(seriesEnName, seasonNumber ?? 1)
@@ -282,6 +294,9 @@ const englishTitle = seriesEnName
           bannerPath:    extra.bannerPath ?? undefined,
           rating:        extra.rating     ?? undefined,
           popularity:    extra.popularity,
+          productionStatus,
+          networks:      extra.networks || undefined,
+          lastSyncedAt:  new Date(),
         },
 create: {
   tmdbId,
@@ -306,6 +321,9 @@ finishDate:    finishDate ? new Date(finishDate) : null,
   bannerPath:    extra.bannerPath ?? null,
   rating:        extra.rating     ?? null,
   popularity:    extra.popularity,
+  productionStatus,
+  networks:      extra.networks || null,
+  lastSyncedAt:  new Date(),
 },
       });
 
@@ -334,6 +352,7 @@ finishDate:    finishDate ? new Date(finishDate) : null,
       let bannerPath: string | null  = null;
       let popularity                 = 0;
       let rating: number | null      = null;
+      let movieProductionStatus      = 'Released';
 
       try {
         const [movieRes, movieResEn] = await Promise.all([
@@ -351,6 +370,7 @@ genres      = (d.genres ?? []).map((g: any) => g.name).join(', ');
         bannerPath  = d.backdrop_path ?? null;
         popularity  = typeof d.popularity   === 'number' ? d.popularity   : 0;
         rating      = typeof d.vote_average === 'number' ? d.vote_average : null;
+        movieProductionStatus = normalizeProductionStatus(d.status, 'movie');
       } catch { /* mantém nulls */ }
 
       const existingEntry = await prisma.entry.findUnique({ where: { tmdbId } });
@@ -366,6 +386,8 @@ genres      = (d.genres ?? []).map((g: any) => g.name).join(', ');
           bannerPath:    bannerPath ?? undefined,
           rating:        rating     ?? undefined,
           popularity,
+          productionStatus: movieProductionStatus,
+          lastSyncedAt:  new Date(),
         },
 create: {
   tmdbId,
@@ -387,6 +409,8 @@ finishDate:    finishDate ? new Date(finishDate) : null,
   bannerPath:    bannerPath ?? null,
   rating:        rating     ?? null,
   popularity,
+  productionStatus: movieProductionStatus,
+  lastSyncedAt:  new Date(),
 },
       });
 

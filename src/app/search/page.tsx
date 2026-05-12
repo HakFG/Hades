@@ -4,8 +4,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import ListEditor from '@/components/ListEditor';
+import StatusBubble from '@/components/StatusBubble';
 import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
 import { emitXPNotification } from '@/hooks/useXPNotification';
+import { normalizeProductionStatus } from '@/lib/production-status';
 
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const TMDB = 'https://api.themoviedb.org/3';
@@ -36,6 +38,7 @@ interface MediaCard {
   airYear?: string;
   airDate?: string;      
   seriesStatus?: string; 
+  productionStatus?: string;
   seasonStatus?: 'Airing' | 'Finished' | 'Not Yet Aired';
 }
 
@@ -133,6 +136,7 @@ async function expandShow(show: RawShow, includeSpecials = false, onlyInProducti
           airYear: s.air_date ? s.air_date.split('-')[0] : undefined,
           airDate: s.air_date ?? undefined,
           seriesStatus,
+          productionStatus: normalizeProductionStatus(seriesStatus, 'tv', inProduction),
           seasonStatus, // ← 'Airing' | 'Finished' | 'Not Yet Aired'
         };
       });
@@ -150,6 +154,7 @@ function movieToCard(m: RawShow): MediaCard {
     linkSlug: `movie-${m.id}`,
     popularity: m.popularity,
     airYear: m.release_date ? m.release_date.split('-')[0] : undefined,
+    productionStatus: 'Released',
   };
 }
 
@@ -489,6 +494,11 @@ function MediaCardComponent({ item }: { item: MediaCard }) {
             onMouseEnter={() => setHoveredCard(item.tmdbId)}
 onMouseLeave={() => setHoveredCard(null)}
           >
+            <StatusBubble
+              status={item.productionStatus}
+              mediaType={item.type}
+              size="sm"
+            />
             {item.poster_path ? (
               <img
   src={`https://image.tmdb.org/t/p/w300${item.poster_path}`}

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import StatusBubble from '@/components/StatusBubble';
 
 interface AiringProgressEntry {
   id: string;
@@ -14,6 +15,7 @@ interface AiringProgressEntry {
   progress?: number | null;
   totalEpisodes?: number | null;
   imagePath?: string | null;
+  productionStatus?: string | null;
   nextEpisode?: { episode_number: number; air_date: string } | null;
   inProduction?: boolean;
 }
@@ -99,7 +101,12 @@ export default function AiringProgressCard({ entry }: AiringProgressCardProps) {
 
   return (
     <div className="airing-card" style={{ display: 'grid', gridTemplateRows: 'auto 1fr', gap: '0' }}>
-      <Link href={`/titles/${slug}`} style={{ display: 'block', overflow: 'hidden' }}>
+      <Link href={`/titles/${slug}`} style={{ display: 'block', overflow: 'hidden', position: 'relative' }}>
+        <StatusBubble
+          status={entry.productionStatus}
+          mediaType={entry.type}
+          size="md"
+        />
         {entry.imagePath ? (
           <img
             src={`https://image.tmdb.org/t/p/w300${entry.imagePath}`}

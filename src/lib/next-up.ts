@@ -7,6 +7,7 @@ export interface NextUpItem {
   slug: string;
   type: 'MOVIE' | 'TV_SEASON';
   posterPath: string | null;
+  productionStatus?: string | null;
   nextEpisodeNumber?: number;
   totalEpisodes?: number;
   currentProgress?: number;
@@ -93,6 +94,7 @@ export async function getNextUpItems(
         slug: `tv-${series.parentTmdbId ?? series.tmdbId}-s${series.seasonNumber ?? 1}`,
         type: 'TV_SEASON',
         posterPath: series.imagePath,
+        productionStatus: series.productionStatus,
         nextEpisodeNumber: currentProgress + 1,
         totalEpisodes: total,
         currentProgress,
@@ -134,6 +136,7 @@ export async function getNextUpItems(
         slug: `tv-${series.parentTmdbId ?? series.tmdbId}-s${series.seasonNumber ?? 1}`,
         type: 'TV_SEASON',
         posterPath: series.imagePath,
+        productionStatus: series.productionStatus,
         nextEpisodeNumber: currentProgress + 1,
         totalEpisodes: total,
         currentProgress,
@@ -169,6 +172,7 @@ export async function getNextUpItems(
       slug: `movie-${movie.tmdbId}`,
       type: 'MOVIE',
       posterPath: movie.imagePath,
+      productionStatus: movie.productionStatus,
       reason: 'quick_movie',
       priority: 3,
       score: movie.score ?? undefined,
@@ -200,6 +204,7 @@ export async function getNextUpItems(
       slug: `movie-${movie.tmdbId}`,
       type: 'MOVIE',
       posterPath: movie.imagePath,
+      productionStatus: movie.productionStatus,
       reason: 'quick_movie',
       priority: 2,
       score: movie.score ?? undefined,
