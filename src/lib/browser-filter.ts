@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { normalizeProductionStatus, type MediaKind, type ProductionStatus } from '@/lib/production-status';
+import { titlePageSeasonStatus } from '@/lib/tmdb-status';
 
 const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
@@ -15,6 +16,7 @@ export interface BrowserMediaItem {
   posterPath?: string | null;
   backdropPath?: string | null;
   productionStatus: ProductionStatus;
+  seasonStatus?: string | null;
   releaseDate?: string | null;
   overview?: string | null;
   popularity?: number | null;
@@ -90,6 +92,8 @@ async function hydrateTv(show: any): Promise<BrowserMediaItem | null> {
 
   const seasonNumber = latest?.season_number ?? 1;
   const productionStatus = normalizeProductionStatus(details.status, 'tv', details.in_production);
+  const seasonDetails = await fetchTmdb(`/tv/${show.id}/season/${seasonNumber}`).catch(() => null);
+  const seasonStatus = titlePageSeasonStatus(seasonDetails?.episodes ?? null);
 
   const seasonSummaries = seasons
     .filter((season: { season_number?: number }) => (season.season_number ?? 0) > 0)
@@ -113,6 +117,7 @@ async function hydrateTv(show: any): Promise<BrowserMediaItem | null> {
     posterPath: latest?.poster_path || details.poster_path || show.poster_path || null,
     backdropPath: details.backdrop_path || show.backdrop_path || null,
     productionStatus,
+    seasonStatus,
     releaseDate: latest?.air_date || details.first_air_date || null,
     overview: latest?.overview || details.overview || show.overview || null,
     popularity: details.popularity ?? show.popularity ?? null,

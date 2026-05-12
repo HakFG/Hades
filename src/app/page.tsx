@@ -4,9 +4,12 @@ import Link from 'next/link';
 import { getOrdinal } from '@/lib/utils';
 import { getNextUpItems } from '@/lib/next-up';
 import { entryStatusToBubbleStatus } from '@/lib/series-status';
+import { titlePageSeasonStatus } from '@/lib/tmdb-status';
+import { productionStatusToDisplayStatus } from '@/lib/series-status';
 import NextUpCard from '@/components/NextUpCard';
 import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
+import StatusBubble from '@/components/StatusBubble';
 
 // ─── Skeleton (mantido igual) ────────────────────────────────────────────────
 
@@ -125,16 +128,21 @@ async function getHomeData() {
   const popularPromises = trendingData.results.slice(0, 6).map(async (item: any) => {
     const detailRes = await fetch(
       `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}`,
-      { next: { revalidate: 7200 } }
+      { cache: 'no-store' }
     );
     const detail = await detailRes.json();
     const lastSeason = detail?.seasons?.[detail.seasons.length - 1] || null;
     const seasonNumber = lastSeason?.season_number ?? 1;
+    const seasonDetail = await fetch(
+      `https://api.themoviedb.org/3/tv/${item.id}/season/${seasonNumber}?api_key=${apiKey}&language=en-US`,
+      { cache: 'no-store' }
+    ).then(r => r.ok ? r.json() : null).catch(() => null);
     return {
       id: item.id, showId: item.id,
       name: `${item.name}${lastSeason && seasonNumber > 1 ? ' ' + getOrdinal(seasonNumber) + ' Season' : ''}`,
       poster: lastSeason?.poster_path || item.poster_path,
       seasonNumber, slug: buildSeasonSlug(item.id, seasonNumber),
+      bubbleStatus: titlePageSeasonStatus(seasonDetail?.episodes ?? null),
     };
   });
 
@@ -169,7 +177,7 @@ async function getHomeData() {
     for (const id of movieChanges.results.slice(0, 10).map((c: any) => c.id)) {
       try {
         const d = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${apiKey}`, { next: { revalidate: 3600 } }).then(r => r.json());
-        if (d && !d.status_code && d.poster_path) recentlyAddedItems.push({ id: `movie-${d.id}`, tmdbId: d.id, name: d.title, type: 'movie', releaseDate: d.release_date, poster_path: d.poster_path, slug: buildMovieSlug(d.id), addedAt: new Date().toISOString() });
+        if (d && !d.status_code && d.poster_path) recentlyAddedItems.push({ id: `movie-${d.id}`, tmdbId: d.id, name: d.title, type: 'movie', releaseDate: d.release_date, poster_path: d.poster_path, slug: buildMovieSlug(d.id), addedAt: new Date().toISOString(), bubbleStatus: productionStatusToDisplayStatus(d.status) });
       } catch {}
     }
   }
@@ -178,7 +186,8 @@ async function getHomeData() {
       try {
         const d = await fetch(`https://api.themoviedb.org/3/tv/${id}?api_key=${apiKey}`, { next: { revalidate: 3600 } }).then(r => r.json());
         if (d && !d.status_code && d.poster_path && d.seasons) {
-          recentlyAddedItems.push({ id: `tv-${d.id}`, tmdbId: d.id, name: `${d.name} Season 1`, type: 'tv', releaseDate: d.first_air_date, poster_path: d.poster_path, seasonNumber: 1, slug: buildSeasonSlug(d.id, 1), addedAt: new Date().toISOString() });
+          const s1 = await fetch(`https://api.themoviedb.org/3/tv/${d.id}/season/1?api_key=${apiKey}&language=en-US`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+          recentlyAddedItems.push({ id: `tv-${d.id}`, tmdbId: d.id, name: `${d.name} Season 1`, type: 'tv', releaseDate: d.first_air_date, poster_path: d.poster_path, seasonNumber: 1, slug: buildSeasonSlug(d.id, 1), addedAt: new Date().toISOString(), bubbleStatus: titlePageSeasonStatus(s1?.episodes ?? null) });
         }
       } catch {}
     }
@@ -188,9 +197,11 @@ async function getHomeData() {
     fetch(`https://api.themoviedb.org/3/tv/latest?api_key=${apiKey}`, { next: { revalidate: 3600 } }).then(r => r.json()),
   ]);
   if (latestMovies?.id && latestMovies.poster_path && !recentlyAddedItems.some(i => i.id === `movie-${latestMovies.id}`))
-    recentlyAddedItems.push({ id: `movie-${latestMovies.id}`, tmdbId: latestMovies.id, name: latestMovies.title, type: 'movie', releaseDate: latestMovies.release_date, poster_path: latestMovies.poster_path, slug: buildMovieSlug(latestMovies.id), addedAt: new Date().toISOString() });
-  if (latestTV?.id && latestTV.poster_path && latestTV.seasons && !recentlyAddedItems.some(i => i.id === `tv-${latestTV.id}`))
-    recentlyAddedItems.push({ id: `tv-${latestTV.id}`, tmdbId: latestTV.id, name: `${latestTV.name} Season 1`, type: 'tv', releaseDate: latestTV.first_air_date, poster_path: latestTV.poster_path, seasonNumber: 1, slug: buildSeasonSlug(latestTV.id, 1), addedAt: new Date().toISOString() });
+    recentlyAddedItems.push({ id: `movie-${latestMovies.id}`, tmdbId: latestMovies.id, name: latestMovies.title, type: 'movie', releaseDate: latestMovies.release_date, poster_path: latestMovies.poster_path, slug: buildMovieSlug(latestMovies.id), addedAt: new Date().toISOString(), bubbleStatus: productionStatusToDisplayStatus(latestMovies.status) });
+  if (latestTV?.id && latestTV.poster_path && latestTV.seasons && !recentlyAddedItems.some(i => i.id === `tv-${latestTV.id}`)) {
+    const s1 = await fetch(`https://api.themoviedb.org/3/tv/${latestTV.id}/season/1?api_key=${apiKey}&language=en-US`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+    recentlyAddedItems.push({ id: `tv-${latestTV.id}`, tmdbId: latestTV.id, name: `${latestTV.name} Season 1`, type: 'tv', releaseDate: latestTV.first_air_date, poster_path: latestTV.poster_path, seasonNumber: 1, slug: buildSeasonSlug(latestTV.id, 1), addedAt: new Date().toISOString(), bubbleStatus: titlePageSeasonStatus(s1?.episodes ?? null) });
+  }
 
   const newlyAdded = recentlyAddedItems.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()).slice(0, 6);
 
@@ -538,6 +549,7 @@ async function HomePageContent() {
               }}>
                 {popular.map((item: any) => (
                   <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
+                    <StatusBubble status={item.bubbleStatus} size="md" />
                     <img src={`https://image.tmdb.org/t/p/w300${item.poster}`} alt={item.name} loading="lazy" />
                     <div className="cover-overlay" />
                     <div className="cover-title">{item.name}</div>
@@ -659,6 +671,7 @@ async function HomePageContent() {
                 {newlyAdded.length > 0 ? (
                   newlyAdded.map((item: any) => (
                     <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
+                      <StatusBubble status={item.bubbleStatus} size="sm" />
                       <img src={`https://image.tmdb.org/t/p/w300${item.poster_path}`} alt={item.name} loading="lazy" />
                       <div className="cover-overlay" />
                       <div className="cover-title">{item.name}</div>

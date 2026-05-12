@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { awardXP, type AwardXPResult } from '@/lib/gamification';
-import { entryStatusToBubbleStatus } from '@/lib/series-status';
+import { getLiveBubbleStatusWithFallback } from '@/lib/tmdb-status';
 
 // Helper para converter string de data para Date ou null
 function parseDate(dateStr: string | null | undefined): Date | null {
@@ -199,7 +199,7 @@ export async function PATCH(
     // Normaliza datas para YYYY-MM-DD antes de retornar ao front-end
     const formatted = {
       ...entry,
-      seasonStatus: entryStatusToBubbleStatus(entry),
+      seasonStatus: await getLiveBubbleStatusWithFallback(entry),
       startDate: entry.startDate
         ? (entry.startDate as Date).toISOString().split('T')[0]
         : null,

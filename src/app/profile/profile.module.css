@@ -606,6 +606,7 @@
   border-radius: 3px;
   overflow: hidden;
   display: block;
+  position: relative;
 }
 
 .activityThumbImg {

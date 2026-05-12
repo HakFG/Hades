@@ -1224,7 +1224,7 @@ function activityDescription(a: ActivityLog): string {
   return `Updated`;
 }
 
-function ActivityItemEntry({ activity, onDelete }: { activity: ActivityLog; onDelete: (id: string) => void }) {
+function ActivityItemEntry({ activity, entry, onDelete }: { activity: ActivityLog; entry?: Entry; onDelete: (id: string) => void }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
@@ -1233,6 +1233,7 @@ function ActivityItemEntry({ activity, onDelete }: { activity: ActivityLog; onDe
       className={styles.activityItem}
     >
       <Link href={`/titles/${activity.slug}`} className={styles.activityThumb}>
+        {entry && <StatusBubble status={entryStatusToBubbleStatus(entry)} size="sm" />}
         <div
           className={styles.activityThumbImg}
           style={{
@@ -1296,6 +1297,7 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
             <div className={styles.favGrid}>
               {favSeries.slice(0, 6).map(e => (
                 <Link key={e.id} href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
+                  <StatusBubble status={entryStatusToBubbleStatus(e)} size="sm" />
                   <div
                     className={styles.favPosterImg}
                     style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
@@ -1316,6 +1318,7 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
             <div className={styles.favGrid}>
               {favFilms.slice(0, 6).map(e => (
                 <Link key={e.id} href={`/titles/${entrySlug(e)}`} className={styles.favPoster}>
+                  <StatusBubble status={entryStatusToBubbleStatus(e)} size="sm" />
                   <div
                     className={styles.favPosterImg}
                     style={{ backgroundImage: imgUrl(e.imagePath) ? `url(${imgUrl(e.imagePath)})` : undefined }}
@@ -1388,7 +1391,7 @@ function OverviewTab({ entries, onEdit, onToggleFav, onUpdateProgress, activityL
             <div className={styles.activityEmpty}>No activity yet.</div>
           ) : (
             visibleActivities.map(a => (
-              <ActivityItemEntry key={a.id} activity={a} onDelete={onDeleteActivity} />
+              <ActivityItemEntry key={a.id} activity={a} entry={entries.find(e => e.id === a.entryId)} onDelete={onDeleteActivity} />
             ))
           )}
           {hasMore && (
@@ -1449,8 +1452,14 @@ function ProfileContent() {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') silentRefresh();
     };
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') silentRefresh();
+    }, 30000);
     document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [silentRefresh]);
 
   const pushActivity = useCallback(async (entry: Entry) => {

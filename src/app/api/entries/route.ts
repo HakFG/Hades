@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { entryStatusToBubbleStatus } from '@/lib/series-status';
+import { getLiveBubbleStatusWithFallback } from '@/lib/tmdb-status';
 
 // GET /api/entries - Buscar todas as entries do usuário
 export async function GET(request: Request) {
@@ -35,8 +35,8 @@ export async function GET(request: Request) {
       orderBy: { updatedAt: 'desc' },
     });
     // Garante que datas sejam strings ISO ou null
-    const serialized = entries.map(entry => {
-      const seasonStatus = entryStatusToBubbleStatus(entry);
+    const serialized = await Promise.all(entries.map(async entry => {
+      const seasonStatus = await getLiveBubbleStatusWithFallback(entry);
 
       return {
         ...entry,
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
         createdAt: entry.createdAt.toISOString(),
         updatedAt: entry.updatedAt.toISOString(),
       };
-    });
+    }));
     return NextResponse.json(serialized);
   } catch (error) {
     console.error('[GET /api/entries] Erro:', error);

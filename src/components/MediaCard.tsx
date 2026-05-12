@@ -25,7 +25,7 @@ export default function MediaCard({
   const target  = href ?? `/titles/${item.linkSlug}`;
   const poster  = item.posterPath ? `https://image.tmdb.org/t/p/w300${item.posterPath}` : '';
   // Prefere seasonStatus explícito, fallback para productionStatus armazenado
-  const dotStatus = seasonStatus ?? item.productionStatus ?? null;
+  const dotStatus = seasonStatus ?? item.seasonStatus ?? item.productionStatus ?? null;
 
   return (
     <div className="media-card-wrap">

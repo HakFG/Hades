@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { RichRoleCard } from '@/app/api/staff/[id]/route';
 import { posterUrl }         from '@/lib/staff';
+import StatusBubble from '@/components/StatusBubble';
 import styles from '@/app/staff/staff.module.css';
 
 export function StaffRolesSection({
@@ -25,6 +26,7 @@ export function StaffRolesSection({
               className={styles.roleCardWrapper}
             >
               <div className={styles.roleCardPoster}>
+                <StatusBubble status={c.bubbleStatus} size="md" />
                 {src ? (
                   <img src={src} alt={c.title} loading="lazy" />
                 ) : (

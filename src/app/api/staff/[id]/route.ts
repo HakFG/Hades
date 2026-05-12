@@ -7,6 +7,7 @@ import {
   type TmdbCombinedCreditItem,
   type TmdbPersonRaw,
 } from '@/lib/staff';
+import { getLiveBubbleStatusWithFallback } from '@/lib/tmdb-status';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,7 @@ export type RichRoleCard = {
   inList:      boolean;
   listTmdbId:  number | null; // tmdbId do entry no DB (para link direto)
   seasonNumber?: number; // Número da temporada (para séries)
+  bubbleStatus?: string | null;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -110,6 +112,42 @@ function toRichCards(
   });
 }
 
+async function withLiveBubbleStatus(cards: RichRoleCard[]): Promise<RichRoleCard[]> {
+  return Promise.all(cards.map(async (card) => {
+    const tv = card.titleSlug.match(/^tv-(\d+)-s(\d+)$/);
+    const movie = card.titleSlug.match(/^movie-(\d+)$/);
+
+    if (tv) {
+      const showId = Number(tv[1]);
+      const seasonNumber = Number(tv[2]);
+      return {
+        ...card,
+        bubbleStatus: await getLiveBubbleStatusWithFallback({
+          type: 'TV_SEASON',
+          tmdbId: showId,
+          parentTmdbId: showId,
+          seasonNumber,
+          productionStatus: null,
+        }),
+      };
+    }
+
+    if (movie) {
+      const tmdbId = Number(movie[1]);
+      return {
+        ...card,
+        bubbleStatus: await getLiveBubbleStatusWithFallback({
+          type: 'MOVIE',
+          tmdbId,
+          productionStatus: null,
+        }),
+      };
+    }
+
+    return card;
+  }));
+}
+
 // ─── GET /api/staff/[id] ──────────────────────────────────────────────────────
 
 export async function GET(
@@ -187,10 +225,15 @@ export async function GET(
     base.yearsActive = formatYearsActive(cast, crew, person.deathday);
 
     // ── 5. Monta cards ───────────────────────────────────────────────────────
+    const [movies, tv] = await Promise.all([
+      withLiveBubbleStatus(toRichCards(cast, crew, 'movie', inListIds, tmdbIdToDbTmdbId)),
+      withLiveBubbleStatus(toRichCards(cast, crew, 'tv', inListIds, tmdbIdToDbTmdbId)),
+    ]);
+
     return NextResponse.json({
       person: base,
-      movies: toRichCards(cast, crew, 'movie', inListIds, tmdbIdToDbTmdbId),
-      tv:     toRichCards(cast, crew, 'tv',    inListIds, tmdbIdToDbTmdbId),
+      movies,
+      tv,
     });
 
   } catch (e: any) {

@@ -8,6 +8,7 @@ import StatusBubble from '@/components/StatusBubble';
 import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
 import { emitXPNotification } from '@/hooks/useXPNotification';
 import { normalizeProductionStatus } from '@/lib/production-status';
+import { titlePageSeasonStatus } from '@/lib/tmdb-status';
 
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const TMDB = 'https://api.themoviedb.org/3';
@@ -119,10 +120,17 @@ async function expandShow(show: RawShow, includeSpecials = false, onlyInProducti
     const inProduction: boolean = detail.in_production ?? false;
 
 
-    return seasons
-      .filter(s => includeSpecials || s.season_number > 0)
-      .map(s => {
-        const seasonStatus = resolveSeasonStatus(s, seasons, seriesStatus, inProduction);
+    const visibleSeasons = seasons.filter(s => includeSpecials || s.season_number > 0);
+
+    return Promise.all(visibleSeasons.map(async s => {
+        const seasonDetail = await fetch(
+          `${TMDB}/tv/${show.id}/season/${s.season_number}?api_key=${API_KEY}&language=en-US`,
+          { cache: 'no-store' }
+        ).then(r => r.ok ? r.json() : null).catch(() => null);
+        const seasonStatus = (
+          titlePageSeasonStatus(seasonDetail?.episodes ?? null)
+          ?? resolveSeasonStatus(s, seasons, seriesStatus, inProduction)
+        ) as MediaCard['seasonStatus'];
         return {
           tmdbId: s.id,
           parentTmdbId: show.id,
@@ -139,7 +147,7 @@ async function expandShow(show: RawShow, includeSpecials = false, onlyInProducti
           productionStatus: normalizeProductionStatus(seriesStatus, 'tv', inProduction),
           seasonStatus, // ← 'Airing' | 'Finished' | 'Not Yet Aired'
         };
-      });
+      }));
   } catch {
     return [];
   }
@@ -243,30 +251,21 @@ export default function SearchPage() {
           trendRes.json(), onAirRes.json(), allTimeRes.json(),
         ]);
 
-const expandLatest = async (shows: RawShow[], requireAiring: boolean) => {
+const expandLatest = async (shows: RawShow[]) => {
   const collected: MediaCard[] = [];
   for (const show of shows.slice(0, 20)) {
     if (collected.length >= 6) break;
-    // requireAiring=true → passa onlyInProduction=true (Trending e Popular Now)
-    // requireAiring=false → passa onlyInProduction=false (All Time Popular)
-    const seasons = await expandShow(show, false, requireAiring);
+    const seasons = await expandShow(show, false, false);
     if (!seasons.length) continue;
     const sorted = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
-    if (requireAiring) {
-      const airingSeasons = sorted.filter(s => s.seasonStatus === 'Airing');
-      if (airingSeasons.length === 0) continue;
-      collected.push({ ...airingSeasons[0], popularity: show.popularity });
-    } else {
-      // All Time: pega a temporada mais recente independente de status
-      collected.push({ ...sorted[0], popularity: show.popularity });
-    }
+    collected.push({ ...sorted[0], popularity: show.popularity });
   }
   return collected;
 };
 
-setTrending((await expandLatest(trendData.results ?? [], true)).sort(sortByPop));
-setPopularNow((await expandLatest(onAirData.results ?? [], true)).sort(sortByPop));
-setAllTimePopular((await expandLatest(allTimeData.results ?? [], false)).sort(sortByPop));
+setTrending((await expandLatest(trendData.results ?? [])).sort(sortByPop));
+setPopularNow((await expandLatest(onAirData.results ?? [])).sort(sortByPop));
+setAllTimePopular((await expandLatest(allTimeData.results ?? [])).sort(sortByPop));
       } else {
         // ✅ CORRIGIDO: todas com language=en-US
         const [trendRes, nowPlayingRes, allTimeRes] = await Promise.all([
