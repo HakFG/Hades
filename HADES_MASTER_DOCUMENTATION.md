@@ -1,7 +1,7 @@
 # HADES — Documentação Master Completa
 
-**Versão:** 3.0 (Mai 2026)  
-**Status:** Pronto para Implementação  
+**Versão:** 4.0 (Mai 2026)  
+**Status:** Em Desenvolvimento Ativo  
 **Última Atualização:** 12 de Maio de 2026
 
 ---
@@ -14,11 +14,11 @@ Hades é um aplicativo Next.js avançado para rastreamento de séries, filmes e 
 - ✅ Rastreamento completo de mídia (séries, filmes, documentários)
 - ✅ Sistema de gamificação com XP, níveis e desafios
 - ✅ Metas pessoais inteligentes com IA
-- ✅ Sincronização em tempo real com TMDB
-- ✅ Status visual com bolinhas de produção
+- ✅ Sincronização em tempo real com TMDB (Fase 1 — concluída)
+- ✅ Status visual com bolinhas de produção (Fase 2 — concluída e refinada)
 - ✅ Filtros avançados por status de produção
-- ✅ 100+ conquistas baseadas em comportamento do usuário
-- ✅ Sistema de temporadas com visibilidade condicional: UI reduzida fora das páginas de título
+- ✅ 100+ conquistas baseadas em comportamento do usuário (Fase 5 — concluída)
+- ✅ Sistema de temporadas com visibilidade condicional (Fase 4 — concluída)
 - ✅ Interface visual inspirada em AniList
 
 ---
@@ -46,48 +46,43 @@ Hades é um aplicativo Next.js avançado para rastreamento de séries, filmes e 
 
 ## 🧠 Status Atual do Projeto
 
-- Recentes alterações focadas em reduzir visualização de **temporadas** e **relações** em todo o frontend.
-- `relations` permanece visível apenas na página de `titles/[id]`; removido de listagens, cards e outras telas.
-- Season pills como “S18 eps S28 eps” foram removidas do modal de título e de cards de perfil.
-- Temporadas foram removidas de `src/components/MediaCard.tsx`, `AiringProgressCard.tsx`, `NextUpCard.tsx`, `src/app/profile/page.tsx` e `src/app/titles/[id]/page.tsx`.
-- Corrigido bug de sintaxe JSX em `src/app/titles/[id]/page.tsx` causado por comentário mal fechado.
-- Build validada com sucesso via `npm run build`.
+### Fases Concluídas
+
+- ✅ **Fase 1 — Sincronização TMDB**: `tmdb-sync.ts` implementado, agendador cron ativo, tabela `SyncLog` criada, rota `/api/sync` funcional.
+- ✅ **Fase 2 — Bolinhas de Status (StatusBubble)**: componente implementado em `src/components/StatusBubble.tsx`, integrado a todos os cards. **Refinamento aplicado em Mai/2026**: bolinha não renderiza para `Released` (filmes) e `Ended` (séries) — estados "normais" não precisam de indicador visual, igual ao sistema do AniList.
+- ✅ **Fase 4 — Sistema de Temporadas**: visibilidade de temporadas e relações reduzida no frontend. `relations` visível apenas em `titles/[id]`. Season pills removidas de profile, cards e modais. `ListEditor.tsx` revisado.
+- ✅ **Fase 5 — 100+ Conquistas**: `achievements.ts` expandido, `AchievementEngine` integrado às ações do usuário, UI de conquistas e toasts de desbloqueio implementados.
+
+### Alterações Recentes (Mai/2026)
+
+- `StatusBubble.tsx` refinado: adicionada lógica de `SILENT_STATUSES` — `Released` e `Ended` retornam `null`, sem renderizar bolinha. Comportamento inteligente idêntico ao AniList.
+- `StatusDot` removido de `src/app/profile/page.tsx` (`EntryCard`): bolinhas de watching/completed/paused/etc não existem mais nos cards do profile. A barra de cor no topo do card já indica o status de watch do usuário.
+- Import de `StatusDot` removido do `profile/page.tsx`.
 
 ### Pendências Imediatas
 
-- [ ] Revisar `src/components/ListEditor.tsx` para remover completamente os campos de temporada/episódio, se desejar.
-- [ ] Garantir que a adição/edição de título não renderize season pills ou controles de temporada indesejados.
-- [ ] Confirmar que o comportamento de `relations` permanece apenas no tab de detalhes de título.
-- [ ] Atualizar documentação de usuário e fluxos para refletir a nova visibilidade de temporadas.
+- [ ] Validar que `StatusDot` também foi removido de outros componentes que não sejam o profile (ex: `AiringProgressCard`, `NextUpCard`, `MediaCard`) caso esteja sendo usado.
+- [ ] Confirmar que o comportamento de `relations` permanece apenas no tab de detalhes de título após as últimas alterações.
+- [ ] Revisar se há uso residual de `StatusDot` em outros lugares do app que não fazem sentido após a mudança de escopo.
 
 ### Bugs Recentes
 
-- **Bug #2**: Malformed JSX comment em `src/app/titles/[id]/page.tsx` após remover season UI. Corrigido.
-- **Bug #3**: Possível UI residual de `season` / `episode` em `ListEditor.tsx` e modais de adicionar título. Necessita validação.
+- **Bug #2**: Malformed JSX comment em `src/app/titles/[id]/page.tsx` após remover season UI. ✅ Corrigido.
+- **Bug #3**: Possível UI residual de `season` / `episode` em `ListEditor.tsx` e modais de adicionar título. Necessita validação final.
 
 ### Notas Técnicas
 
-- A remoção de `SeasonSelector` e `TvSeasonNavClient` foi aplicada em todas as páginas de listagem/row.
-- A interface continua usando o modelo de `Entry` com campos de temporada, mas a renderização destes campos foi restringida conforme novo escopo.
+- `StatusBubble` usa `SILENT_STATUSES = new Set(['Released', 'Ended'])` — se o status normalizado estiver nesse set, o componente retorna `null`. Sem bolinha, sem espaço ocupado.
+- A barra de cor no topo do `EntryCard` (profile) continua existindo e indica o status de watch (`WATCHING`, `COMPLETED`, etc) via `STATUS_COLOR`. Esse é o único indicador de status de watch nos cards.
+- A camada de dados continua suportando temporada/episódio para evitar regressão no histórico de progresso.
 
 ### Estado Atual
 
 - `npm run build` passou sem erros.
-- As alterações estão implementadas no frontend, mas precisam de validação funcional completa em modais de edição e lista.
+- Fases 1, 2 (com refinamento), 4 e 5 concluídas.
+- Fases 3, 6, 7 e 8 pendentes.
 
-### Próximo Passo
-
-- Finalizar inspeção de `ListEditor.tsx` e ajustar a checklist de implementação para refletir a redução do sistema de temporadas.
-
-### Observação
-
-- Mesmo com a UI reduzida, a camada de dados ainda suporta temporada/episódio para evitar regressão em título e histórico de progresso.
-
-### Resultados
-
-- UX mais limpa para usuários que não querem season pills fora do contexto de título.
-- Relações continuam acessíveis apenas onde fazem sentido.
-
+---
 
 ### Tecnologias Principais
 
@@ -119,9 +114,9 @@ Build & Deploy:
 2. **Gamificação**: XP, níveis, badges e desafios diários
 3. **Metas Pessoais**: Defina e acompanhe metas com assistência de IA
 4. **Sincronização em Tempo Real**: Atualização automática de dados do TMDB
-5. **Status Visual**: Bolinhas indicando fase de produção
+5. **Status Visual**: Bolinhas de produção inteligentes (invisíveis para Released/Ended)
 6. **Filtros Inteligentes**: Filtragem por status de produção
-7. **Sistema de Temporadas**: Acompanhamento de temporadas em todo o site
+7. **Sistema de Temporadas**: Acompanhamento de temporadas restrito a páginas de título
 8. **Sistema de Favoritos**: Marque títulos e staff como favoritos
 9. **Backup/Restore**: Exporte e importe dados completos
 10. **Atividade**: Log de todas as interações
@@ -129,18 +124,6 @@ Build & Deploy:
 ---
 
 ## 🏗️ Arquitetura do Projeto
-
-### Visão Geral
-
-Hades é uma aplicação Next.js com App Router, usando React 19, TypeScript 6 e Prisma para a camada de dados. A arquitetura é dividida em:
-
-- `src/app/` — páginas, layouts e rotas de API
-- `src/components/` — componentes reutilizáveis de UI
-- `src/lib/` — lógica de negócio e integrações
-- `prisma/` — esquema e migrações de banco de dados
-- `public/` — assets estáticos
-
-A aplicação usa rotas do Next.js em estilo App Router para separar UI e backend, com `page.tsx` e `route.ts` em diretórios de rotas.
 
 ### Estrutura de Pastas Atual
 
@@ -160,7 +143,7 @@ hades/
 │   │   │   ├── entry/             (operações de título único)
 │   │   │   ├── gamification/      (XP, desafios, metas)
 │   │   │   ├── next-up/           (dados de próximo a assistir)
-│   │   │   ├── notifications/      (notificações do usuário)
+│   │   │   ├── notifications/     (notificações do usuário)
 │   │   │   ├── profile/           (perfil do usuário)
 │   │   │   ├── refresh-all/       (sincronização completa)
 │   │   │   ├── relations/         (relações entre títulos)
@@ -192,36 +175,36 @@ hades/
 │   │   ├── PersonalGoalsSection.tsx
 │   │   ├── ProductionFilterBar.tsx
 │   │   ├── SeasonSelector.tsx
-│   │   ├── StaffComponents/        (componentes de staff específicos)
-│   │   ├── StatusBubble.tsx
-│   │   ├── StatusDot.tsx
+│   │   ├── StaffComponents/
+│   │   ├── StatusBubble.tsx       ← bolinha de produção inteligente
+│   │   ├── StatusDot.tsx          ← NÃO usar em cards de profile/lista
 │   │   ├── TvSeasonNavClient.tsx
 │   │   ├── XPProgressBar.tsx
 │   │   ├── XPToastHost.tsx
 │   │   └── xp-progress.module.css
 │   └── lib/
-│       ├── achievements.ts        (conquistas e lógica de desbloqueio)
-│       ├── activity.ts            (registro de atividade)
-│       ├── browser-filter.ts      (lógica de filtragem do browser)
-│       ├── challenge-generator.ts (geração de desafios)
-│       ├── challenge-tracker.ts   (rastreio de progresso de desafios)
-│       ├── entry-poster-sync.ts   (sincronização de poster/títulos)
-│       ├── gamification.ts        (pontos e níveis)
-│       ├── level-system.ts        (sistema de níveis)
-│       ├── next-up.ts             (lógica de próximo a assistir)
-│       ├── notifications.ts       (notificações do usuário)
-│       ├── personal-goals.ts      (metas pessoais)
-│       ├── prisma.ts             (cliente Prisma)
-│       ├── production-status.ts   (status de produção e cores)
-│       ├── relations-manager.ts   (relações entre títulos)
-│       ├── seasons.ts            (lógica de temporadas)
-│       ├── staff.ts              (data layer de staff)
-│       ├── tmdb-airing.ts        (dados de exibição do TMDB)
-│       ├── tmdb-sync.ts          (sincronização com TMDB)
-│       ├── tmdb-titles.ts        (dados de títulos TMDB)
-│       ├── tmdb.ts               (integração básica com TMDB)
-│       ├── utils.ts              (utilitários diversos)
-│       └── xp-calculator.ts      (cálculo de XP e métricas)
+│       ├── achievements.ts
+│       ├── activity.ts
+│       ├── browser-filter.ts
+│       ├── challenge-generator.ts
+│       ├── challenge-tracker.ts
+│       ├── entry-poster-sync.ts
+│       ├── gamification.ts
+│       ├── level-system.ts
+│       ├── next-up.ts
+│       ├── notifications.ts
+│       ├── personal-goals.ts
+│       ├── prisma.ts
+│       ├── production-status.ts   ← cores e tipos de produção
+│       ├── relations-manager.ts
+│       ├── seasons.ts
+│       ├── staff.ts
+│       ├── tmdb-airing.ts
+│       ├── tmdb-sync.ts           ← sincronização com TMDB
+│       ├── tmdb-titles.ts
+│       ├── tmdb.ts
+│       ├── utils.ts
+│       └── xp-calculator.ts
 ├── package.json
 ├── tsconfig.json
 ├── next.config.ts
@@ -230,13 +213,6 @@ hades/
 ├── next-env.d.ts
 └── .env
 ```
-
-### Camadas da Aplicação
-
-- `src/app/` contém a camada de apresentação e as rotas de API do Next.js.
-- `src/components/` contém componentes reutilizáveis de interface, incluindo cards, modais, widgets e controls.
-- `src/lib/` contém regras de negócio, integração com TMDB, sincronização, gamificação, metas e gestão de dados.
-- `prisma/` contém modelo de dados, migrações e schema para PostgreSQL.
 
 ### Rotas de API Principais
 
@@ -256,19 +232,6 @@ hades/
 - `/api/sync` — sincronização manual TMDB
 - `/api/update-entry` — atualizar campos de entrada específicos
 
-### Páginas e Layouts
-
-- `src/app/page.tsx` — Home com overview, cards e atalhos
-- `src/app/profile/page.tsx` — perfil do usuário com progresso e metas
-- `src/app/search/page.tsx` — busca de títulos por nome
-- `src/app/browser/page.tsx` — navegação e filtragem de catálogo
-- `src/app/gamification/page.tsx` — painel de desafios, XP e conquistas
-- `src/app/staff/page.tsx` — lista de elenco/produção
-- `src/app/staff/[id]/page.tsx` — detalhes de staff
-- `src/app/titles/[id]/page.tsx` — detalhes de título, relações e histórico
-- `src/app/layout.tsx` — wrapper global e inicialização de providers
-- `src/app/globals.css` — estilos globais da aplicação
-
 ### Dependências e Ferramentas
 
 - `next` 16.2.4
@@ -280,8 +243,6 @@ hades/
 - `lucide-react` para ícones
 - `clsx` para composição condicional de classes
 - `isomorphic-fetch` para chamadas HTTP compatíveis cliente/servidor
-- `@types/*` para tipagens
-- `eslint` e `eslint-config-next` para linting
 
 ### Scripts Principais
 
@@ -291,189 +252,147 @@ hades/
 - `npm run lint` — executa ESLint
 - `postinstall` — `prisma generate`
 
-### Observações Arquiteturais
-
-- O App Router permite usar rotas de API e páginas dentro da mesma árvore de diretórios.
-- Os componentes de UI são separados de `src/lib/` para manter a lógica de negócio independente da renderização.
-- A sincronização TMDB foi implementada como `src/lib/tmdb-sync.ts` e exposta por `/api/sync`.
-- A arquitetura mantém suporte a temporadas e relações, mas a visibilidade dessas features foi ajustada para reduzir clutter fora de páginas de título.
-
 ---
-
 
 ## 🗄️ Banco de Dados
 
-### `prisma/schema.prisma` — Modelos de Dados
+### Schema Atual (`prisma/schema.prisma`)
 
-#### Modelos Principais
+O schema real implementado usa os seguintes modelos principais:
 
 ```prisma
-// Usuário e Perfil
-model Profile {
-  id            String   @id @default(cuid())
-  name          String
-  avatar        String?
-  banner        String?
-  bio           String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+enum MediaStatus {
+  WATCHING
+  COMPLETED
+  PAUSED
+  DROPPED
+  PLANNING
+  REWATCHING
+  UPCOMING
 }
 
-// Entrada de Mídia (Série, Filme, etc)
+enum MediaType {
+  MOVIE
+  TV_SEASON
+}
+
 model Entry {
-  id                  String   @id @default(cuid())
-  tmdbId              Int      @unique
-  type                String   // 'tv', 'movie', 'documentary'
-  title               String
-  slug                String   @unique
-  status              String   // 'WATCHING', 'COMPLETED', 'ON_HOLD', 'DROPPED', 'PLAN_TO_WATCH'
-  productionStatus    String   // 'Rumored', 'Planned', 'In Production', 'Post Production', 'Released', 'Canceled', 'Returning Series', 'Ended', 'Pilot'
-  
-  // Progresso de Séries
-  currentSeason       Int?
-  currentEpisode      Int?
-  totalSeasons        Int?
-  totalEpisodes       Int?
-  episodeRuntime      Int?
-  
-  // Avaliação e Notas
-  score               Int?     // 0-10
-  notes               String?
-  personalRating      Int?     // Rating pessoal 1-5 (stars)
-  
-  // Mídia
-  posterPath          String?
-  backdropPath        String?
-  logoPath            String?
-  
-  // Metadados TMDB
-  releaseDate         DateTime?
-  firstAirDate        DateTime?
-  lastAirDate         DateTime?
-  overview            String?
-  genres              String[] @default([])
-  networks            String[] @default([])
-  studios             String[] @default([])
-  languages           String[] @default([])
-  
-  // Flags
-  isFavorite          Boolean  @default(false)
-  isHidden            Boolean  @default(false)
-  hasNewEpisodes      Boolean  @default(false)
-  
-  // Timestamps
-  addedAt             DateTime @default(now())
-  lastUpdated         DateTime @updatedAt
-  lastSyncedAt        DateTime? // Última sincronização com TMDB
-  
-  // Relações
-  relations           Relation[]
-  activities          ActivityLog[]
-  goals               PersonalGoal[]
+  id             String      @id @default(cuid())
+  tmdbId         Int         @unique
+  parentTmdbId   Int?
+  seasonNumber   Int?
+  title          String
+  type           MediaType
+  status         MediaStatus @default(PLANNING)
+  score          Float       @default(0)
+  progress       Int         @default(0)
+  totalEpisodes  Int?
+  totalSeasons   Int?
+  episodeRuntime Int?
+
+  startDate    DateTime?
+  finishDate   DateTime?
+  rewatchCount Int       @default(0)
+
+  synopsis         String?   @db.Text
+  releaseDate      String?
+  endDate          String?
+  lastAirDate      String?
+  format           String?
+  rating           Float?
+  popularity       Float?
+  imagePath        String?
+  bannerPath       String?
+  logoPath         String?
+  customImage      String?
+  genres           String?
+  studio           String?
+  networks         String?
+  languages        String?
+  staff            Json?
+  productionStatus String    @default("Released")
+  lastSyncedAt     DateTime?
+
+  notes          String? @db.Text
+  private        Boolean @default(false)
+  hidden         Boolean @default(false)
+  hasNewEpisodes Boolean @default(false)
+
+  isFavorite   Boolean @default(false)
+  favoriteRank Int?
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  relationsFrom Relation[] @relation("SourceRelations")
+  relationsTo   Relation[] @relation("TargetRelations")
+  seasons       Season[]
+  episodes      Episode[]
+  syncLogs      SyncLog[]
 }
 
-// Relações entre Mídia
-model Relation {
-  id              String @id @default(cuid())
-  source          Entry  @relation("RelationSource", fields: [sourceId], references: [id])
-  sourceId        String
-  target          Entry  @relation("RelationTarget", fields: [targetId], references: [id])
-  targetId        String
-  relationType    String // 'prequel', 'sequel', 'spinoff', 'adaptation', 'based_on', 'related'
+model Profile {
+  id          String   @id @default("main")
+  username    String   @default("My Profile")
+  bio         String?
+  avatarUrl   String?
+  bannerUrl   String?
+  avatarColor String   @default("#3db4f2")
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
 }
 
-// Gamificação
-model UserGamification {
-  id            String   @id @default(cuid())
-  currentXP     Int      @default(0)
-  currentLevel  Int      @default(1)
-  totalXPEarned Int      @default(0)
-  badges        String[] @default([])
-  streak        Int      @default(0)
-}
-
-// Desafios
-model UserChallenge {
-  id              String   @id @default(cuid())
-  title           String
-  description     String?
-  type            String   // 'daily', 'weekly', 'monthly', 'custom'
-  target          Int
-  current         Int      @default(0)
-  xpReward        Int      @default(0)
-  badgeReward     String?
-  completed       Boolean  @default(false)
-  completedAt     DateTime?
-  expiresAt       DateTime
-  createdAt       DateTime @default(now())
-}
-
-// Metas Pessoais
-model PersonalGoal {
-  id            String   @id @default(cuid())
-  entryId       String?
-  entry         Entry?   @relation(fields: [entryId], references: [id])
-  title         String
-  type          String   // 'watch', 'complete', 'collect', 'custom'
-  target        Int
-  current       Int      @default(0)
-  unit          String   // 'episodes', 'hours', 'titles', 'movies', etc
-  dueDate       DateTime?
-  xpReward      Int?
-  isPinned      Boolean  @default(false)
-  isCompleted   Boolean  @default(false)
-  completedAt   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-// Log de Atividade
-model ActivityLog {
+model SyncLog {
   id            String   @id @default(cuid())
   entryId       String
-  entry         Entry    @relation(fields: [entryId], references: [id])
-  action        String   // 'added', 'updated_status', 'updated_progress', 'marked_complete', 'rated', 'favorited'
-  details       String?
-  xpGained      Int?
-  createdAt     DateTime @default(now())
+  changedFields String[] @default([])
+  status        String
+  errorMessage  String?  @db.Text
+  syncedAt      DateTime @default(now())
+
+  entry Entry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 }
 
-// Sincronização de Dados
-model SyncLog {
-  id              String   @id @default(cuid())
-  entryId         String
-  changedFields   String[] // ['posterPath', 'title', 'releaseDate']
-  syncedAt        DateTime @default(now())
-  status          String   // 'success', 'partial', 'failed'
-  errorMessage    String?
+model Season {
+  id           String   @id @default(cuid())
+  entryId      String
+  tmdbId       Int?
+  parentTmdbId Int
+  seasonNumber Int
+  title        String
+  overview     String?  @db.Text
+  posterPath   String?
+  airDate      String?
+  episodeCount Int      @default(0)
+  status       String   @default("Unknown")
+
+  entry    Entry     @relation(...)
+  episodes Episode[]
+
+  @@unique([entryId, seasonNumber])
 }
-```
 
-#### Migrações Necessárias
+model Episode {
+  id            String    @id @default(cuid())
+  entryId       String
+  seasonId      String?
+  tmdbId        Int?
+  parentTmdbId  Int
+  seasonNumber  Int
+  episodeNumber Int
+  title         String
+  overview      String?   @db.Text
+  stillPath     String?
+  airDate       String?
+  runtime       Int?
+  watched       Boolean   @default(false)
+  watchedAt     DateTime?
 
-```
-// 1. Adicionar campos de produção status
-ALTER TABLE Entry ADD COLUMN productionStatus STRING DEFAULT 'Released';
+  entry  Entry   @relation(...)
+  season Season? @relation(...)
 
-// 2. Adicionar campo de sincronização
-ALTER TABLE Entry ADD COLUMN lastSyncedAt TIMESTAMP;
-
-// 3. Criar tabela SyncLog
-CREATE TABLE SyncLog (
-  id STRING PRIMARY KEY,
-  entryId STRING NOT NULL,
-  changedFields STRING[] DEFAULT array[]::text[],
-  syncedAt TIMESTAMP DEFAULT now(),
-  status STRING,
-  errorMessage STRING
-);
-
-// 4. Adicionar campos de temporadas
-ALTER TABLE Entry ADD COLUMN currentSeason INT;
-ALTER TABLE Entry ADD COLUMN currentEpisode INT;
-ALTER TABLE Entry ADD COLUMN totalSeasons INT;
-ALTER TABLE Entry ADD COLUMN totalEpisodes INT;
-ALTER TABLE Entry ADD COLUMN episodeRuntime INT;
+  @@unique([entryId, seasonNumber, episodeNumber])
+}
 ```
 
 ---
@@ -493,210 +412,174 @@ Sistema está completando automaticamente metas pessoais sem ação explícita d
 **Problema Raiz:**
 - `syncGoalProgress()` em `personal-goals.ts` está atualizando `current` com base em dados reais
 - Função não deve completar automaticamente, apenas sincronizar valor de progresso
-- Modal de edição pode estar salvando estado incorreto
 
 **Solução:**
 ```typescript
-// ❌ ERRADO
+// ✅ CORRETO — apenas sincronizar valor, nunca marcar como completo
 export async function syncGoalProgress(goalId: string) {
   const goal = await prisma.personalGoal.findUnique({ where: { id: goalId } })
-  
-  // Calcular progresso real
   const realProgress = await calculateRealProgress(goal)
-  
-  // ❌ NÃO fazer isso:
-  if (realProgress >= goal.target) {
-    await markGoalComplete(goalId) // CAUSA BUG
-  }
-}
 
-// ✅ CORRETO
-export async function syncGoalProgress(goalId: string) {
-  const goal = await prisma.personalGoal.findUnique({ where: { id: goalId } })
-  
-  // Calcular progresso real
-  const realProgress = await calculateRealProgress(goal)
-  
-  // ✅ Apenas sincronizar valor, não completar
   await prisma.personalGoal.update({
     where: { id: goalId },
     data: { current: realProgress }
+    // ❌ NUNCA chamar markGoalComplete() aqui
   })
 }
 ```
 
-**Testes Necessários:**
-- [ ] Criar meta pessoal
-- [ ] Sair da página
-- [ ] Voltar ao profile
-- [ ] Verificar se meta ainda está ativa (não concluída)
-- [ ] Completar meta manualmente
-- [ ] Verificar se marca como completada apenas ao clicar botão
+**Status:** ⚠️ Pendente de validação
+
+---
+
+### Bug #3: UI Residual de Temporada em ListEditor
+
+**Descrição:**
+Possível renderização de season pills ou controles de temporada/episódio no `ListEditor.tsx` e nos modais de adição de título.
+
+**Localização:**
+- `src/components/ListEditor.tsx`
+
+**Status:** ⚠️ Pendente de validação final
 
 ---
 
 ## 🎨 Sistema Visual - Bolinhas de Status
 
-### Production Status Bubble
+### Comportamento Inteligente (Estilo AniList)
 
-Um sistema de bolinhas coloridas indicando a fase de produção de cada título, visível em **TODOS os cards** do site.
+A `StatusBubble` segue o mesmo princípio do sistema de bolinhas do AniList: **só exibe bolinha para statuses que precisam de atenção ou indicam algo fora do estado padrão**. Títulos já lançados ou encerrados não recebem indicador visual — eles são a maioria e não precisam de destaque.
 
-#### Status de Filmes
+**Regra central:** `Released` (filmes) e `Ended` (séries) = sem bolinha. Qualquer outro status = bolinha colorida.
 
-| Status | Cor | Hex | Descrição |
-|--------|-----|-----|-----------|
-| 🔴 Rumored | Vermelho | `#ef4444` | Rumor de produção |
-| 🟠 Planned | Laranja | `#f97316` | Planejado |
-| 🟡 In Production | Amarelo | `#eab308` | Em produção |
-| 🟣 Post Production | Roxo | `#a855f7` | Pós-produção |
-| 🟢 Released | Verde | `#22c55e` | Lançado |
-| ⚫ Canceled | Cinza/Preto | `#6b7280` | Cancelado |
+### Tabela de Cores — Filmes
 
-#### Status de Séries
+| Status | Bolinha | Hex | Descrição |
+|--------|---------|-----|-----------|
+| Rumored | 🔴 Vermelho | `#ef4444` | Rumor de produção |
+| Planned | 🟠 Laranja | `#f97316` | Planejado |
+| In Production | 🟡 Amarelo | `#eab308` | Em produção |
+| Post Production | 🟣 Roxo | `#a855f7` | Pós-produção |
+| Released | _(sem bolinha)_ | — | Lançado — estado normal |
+| Canceled | ⚫ Cinza | `#6b7280` | Cancelado |
 
-| Status | Cor | Hex | Descrição |
-|--------|-----|-----|-----------|
-| 🔴 Planned | Vermelho | `#ef4444` | Planejada |
-| 🟠 In Production | Laranja | `#f97316` | Em produção |
-| 🟢 Returning Series | Verde | `#22c55e` | Retornando |
-| 🔵 Pilot | Azul | `#3b82f6` | Piloto |
-| ⚫ Ended | Cinza | `#6b7280` | Finalizada |
-| ⚫ Canceled | Preto | `#000000` | Cancelada |
+### Tabela de Cores — Séries
 
-### Componente StatusBubble
+| Status | Bolinha | Hex | Descrição |
+|--------|---------|-----|-----------|
+| Planned | 🔴 Vermelho | `#ef4444` | Planejada |
+| In Production | 🟠 Laranja | `#f97316` | Em produção |
+| Returning Series | 🟢 Verde | `#22c55e` | Retornando |
+| Pilot | 🔵 Azul | `#3b82f6` | Piloto |
+| Ended | _(sem bolinha)_ | — | Finalizada — estado normal |
+| Canceled | ⚫ Preto | `#000000` | Cancelada |
+
+### Componente `StatusBubble.tsx` (implementação atual)
 
 ```typescript
 // src/components/StatusBubble.tsx
 
-type MediaType = 'movie' | 'tv'
-type ProductionStatus = 
-  | 'Rumored' | 'Planned' | 'In Production' | 'Post Production' | 'Released' | 'Canceled'
-  | 'Returning Series' | 'Ended' | 'Pilot'
+import {
+  PRODUCTION_STATUS_COLORS,
+  type MediaKind,
+  type ProductionStatus,
+} from '@/lib/production-status';
 
-const PRODUCTION_COLORS: Record<ProductionStatus, string> = {
-  // Filmes
-  'Rumored': '#ef4444',
-  'Planned': '#f97316',
-  'In Production': '#eab308',
-  'Post Production': '#a855f7',
-  'Released': '#22c55e',
-  'Canceled': '#6b7280',
-  
-  // Séries
-  'Returning Series': '#22c55e',
-  'Ended': '#6b7280',
-  'Pilot': '#3b82f6',
-}
+// Statuses que NÃO exibem bolinha — são o estado "normal" de cada tipo
+const SILENT_STATUSES = new Set<string>(['Released', 'Ended']);
 
 interface StatusBubbleProps {
-  status: ProductionStatus
-  mediaType: MediaType
-  size?: 'sm' | 'md' | 'lg'
+  status?: ProductionStatus | string | null;
+  mediaType?: MediaKind | 'MOVIE' | 'TV_SEASON';
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
 }
 
-export function StatusBubble({ status, mediaType, size = 'sm' }: StatusBubbleProps) {
-  const color = PRODUCTION_COLORS[status]
-  
-  const sizeMap = {
-    sm: { width: '8px', height: '8px', top: '4px', left: '4px' },
-    md: { width: '12px', height: '12px', top: '6px', left: '6px' },
-    lg: { width: '16px', height: '16px', top: '8px', left: '8px' },
-  }
-  
-  const dimensions = sizeMap[size]
-  
+const SIZE_MAP = {
+  sm: { size: 8,  offset: 5 },
+  md: { size: 12, offset: 7 },
+  lg: { size: 16, offset: 9 },
+};
+
+export default function StatusBubble({
+  status,
+  mediaType,
+  size = 'sm',
+  className,
+}: StatusBubbleProps) {
+  const normalized = (
+    status ||
+    (mediaType === 'MOVIE' || mediaType === 'movie' ? 'Released' : 'Ended')
+  ) as ProductionStatus;
+
+  // Released e Ended não renderizam bolinha
+  if (SILENT_STATUSES.has(normalized)) return null;
+
+  const color = PRODUCTION_STATUS_COLORS[normalized] ?? '#6b7280';
+  const dimensions = SIZE_MAP[size];
+
   return (
     <span
+      className={className}
+      title={normalized}
+      aria-label={`Production status: ${normalized}`}
       style={{
         position: 'absolute',
-        top: dimensions.top,
-        left: dimensions.left,
-        width: dimensions.width,
-        height: dimensions.height,
-        borderRadius: '50%',
+        top:    dimensions.offset,
+        left:   dimensions.offset,
+        width:  dimensions.size,
+        height: dimensions.size,
+        borderRadius:    '50%',
         backgroundColor: color,
-        border: '1px solid rgba(255,255,255,0.3)',
-        zIndex: 10,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        border:    '1px solid rgba(255,255,255,0.55)',
+        zIndex:    12,
+        boxShadow: '0 2px 8px rgba(0,0,0,0.45)',
         pointerEvents: 'none',
       }}
-      title={status}
     />
-  )
+  );
 }
 ```
 
 ### Integração em Cards
 
-```typescript
-// src/components/AiringProgressCard.tsx
-
-export function AiringProgressCard({ entry }: Props) {
-  return (
-    <div className="card-wrapper">
-      <div className="card-poster" style={{ position: 'relative' }}>
-        <StatusBubble 
-          status={entry.productionStatus}
-          mediaType={entry.type === 'tv' ? 'tv' : 'movie'}
-          size="md"
-        />
-        
-        <img src={entry.posterPath} alt={entry.title} />
-        
-        {/* Overlay no hover */}
-        <div className="card-overlay">
-          {/* Conteúdo */}
-        </div>
-      </div>
-      
-      <div className="card-info">
-        <p className="ep-label">Ep {entry.currentEpisode}</p>
-        <p className="time-label">{formatTimeUntilNext(entry)}</p>
-      </div>
-    </div>
-  )
-}
+`StatusBubble` é usado em todos os cards do site via:
+```tsx
+<StatusBubble
+  status={entry.productionStatus}
+  mediaType={entry.type}
+  size="sm"
+/>
 ```
+
+A bolinha fica no canto superior esquerdo do poster (`position: absolute`, `top/left: offset`). O card pai precisa de `position: relative`.
+
+### StatusDot — Uso Restrito
+
+`StatusDot` (bolinha de watching/completed/paused/etc) **NÃO deve ser usado em cards de listagem ou profile**. Foi removido de `profile/page.tsx`. A barra de cor no topo do `EntryCard` já cumpre essa função visualmente.
+
+`StatusDot` pode ser usado apenas onde fizer sentido contextual explícito (ex: badges específicos de gamificação).
 
 ---
 
 ## ⚡ Sistema de Sincronização em Tempo Real
 
-### Visão Geral
-
-Sincronização automática de dados com TMDB sem interferir na experiência do usuário, utilizando pacotes gratuitos.
-
-### Tecnologias
-
-```json
-{
-  "dependencies": {
-    "node-cron": "^3.0.0",
-    "p-queue": "^4.3.2",
-    "isomorphic-fetch": "^3.0.0"
-  }
-}
-```
-
 ### Estratégia de Sincronização
 
 **Tipo 1: Sincronização Periódica (Background)**
-- Executada a cada 6 horas
+- Executada a cada 6 horas via `node-cron`
 - Atualiza todos os títulos cadastrados
-- Processa em fila com limite de 5 requisições paralelas
-- Não bloqueia a interface
+- Processa em fila com limite de 5 requisições paralelas (`p-queue`)
 
 **Tipo 2: Sincronização on-demand**
 - Usuário clica em "atualizar" manualmente
-- Sincroniza single title com TMDB
-- Resultado retorna em tempo real via API
+- Rota: `POST /api/sync/manual` com `{ entryId }`
 
 **Tipo 3: Sincronização ao adicionar título**
-- Quando usuário adiciona novo título
-- Busca dados iniciais completos do TMDB
+- Busca dados iniciais completos do TMDB ao criar entry
 - Salva com `lastSyncedAt`
 
-### Implementação
+### Implementação Principal
 
 ```typescript
 // src/lib/tmdb-sync.ts
@@ -708,181 +591,62 @@ import { fetchTMDBData } from './tmdb'
 
 const syncQueue = new PQueue({ concurrency: 5 })
 
-interface TMDBChanges {
-  title?: string
-  overview?: string
-  posterPath?: string
-  backdropPath?: string
-  releaseDate?: Date
-  firstAirDate?: Date
-  lastAirDate?: Date
-  genres?: string[]
-  networks?: string[]
-  productionStatus?: string
-  currentSeason?: number
-  totalSeasons?: number
-  totalEpisodes?: number
-  status?: string
-}
-
-export async function syncEntryWithTMDB(entryId: string): Promise<{
-  success: boolean
-  changedFields: string[]
-  error?: string
-}> {
+export async function syncEntryWithTMDB(entryId: string) {
   try {
     const entry = await prisma.entry.findUnique({ where: { id: entryId } })
     if (!entry) throw new Error('Entry not found')
-    
-    // Buscar dados atualizados do TMDB
+
     const tmdbData = await fetchTMDBData(entry.tmdbId, entry.type)
-    
-    // Comparar e identificar mudanças
-    const changes: TMDBChanges = {}
+    const changes: Record<string, unknown> = {}
     const changedFields: string[] = []
-    
+
     if (tmdbData.title !== entry.title) {
-      changes.title = tmdbData.title
-      changedFields.push('title')
+      changes.title = tmdbData.title; changedFields.push('title')
     }
-    
-    if (tmdbData.posterPath !== entry.posterPath) {
-      changes.posterPath = tmdbData.posterPath
-      changedFields.push('posterPath')
+    if (tmdbData.posterPath !== entry.imagePath) {
+      changes.imagePath = tmdbData.posterPath; changedFields.push('imagePath')
     }
-    
     if (tmdbData.productionStatus !== entry.productionStatus) {
       changes.productionStatus = tmdbData.productionStatus
       changedFields.push('productionStatus')
     }
-    
-    if (entry.type === 'tv') {
-      if (tmdbData.currentSeason !== entry.currentSeason) {
-        changes.currentSeason = tmdbData.currentSeason
-        changedFields.push('currentSeason')
-      }
-      if (tmdbData.totalEpisodes !== entry.totalEpisodes) {
-        changes.totalEpisodes = tmdbData.totalEpisodes
-        changedFields.push('totalEpisodes')
-      }
-    }
-    
-    // Se houver mudanças, atualizar
+
     if (changedFields.length > 0) {
       await prisma.entry.update({
         where: { id: entryId },
-        data: {
-          ...changes,
-          lastSyncedAt: new Date(),
-        }
+        data: { ...changes, lastSyncedAt: new Date() }
       })
-      
-      // Log de sincronização
       await prisma.syncLog.create({
-        data: {
-          entryId,
-          changedFields,
-          status: 'success',
-        }
+        data: { entryId, changedFields, status: 'success' }
       })
     } else {
-      // Nenhuma mudança, apenas atualizar timestamp
       await prisma.entry.update({
         where: { id: entryId },
         data: { lastSyncedAt: new Date() }
       })
     }
-    
+
     return { success: true, changedFields }
-  } catch (error) {
+  } catch (error: any) {
     await prisma.syncLog.create({
-      data: {
-        entryId,
-        status: 'failed',
-        errorMessage: error.message,
-      }
+      data: { entryId, status: 'failed', errorMessage: error.message }
     })
-    
     return { success: false, changedFields: [], error: error.message }
   }
 }
 
-// Sincronização em lote (background)
-export async function syncAllEntries(): Promise<void> {
-  try {
-    const entries = await prisma.entry.findMany({
-      select: { id: true, lastSyncedAt: true }
-    })
-    
-    // Sincronizar todos os títulos em fila
-    for (const entry of entries) {
-      syncQueue.add(() => syncEntryWithTMDB(entry.id))
-    }
-    
-    // Aguardar conclusão
-    await syncQueue.onIdle()
-    
-    console.log(`✅ Sincronização de ${entries.length} títulos concluída`)
-  } catch (error) {
-    console.error('❌ Erro na sincronização em lote:', error)
+export async function syncAllEntries() {
+  const entries = await prisma.entry.findMany({ select: { id: true } })
+  for (const entry of entries) {
+    syncQueue.add(() => syncEntryWithTMDB(entry.id))
   }
+  await syncQueue.onIdle()
 }
 
-// Agendador cron (executa a cada 6 horas)
-export function initSyncScheduler(): void {
-  // Sincronizar a cada 6 horas: 0, 6, 12, 18
+export function initSyncScheduler() {
   cron.schedule('0 */6 * * *', async () => {
-    console.log('🔄 Iniciando sincronização automática com TMDB...')
     await syncAllEntries()
   })
-  
-  console.log('📅 Agendador de sincronização ativado')
-}
-
-// Sincronização ao adicionar título
-export async function addEntryWithSync(tmdbId: number, type: 'tv' | 'movie'): Promise<string> {
-  // 1. Buscar dados do TMDB
-  const tmdbData = await fetchTMDBData(tmdbId, type)
-  
-  // 2. Criar entry
-  const entry = await prisma.entry.create({
-    data: {
-      tmdbId,
-      type,
-      title: tmdbData.title,
-      slug: generateSlug(tmdbData.title),
-      posterPath: tmdbData.posterPath,
-      backdropPath: tmdbData.backdropPath,
-      productionStatus: tmdbData.productionStatus,
-      genres: tmdbData.genres,
-      overview: tmdbData.overview,
-      status: 'PLAN_TO_WATCH',
-      lastSyncedAt: new Date(),
-      // ... outros campos
-    }
-  })
-  
-  return entry.id
-}
-```
-
-### API Route de Sincronização Manual
-
-```typescript
-// src/app/api/sync/manual/route.ts
-
-import { syncEntryWithTMDB } from '@/lib/tmdb-sync'
-
-export async function POST(request: Request) {
-  try {
-    const { entryId } = await request.json()
-    
-    const result = await syncEntryWithTMDB(entryId)
-    
-    return Response.json(result)
-  } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 })
-  }
 }
 ```
 
@@ -890,16 +654,10 @@ export async function POST(request: Request) {
 
 ```typescript
 // src/app/layout.tsx
-
 import { initSyncScheduler } from '@/lib/tmdb-sync'
 
-// Inicializar agendador (apenas servidor)
 if (typeof window === 'undefined') {
   initSyncScheduler()
-}
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // ...
 }
 ```
 
@@ -909,8 +667,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ### Cards de Mídia — Grid Responsivo
 
-#### Layout Desktop-First (5 Colunas)
-
 ```css
 .media-grid {
   display: grid;
@@ -919,241 +675,33 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   padding: 24px;
 }
 
-@media (max-width: 1400px) {
-  .media-grid { grid-template-columns: repeat(4, 1fr); }
-}
-
-@media (max-width: 1024px) {
-  .media-grid { grid-template-columns: repeat(3, 1fr); }
-}
-
-@media (max-width: 768px) {
-  .media-grid { grid-template-columns: repeat(2, 1fr); }
-}
-
-@media (max-width: 480px) {
-  .media-grid { grid-template-columns: 1fr; }
-}
+@media (max-width: 1400px) { .media-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 1024px) { .media-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 768px)  { .media-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .media-grid { grid-template-columns: 1fr; } }
 ```
 
-#### Card Individual
+### EntryCard — Profile (`profile/page.tsx`)
 
-```typescript
-// src/components/MediaCard.tsx
+Estrutura do card nos status de produção:
+- **Barra de cor no topo** (4px) indica o status de watch (`STATUS_COLOR[entry.status]`)
+- **StatusBubble** no canto superior esquerdo indica o production status (invisível para Released/Ended)
+- **Sem StatusDot** — removido. A barra de cor já cumpre essa função
 
-interface MediaCardProps {
-  entry: Entry
-  showStatus?: boolean
-  onHover?: () => void
-}
-
-export function MediaCard({ entry, showStatus = true }: MediaCardProps) {
-  const [showOverlay, setShowOverlay] = useState(false)
+```tsx
+// Estrutura do EntryCard (simplificada)
+<div style={{ position: 'relative', ... }}>
+  {/* Barra de status de watch */}
+  <div style={{ background: STATUS_COLOR[entry.status], height: '4px', ... }} />
   
-  return (
-    <div 
-      className="card-wrapper"
-      onMouseEnter={() => setShowOverlay(true)}
-      onMouseLeave={() => setShowOverlay(false)}
-    >
-      {/* Poster */}
-      <div className="card-poster" style={{ position: 'relative' }}>
-        {/* Production Status Bubble */}
-        {showStatus && (
-          <StatusBubble 
-            status={entry.productionStatus}
-            mediaType={entry.type === 'tv' ? 'tv' : 'movie'}
-          />
-        )}
-        
-        {/* Watch Status Dot */}
-        {entry.status === 'WATCHING' && (
-          <StatusDot status="watching" />
-        )}
-        {entry.status === 'PLAN_TO_WATCH' && (
-          <StatusDot status="upcoming" />
-        )}
-        
-        <img 
-          src={entry.posterPath} 
-          alt={entry.title}
-          className="card-poster-image"
-        />
-        
-        {/* Overlay no Hover */}
-        {showOverlay && (
-          <div className="card-overlay">
-            <div className="overlay-thumbnail">
-              <img src={entry.posterPath} alt={entry.title} />
-            </div>
-            
-            <p className="overlay-status">
-              {entry.type === 'tv' && entry.currentEpisode 
-                ? `Ep ${entry.currentEpisode}`
-                : 'Ready to Watch'}
-            </p>
-            
-            <h3 className="overlay-title">{entry.title}</h3>
-            
-            <div className="overlay-progress-bar">
-              <div 
-                className="progress-fill"
-                style={{
-                  width: `${(entry.currentEpisode / entry.totalEpisodes) * 100}%`
-                }}
-              />
-            </div>
-            
-            <p className="overlay-progress-text">
-              Progress: {entry.currentEpisode}/{entry.totalEpisodes}
-            </p>
-          </div>
-        )}
-      </div>
-      
-      {/* Info Abaixo do Poster */}
-      <div className="card-info">
-        <p className="card-title">{entry.title}</p>
-        {entry.type === 'tv' && entry.totalEpisodes && (
-          <p className="card-progress">
-            Ep {entry.currentEpisode}/{entry.totalEpisodes}
-          </p>
-        )}
-        {entry.score && (
-          <p className="card-score">⭐ {entry.score}/10</p>
-        )}
-      </div>
-    </div>
-  )
-}
-```
+  {/* Bolinha de production status (invisível para Released/Ended) */}
+  <StatusBubble status={entry.productionStatus} mediaType={entry.type} size="sm" />
 
-#### CSS Módulo
+  {/* Poster + overlay + progresso + score */}
+  <Link href={...}>...</Link>
 
-```css
-/* src/components/MediaCard.module.css */
-
-.card_wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.card_poster {
-  position: relative;
-  aspect-ratio: 2 / 3;
-  border-radius: 6px;
-  overflow: hidden;
-  cursor: pointer;
-  background: #1a1a1a;
-}
-
-.card_poster_image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: transform 0.3s ease;
-}
-
-.card_poster:hover .card_poster_image {
-  transform: scale(1.05);
-}
-
-.card_overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 12px;
-  gap: 6px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.card_poster:hover .card_overlay {
-  opacity: 1;
-}
-
-.overlay_thumbnail {
-  width: 40px;
-  height: 55px;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 4px;
-}
-
-.overlay_thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.overlay_status {
-  font-size: 12px;
-  font-weight: 600;
-  color: #ffffff;
-  margin: 0;
-}
-
-.overlay_title {
-  font-size: 13px;
-  color: #ffffff;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.overlay_progress_bar {
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.2);
-  overflow: hidden;
-}
-
-.progress_fill {
-  height: 100%;
-  background: #22c55e;
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
-
-.overlay_progress_text {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
-  margin: 0;
-}
-
-.card_info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.card_title {
-  font-size: 12px;
-  color: #c9d1d9;
-  font-weight: 500;
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.card_progress {
-  font-size: 11px;
-  color: #8b949e;
-  margin: 0;
-}
-
-.card_score {
-  font-size: 11px;
-  color: #ffd700;
-  margin: 0;
-}
+  {/* Botões de favorito e editar (visíveis no hover) */}
+</div>
 ```
 
 ---
@@ -1162,132 +710,36 @@ export function MediaCard({ entry, showStatus = true }: MediaCardProps) {
 
 ### Filtros por Status de Produção
 
-O novo sistema de filtros segue exatamente os statuses do TMDB:
-
-#### Filtros para Filmes
-
-```typescript
-type MovieProductionFilter = 
-  | 'All'
-  | 'Rumored'
-  | 'Planned'
-  | 'In Production'
-  | 'Post Production'
-  | 'Released'
-  | 'Canceled'
-```
-
-#### Filtros para Séries
-
-```typescript
-type SeriesProductionFilter =
-  | 'All'
-  | 'Returning Series'
-  | 'Planned'
-  | 'In Production'
-  | 'Ended'
-  | 'Canceled'
-  | 'Pilot'
-```
-
-### Componente de Filtros
-
 ```typescript
 // src/components/ProductionFilterBar.tsx
+
+const MOVIE_FILTERS = ['All', 'Rumored', 'Planned', 'In Production', 'Post Production', 'Released', 'Canceled']
+const TV_FILTERS    = ['All', 'Returning Series', 'Planned', 'In Production', 'Ended', 'Canceled', 'Pilot']
 
 interface FilterBarProps {
   mediaType: 'movie' | 'tv'
   selectedFilters: string[]
   onFilterChange: (filters: string[]) => void
 }
-
-const MOVIE_FILTERS = [
-  'All', 'Rumored', 'Planned', 'In Production', 
-  'Post Production', 'Released', 'Canceled'
-]
-
-const TV_FILTERS = [
-  'All', 'Returning Series', 'Planned', 'In Production',
-  'Ended', 'Canceled', 'Pilot'
-]
-
-export function ProductionFilterBar({ 
-  mediaType, 
-  selectedFilters, 
-  onFilterChange 
-}: FilterBarProps) {
-  const filters = mediaType === 'movie' ? MOVIE_FILTERS : TV_FILTERS
-  
-  const toggleFilter = (filter: string) => {
-    if (filter === 'All') {
-      onFilterChange(['All'])
-    } else {
-      const newFilters = selectedFilters.includes(filter)
-        ? selectedFilters.filter(f => f !== filter)
-        : [...selectedFilters.filter(f => f !== 'All'), filter]
-      
-      onFilterChange(newFilters.length === 0 ? ['All'] : newFilters)
-    }
-  }
-  
-  return (
-    <div className="filter-bar">
-      {filters.map(filter => (
-        <button
-          key={filter}
-          className={`filter-button ${
-            selectedFilters.includes(filter) ? 'active' : ''
-          }`}
-          onClick={() => toggleFilter(filter)}
-        >
-          <StatusBubble 
-            status={filter as any}
-            mediaType={mediaType}
-            size="sm"
-          />
-          <span>{filter}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
 ```
 
 ### Lógica de Filtragem
 
 ```typescript
-// src/lib/filter-engine.ts
+// src/lib/browser-filter.ts
 
-export async function filterEntriesByProduction(
-  entries: Entry[],
-  mediaType: 'movie' | 'tv',
-  statuses: string[]
-): Promise<Entry[]> {
-  if (statuses.includes('All') || statuses.length === 0) {
-    return entries.filter(e => e.type === (mediaType === 'movie' ? 'movie' : 'tv'))
-  }
-  
-  return entries.filter(
-    e => e.type === (mediaType === 'movie' ? 'movie' : 'tv') &&
-         statuses.includes(e.productionStatus)
-  )
-}
-
-// Usar em API routes e páginas
 export async function getFilteredEntries(
-  mediaType: 'movie' | 'tv',
+  mediaType: 'MOVIE' | 'TV_SEASON',
   statuses?: string[]
 ) {
-  const entries = await prisma.entry.findMany({
+  return prisma.entry.findMany({
     where: {
-      type: mediaType === 'movie' ? 'movie' : 'tv',
+      type: mediaType,
       ...(statuses && statuses.length > 0 && statuses[0] !== 'All'
         ? { productionStatus: { in: statuses } }
         : {})
     }
   })
-  
-  return entries
 }
 ```
 
@@ -1295,166 +747,44 @@ export async function getFilteredEntries(
 
 ## 📺 Sistema de Temporadas
 
-### Modelo de Dados Expandido
+### Visibilidade Condicional (Comportamento Atual)
+
+| Contexto | Temporadas | Relações |
+|----------|-----------|----------|
+| `titles/[id]/page.tsx` | ✅ Visível | ✅ Visível |
+| `profile/page.tsx` | ❌ Oculto | ❌ Oculto |
+| `browser/page.tsx` | ❌ Oculto | ❌ Oculto |
+| Cards / modais de lista | ❌ Oculto | ❌ Oculto |
+
+### Modelos no Banco
 
 ```prisma
 model Season {
-  id              String   @id @default(cuid())
-  entryId         String
-  entry           Entry    @relation(fields: [entryId], references: [id])
-  seasonNumber    Int
-  episodeCount    Int
-  airDate         DateTime?
-  overview        String?
-  posterPath      String?
-  
-  episodes        Episode[]
+  id, entryId, tmdbId, parentTmdbId, seasonNumber
+  title, overview, posterPath, airDate, episodeCount, status
+  episodes Episode[]
 }
 
 model Episode {
-  id              String   @id @default(cuid())
-  seasonId        String
-  season          Season   @relation(fields: [seasonId], references: [id])
-  episodeNumber   Int
-  title           String
-  overview        String?
-  airDate         DateTime?
-  runtime         Int?
-  stillPath       String?
-  watched         Boolean  @default(false)
+  id, entryId, seasonId, tmdbId, parentTmdbId
+  seasonNumber, episodeNumber, title, overview
+  stillPath, airDate, runtime, watched, watchedAt
 }
 ```
 
-### Componente de Seletor de Temporadas
-
-```typescript
-// src/components/SeasonSelector.tsx
-
-interface SeasonSelectorProps {
-  entry: Entry & { seasons: Season[] }
-  selectedSeason: number
-  onSeasonChange: (seasonNumber: number) => void
-}
-
-export function SeasonSelector({
-  entry,
-  selectedSeason,
-  onSeasonChange
-}: SeasonSelectorProps) {
-  return (
-    <div className="season-selector">
-      <label>Temporada:</label>
-      
-      <select
-        value={selectedSeason}
-        onChange={(e) => onSeasonChange(parseInt(e.target.value))}
-      >
-        {entry.seasons.map(season => (
-          <option key={season.id} value={season.seasonNumber}>
-            Temporada {season.seasonNumber}
-            {season.overview && ` - ${season.overview.substring(0, 50)}...`}
-          </option>
-        ))}
-      </select>
-      
-      <div className="season-info">
-        <p>{entry.seasons.find(s => s.seasonNumber === selectedSeason)?.episodeCount} episódios</p>
-      </div>
-    </div>
-  )
-}
-```
-
-### Grade de Episódios
-
-```typescript
-// src/components/EpisodeGrid.tsx
-
-interface EpisodeGridProps {
-  episodes: Episode[]
-  onEpisodeClick: (episode: Episode) => void
-}
-
-export function EpisodeGrid({ episodes, onEpisodeClick }: EpisodeGridProps) {
-  return (
-    <div className="episode-grid">
-      {episodes.map(episode => (
-        <div
-          key={episode.id}
-          className={`episode-card ${episode.watched ? 'watched' : ''}`}
-          onClick={() => onEpisodeClick(episode)}
-        >
-          {episode.stillPath ? (
-            <img src={episode.stillPath} alt={episode.title} />
-          ) : (
-            <div className="episode-placeholder">
-              <p>Ep {episode.episodeNumber}</p>
-            </div>
-          )}
-          
-          <div className="episode-info">
-            <h4>Ep {episode.episodeNumber}: {episode.title}</h4>
-            {episode.airDate && (
-              <p className="air-date">{formatDate(episode.airDate)}</p>
-            )}
-          </div>
-          
-          {episode.watched && <div className="watched-badge">✓</div>}
-        </div>
-      ))}
-    </div>
-  )
-}
-```
-
-### Integração em Páginas Principais
-
-```typescript
-// Incluir em: page.tsx, profile/page.tsx, browser/page.tsx, titles/[id]/page.tsx
-
-import { SeasonSelector } from '@/components/SeasonSelector'
-import { EpisodeGrid } from '@/components/EpisodeGrid'
-
-export default function MyMediaPage() {
-  const [selectedSeason, setSelectedSeason] = useState(1)
-  
-  const currentSeason = entry.seasons.find(s => s.seasonNumber === selectedSeason)
-  const episodes = currentSeason?.episodes || []
-  
-  return (
-    <div>
-      {/* ... outros conteúdos */}
-      
-      <div className="seasons-section">
-        <SeasonSelector 
-          entry={entry}
-          selectedSeason={selectedSeason}
-          onSeasonChange={setSelectedSeason}
-        />
-        
-        <EpisodeGrid 
-          episodes={episodes}
-          onEpisodeClick={handleEpisodeClick}
-        />
-      </div>
-    </div>
-  )
-}
-```
+A camada de dados continua completa para evitar regressão. Apenas a renderização foi restringida.
 
 ---
 
 ## 🏆 100+ Conquistas
 
-### Sistema de Conquistas Expandido
+### Sistema Implementado
 
-As conquistas são baseadas em ações do usuário em todo o site e fornecem XP, badges e reconhecimento.
+As conquistas são definidas em `src/lib/achievements.ts` e desbloqueadas pelo `AchievementEngine` integrado às ações do usuário.
 
 ```typescript
-// src/lib/achievements.ts
-
-export type AchievementType = 
-  | 'milestone' | 'streak' | 'collection' | 'rating' 
+export type AchievementType =
+  | 'milestone' | 'streak' | 'collection' | 'rating'
   | 'discovery' | 'social' | 'seasonal' | 'expert' | 'secret'
 
 interface Achievement {
@@ -1467,667 +797,17 @@ interface Achievement {
   requirement: (stats: UserStats) => boolean
   rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'
 }
-
-const ACHIEVEMENTS: Achievement[] = [
-  // ========== MILESTONE ACHIEVEMENTS ==========
-  {
-    id: 'first-entry',
-    name: '🎬 Início da Jornada',
-    description: 'Adicione seu primeiro título à lista',
-    icon: '🎬',
-    category: 'milestone',
-    xpReward: 10,
-    requirement: (stats) => stats.totalEntries >= 1,
-    rarity: 'common',
-  },
-  {
-    id: 'ten-entries',
-    name: '📺 Cineasta',
-    description: 'Adicione 10 títulos à lista',
-    icon: '📺',
-    category: 'milestone',
-    xpReward: 50,
-    requirement: (stats) => stats.totalEntries >= 10,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'fifty-entries',
-    name: '🎞️ Crítico de Cinema',
-    description: 'Rastreie 50 títulos diferentes',
-    icon: '🎞️',
-    category: 'milestone',
-    xpReward: 150,
-    requirement: (stats) => stats.totalEntries >= 50,
-    rarity: 'rare',
-  },
-  {
-    id: 'hundred-entries',
-    name: '🎥 Historiador da Mídia',
-    description: 'Rastreie 100 títulos diferentes',
-    icon: '🎥',
-    category: 'milestone',
-    xpReward: 300,
-    requirement: (stats) => stats.totalEntries >= 100,
-    rarity: 'epic',
-  },
-  
-  // ========== STREAK ACHIEVEMENTS ==========
-  {
-    id: 'week-streak',
-    name: '🔥 Semana Quente',
-    description: 'Mantenha uma streak de 7 dias',
-    icon: '🔥',
-    category: 'streak',
-    xpReward: 75,
-    requirement: (stats) => stats.currentStreak >= 7,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'month-streak',
-    name: '🌟 Um Mês de Fogo',
-    description: 'Mantenha uma streak de 30 dias',
-    icon: '🌟',
-    category: 'streak',
-    xpReward: 250,
-    requirement: (stats) => stats.currentStreak >= 30,
-    rarity: 'rare',
-  },
-  {
-    id: 'year-streak',
-    name: '👑 Lendário',
-    description: 'Mantenha uma streak de 365 dias',
-    icon: '👑',
-    category: 'streak',
-    xpReward: 1000,
-    requirement: (stats) => stats.currentStreak >= 365,
-    rarity: 'legendary',
-  },
-  
-  // ========== COLLECTION ACHIEVEMENTS ==========
-  {
-    id: 'anime-collector',
-    name: '🍣 Colecionador de Anime',
-    description: 'Adicione 20 animes à sua lista',
-    icon: '🍣',
-    category: 'collection',
-    xpReward: 100,
-    requirement: (stats) => stats.animeCount >= 20,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'all-genres',
-    name: '🎭 Cinéfilo Universal',
-    description: 'Assista títulos de todos os 10 gêneros principais',
-    icon: '🎭',
-    category: 'collection',
-    xpReward: 200,
-    requirement: (stats) => stats.uniqueGenres >= 10,
-    rarity: 'epic',
-  },
-  {
-    id: 'country-explorer',
-    name: '🌍 Explorador Global',
-    description: 'Assista títulos de 15 países diferentes',
-    icon: '🌍',
-    category: 'collection',
-    xpReward: 150,
-    requirement: (stats) => stats.countriesWatched >= 15,
-    rarity: 'rare',
-  },
-  {
-    id: 'complete-series',
-    name: '✅ Série Completa',
-    description: 'Complete uma série inteira (todas as temporadas)',
-    icon: '✅',
-    category: 'collection',
-    xpReward: 80,
-    requirement: (stats) => stats.completedSeries >= 1,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'trilogy-watcher',
-    name: '🎬 Trilogia Master',
-    description: 'Assista uma trilogia completa',
-    icon: '🎬',
-    category: 'collection',
-    xpReward: 90,
-    requirement: (stats) => stats.trilogiesCompleted >= 1,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'prequel-sequelmaster',
-    name: '🔗 Mestre de Relações',
-    description: 'Assista prequela e sequela de 5 títulos',
-    icon: '🔗',
-    category: 'collection',
-    xpReward: 120,
-    requirement: (stats) => stats.relatedTitlesWatched >= 5,
-    rarity: 'rare',
-  },
-  
-  // ========== RATING ACHIEVEMENTS ==========
-  {
-    id: 'first-review',
-    name: '📝 Crítico Amador',
-    description: 'Escreva sua primeira resenha',
-    icon: '📝',
-    category: 'rating',
-    xpReward: 15,
-    requirement: (stats) => stats.reviewsWritten >= 1,
-    rarity: 'common',
-  },
-  {
-    id: 'ten-reviews',
-    name: '📚 Crítico Profissional',
-    description: 'Escreva 10 resenhas',
-    icon: '📚',
-    category: 'rating',
-    xpReward: 100,
-    requirement: (stats) => stats.reviewsWritten >= 10,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'perfect-score',
-    name: '⭐ Favorito Perfeito',
-    description: 'Dê nota 10 para um título',
-    icon: '⭐',
-    category: 'rating',
-    xpReward: 50,
-    requirement: (stats) => stats.perfectScores >= 1,
-    rarity: 'rare',
-  },
-  {
-    id: 'critical-taste',
-    name: '🎯 Paladar Crítico',
-    description: 'Dê nota 1 a algum título',
-    icon: '🎯',
-    category: 'rating',
-    xpReward: 30,
-    requirement: (stats) => stats.lowScores >= 1,
-    rarity: 'uncommon',
-  },
-  
-  // ========== DISCOVERY ACHIEVEMENTS ==========
-  {
-    id: 'hidden-gem',
-    name: '💎 Joia Escondida',
-    description: 'Descubra um título com menos de 100 visualizações',
-    icon: '💎',
-    category: 'discovery',
-    xpReward: 75,
-    requirement: (stats) => stats.obscureTitlesFound >= 1,
-    rarity: 'rare',
-  },
-  {
-    id: 'trend-surfer',
-    name: '📈 Surfista de Tendências',
-    description: 'Assista um título antes de virar tendência',
-    icon: '📈',
-    category: 'discovery',
-    xpReward: 100,
-    requirement: (stats) => stats.trendingTitlesBeforeBoom >= 3,
-    rarity: 'rare',
-  },
-  {
-    id: 'imdb-explorer',
-    name: '🔍 Explorador Ousado',
-    description: 'Assista um título com menos de 5.0 de IMDB',
-    icon: '🔍',
-    category: 'discovery',
-    xpReward: 40,
-    requirement: (stats) => stats.lowRatedTitles >= 1,
-    rarity: 'uncommon',
-  },
-  
-  // ========== SEASONAL ACHIEVEMENTS ==========
-  {
-    id: 'spring-watcher',
-    name: '🌸 Primavera Animada',
-    description: 'Assista 5 títulos lançados na primavera',
-    icon: '🌸',
-    category: 'seasonal',
-    xpReward: 60,
-    requirement: (stats) => stats.springTitles >= 5,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'summer-marathon',
-    name: '☀️ Maratona de Verão',
-    description: 'Assista 10 títulos durante o verão',
-    icon: '☀️',
-    category: 'seasonal',
-    xpReward: 100,
-    requirement: (stats) => stats.summerTitles >= 10,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'fall-classic',
-    name: '🍂 Clássico do Outono',
-    description: 'Assista um clássico do cinema (lançado antes de 1990)',
-    icon: '🍂',
-    category: 'seasonal',
-    xpReward: 80,
-    requirement: (stats) => stats.classicTitles >= 1,
-    rarity: 'uncommon',
-  },
-  {
-    id: 'winter-holiday',
-    name: '❄️ Festas de Inverno',
-    description: 'Assista 5 filmes de férias/natalino',
-    icon: '❄️',
-    category: 'seasonal',
-    xpReward: 70,
-    requirement: (stats) => stats.holidayTitles >= 5,
-    rarity: 'uncommon',
-  },
-  
-  // ========== EXPERT ACHIEVEMENTS ==========
-  {
-    id: 'level-10',
-    name: '🚀 Nível 10',
-    description: 'Atinja nível 10 no sistema de gamificação',
-    icon: '🚀',
-    category: 'expert',
-    xpReward: 500,
-    requirement: (stats) => stats.currentLevel >= 10,
-    rarity: 'epic',
-  },
-  {
-    id: 'level-20',
-    name: '👾 Nível 20 - Mestre',
-    description: 'Atinja nível 20 - você é um mestre!',
-    icon: '👾',
-    category: 'expert',
-    xpReward: 1000,
-    requirement: (stats) => stats.currentLevel >= 20,
-    rarity: 'legendary',
-  },
-  {
-    id: 'challenge-master',
-    name: '🎯 Mestre de Desafios',
-    description: 'Complete 50 desafios',
-    icon: '🎯',
-    category: 'expert',
-    xpReward: 300,
-    requirement: (stats) => stats.challengesCompleted >= 50,
-    rarity: 'epic',
-  },
-  {
-    id: 'goal-crusher',
-    name: '💪 Destruidor de Metas',
-    description: 'Complete 20 metas pessoais',
-    icon: '💪',
-    category: 'expert',
-    xpReward: 250,
-    requirement: (stats) => stats.goalsCompleted >= 20,
-    rarity: 'rare',
-  },
-  {
-    id: 'xp-millionaire',
-    name: '💰 Milionário de XP',
-    description: 'Ganhe 1,000,000 de XP total',
-    icon: '💰',
-    category: 'expert',
-    xpReward: 2000,
-    requirement: (stats) => stats.totalXpEarned >= 1000000,
-    rarity: 'legendary',
-  },
-  
-  // ========== SECRET ACHIEVEMENTS ==========
-  {
-    id: 'easter-egg-1',
-    name: '🥚 Ovo de Páscoa #1',
-    description: 'Encontre um segredo especial...',
-    icon: '🥚',
-    category: 'secret',
-    xpReward: 150,
-    requirement: (stats) => stats.secretsFound >= 1,
-    rarity: 'epic',
-  },
-  {
-    id: 'midnight-watcher',
-    name: '🌙 Vigilante Noturno',
-    description: 'Use o app entre 00:00 e 04:00 por 10 vezes',
-    icon: '🌙',
-    category: 'secret',
-    xpReward: 100,
-    requirement: (stats) => stats.midnightSessions >= 10,
-    rarity: 'rare',
-  },
-  {
-    id: 'lucky-day',
-    name: '🍀 Dia de Sorte',
-    description: 'Complete um desafio em 13º dia do mês',
-    icon: '🍀',
-    category: 'secret',
-    xpReward: 50,
-    requirement: (stats) => stats.luckyDayChallenges >= 1,
-    rarity: 'uncommon',
-  },
-]
-
-// Total: 40 conquistas base - será expandido para 100+
 ```
 
-### Implementação de Desbloqueio
-
-```typescript
-// src/lib/achievement-engine.ts
-
-export async function checkAndUnlockAchievements(userId: string): Promise<string[]> {
-  const userStats = await getUserStats(userId)
-  const unlockedAchievements: string[] = []
-  
-  for (const achievement of ACHIEVEMENTS) {
-    const hasRequirement = achievement.requirement(userStats)
-    const alreadyUnlocked = await isAchievementUnlocked(userId, achievement.id)
-    
-    if (hasRequirement && !alreadyUnlocked) {
-      // Unlock achievement
-      await prisma.userAchievement.create({
-        data: {
-          userId,
-          achievementId: achievement.id,
-          unlockedAt: new Date(),
-        }
-      })
-      
-      // Award XP
-      await awardXP(userId, achievement.xpReward, `Conquista: ${achievement.name}`)
-      
-      unlockedAchievements.push(achievement.id)
-    }
-  }
-  
-  return unlockedAchievements
-}
-
-// Verificar ao executar ações
-export async function onUserAction(userId: string, action: 'entry_added' | 'challenge_completed' | 'goal_completed') {
-  const newAchievements = await checkAndUnlockAchievements(userId)
-  
-  if (newAchievements.length > 0) {
-    // Notificar usuário
-    for (const achievementId of newAchievements) {
-      const achievement = ACHIEVEMENTS.find(a => a.id === achievementId)!
-      await triggerAchievementNotification(userId, achievement)
-    }
-  }
-}
-```
+Desbloqueio automático ao atingir o `requirement`. Toast de notificação via `AchievementToast.tsx`.
 
 ---
 
 ## 🌐 Página de Browser Aprimorada
 
-### Visão Geral
+A página `/browser` exibe dados por padrão (sem necessidade de busca ativa) e suporta filtros de production status via `ProductionFilterBar`.
 
-A página de browser agora exibe **séries e filmes visíveis por padrão**, com clique redirecionando para página filtrada.
-
-### Novo Fluxo
-
-```
-[Browser Page]
-    ↓
-[Trending Movies] ← Grid 5 col, visível por padrão
-    ↓
-[Popular Movies] ← Grid 5 col, visível por padrão
-    ↓
-[Trending Series] ← Grid 5 col, visível por padrão
-    ↓
-[Upcoming Movies] ← Grid 5 col, visível por padrão
-    ↓
-[Popular Series] ← Grid 5 col, visível por padrão
-
-[Click on any card]
-    ↓
-[Filtered Results Page: /browser/[filter]?status=...]
-    ↓
-[Full list with filters applied]
-```
-
-### Componente Principal
-
-```typescript
-// src/app/browser/page.tsx
-
-'use client'
-
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { MediaCard } from '@/components/MediaCard'
-import { ProductionFilterBar } from '@/components/ProductionFilterBar'
-import { fetchTrendingMovies, fetchPopularMovies, fetchTrendingTV } from '@/lib/tmdb'
-
-export default function BrowserPage() {
-  const [trendingMovies, setTrendingMovies] = useState([])
-  const [popularMovies, setPopularMovies] = useState([])
-  const [trendingTV, setTrendingTV] = useState([])
-  const [upcomingMovies, setUpcomingMovies] = useState([])
-  const [popularTV, setPopularTV] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function loadData() {
-      setLoading(true)
-      try {
-        const [trending, popular, trendingTv, upcoming, popularTv] = await Promise.all([
-          fetchTrendingMovies(),
-          fetchPopularMovies(),
-          fetchTrendingTV(),
-          fetchUpcomingMovies(),
-          fetchPopularTV(),
-        ])
-        
-        setTrendingMovies(trending)
-        setPopularMovies(popular)
-        setTrendingTV(trendingTv)
-        setUpcomingMovies(upcoming)
-        setPopularTV(popularTv)
-      } catch (error) {
-        console.error('Erro ao carregar dados do browser:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    loadData()
-  }, [])
-
-  if (loading) {
-    return <div className="loader">Carregando...</div>
-  }
-
-  return (
-    <div className="browser-page">
-      <header className="browser-header">
-        <h1>Explorar Conteúdo</h1>
-        <p>Navegue por filmes e séries em tendência</p>
-      </header>
-
-      {/* Seção: Filmes em Tendência */}
-      <section className="browser-section">
-        <div className="section-header">
-          <h2>🔥 Filmes em Tendência</h2>
-          <Link href="/browser/trending-movies?type=movie" className="view-all">
-            Ver Todos →
-          </Link>
-        </div>
-        <div className="media-grid">
-          {trendingMovies.slice(0, 10).map(movie => (
-            <Link 
-              key={movie.id}
-              href={`/browser/trending-movies?type=movie&filter=all`}
-            >
-              <MediaCard entry={movie} showStatus />
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Seção: Filmes Populares */}
-      <section className="browser-section">
-        <div className="section-header">
-          <h2>⭐ Filmes Populares</h2>
-          <Link href="/browser/popular-movies?type=movie" className="view-all">
-            Ver Todos →
-          </Link>
-        </div>
-        <div className="media-grid">
-          {popularMovies.slice(0, 10).map(movie => (
-            <Link 
-              key={movie.id}
-              href={`/browser/popular-movies?type=movie&filter=all`}
-            >
-              <MediaCard entry={movie} showStatus />
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Seção: Séries em Tendência */}
-      <section className="browser-section">
-        <div className="section-header">
-          <h2>📺 Séries em Tendência</h2>
-          <Link href="/browser/trending-tv?type=tv" className="view-all">
-            Ver Todas →
-          </Link>
-        </div>
-        <div className="media-grid">
-          {trendingTV.slice(0, 10).map(series => (
-            <Link 
-              key={series.id}
-              href={`/browser/trending-tv?type=tv&filter=all`}
-            >
-              <MediaCard entry={series} showStatus />
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Seção: Filmes Próximos */}
-      <section className="browser-section">
-        <div className="section-header">
-          <h2>🗓️ Filmes em Breve</h2>
-          <Link href="/browser/upcoming-movies?type=movie" className="view-all">
-            Ver Todos →
-          </Link>
-        </div>
-        <div className="media-grid">
-          {upcomingMovies.slice(0, 10).map(movie => (
-            <Link 
-              key={movie.id}
-              href={`/browser/upcoming-movies?type=movie&filter=In%20Production,Post%20Production`}
-            >
-              <MediaCard entry={movie} showStatus />
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Seção: Séries Populares */}
-      <section className="browser-section">
-        <div className="section-header">
-          <h2>📻 Séries Populares</h2>
-          <Link href="/browser/popular-tv?type=tv" className="view-all">
-            Ver Todas →
-          </Link>
-        </div>
-        <div className="media-grid">
-          {popularTV.slice(0, 10).map(series => (
-            <Link 
-              key={series.id}
-              href={`/browser/popular-tv?type=tv&filter=all`}
-            >
-              <MediaCard entry={series} showStatus />
-            </Link>
-          ))}
-        </div>
-      </section>
-    </div>
-  )
-}
-```
-
-### Página Filtrada Dinâmica
-
-```typescript
-// src/app/browser/[filter]/page.tsx
-
-'use client'
-
-import { useSearchParams } from 'next/navigation'
-import { useState, useEffect } from 'react'
-import { MediaCard } from '@/components/MediaCard'
-import { ProductionFilterBar } from '@/components/ProductionFilterBar'
-import { getFilteredEntriesByBrowser } from '@/lib/browser-filter'
-
-interface Props {
-  params: { filter: string }
-}
-
-export default function FilteredBrowserPage({ params }: Props) {
-  const searchParams = useSearchParams()
-  const type = searchParams.get('type') as 'movie' | 'tv'
-  const statusFilters = searchParams.get('filter')?.split(',') || ['All']
-  
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [selectedFilters, setSelectedFilters] = useState<string[]>(statusFilters)
-
-  useEffect(() => {
-    async function loadFilteredResults() {
-      setLoading(true)
-      try {
-        const data = await getFilteredEntriesByBrowser(
-          type,
-          params.filter,
-          selectedFilters
-        )
-        setResults(data)
-      } catch (error) {
-        console.error('Erro ao carregar resultados filtrados:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    loadFilteredResults()
-  }, [type, params.filter, selectedFilters])
-
-  const handleFilterChange = (newFilters: string[]) => {
-    setSelectedFilters(newFilters)
-  }
-
-  return (
-    <div className="filtered-browser-page">
-      <header className="filter-header">
-        <h1>{params.filter.replace(/-/g, ' ')}</h1>
-        
-        <ProductionFilterBar 
-          mediaType={type}
-          selectedFilters={selectedFilters}
-          onFilterChange={handleFilterChange}
-        />
-      </header>
-
-      {loading ? (
-        <div className="loader">Carregando...</div>
-      ) : (
-        <div className="results-section">
-          <p className="result-count">{results.length} resultados encontrados</p>
-          
-          <div className="media-grid large">
-            {results.map(item => (
-              <MediaCard key={item.id} entry={item} showStatus />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-```
+Rota dinâmica `/browser/[filter]/page.tsx` aceita filtros pré-selecionados via URL.
 
 ---
 
@@ -2135,106 +815,99 @@ export default function FilteredBrowserPage({ params }: Props) {
 
 ### 1. Rastreamento de Mídia
 - Adicionar, editar, deletar títulos
-- Suporta séries, filmes e documentários
+- Suporta séries (`TV_SEASON`) e filmes (`MOVIE`)
 - Sincronização com TMDB para informações atualizadas
-- Status: Watching, Completed, On Hold, Dropped, Plan to Watch
+- Status: Watching, Completed, Paused, Dropped, Planning, Rewatching, Upcoming
 
 ### 2. Gamificação
 - Sistema de XP e níveis
 - Desafios diários, semanais e mensais
-- Badges e conquistas
+- Badges e conquistas (100+)
 - Streak tracking
 - Sistema de notificações
 
 ### 3. Metas Pessoais
 - Criar metas customizadas
-- Assistência de IA (Claude) para sugerir metas
+- Assistência de IA para sugerir metas
 - Progresso em tempo real
 - XP como recompensa
 - Deadlines e alertas
 
 ### 4. Atividade
 - Log de todas as interações
-- Histórico de mudanças
+- Histórico de mudanças com agrupamento de episódios consecutivos
 - Timeline de atividades
-- Export/import de atividades
 
 ### 5. Backup & Restore
 - Export completo do banco
 - Import de dados
-- Suporte a versiones anteriores
 - Recuperação de dados
 
 ### 6. Sistema de Relações
 - Prequelas e sequelas
-- Spinoffs
-- Adaptações
-- Títulos relacionados
+- Spinoffs, adaptações, títulos relacionados
+- Visível apenas em `titles/[id]`
 
 ### 7. Staff & Criadores
 - Busca de atores e criadores
 - Páginas de detalhe de staff
-- Histórico de obras
-- Favoritar staff
+- Histórico de obras e favoritar staff
 
 ### 8. Sistema de Favoritos
-- Marcar títulos como favoritos
+- Marcar títulos como favoritos com ranking
 - Marcar staff como favoritos
-- Listas personalizadas
-- Acessar rapidamente
+- Aba dedicada no profile
 
 ---
 
 ## ✅ Checklist de Implementação
 
-### Fase 1: Sistema de Sincronização (Semana 1-2)
-- [ ] Instalar `node-cron` e `p-queue`
-- [ ] Criar `src/lib/tmdb-sync.ts`
-- [ ] Criar tabela `SyncLog` no banco
-- [ ] Implementar agendador de sincronização
-- [ ] Criar rota API `/api/sync/manual`
-- [ ] Testes de sincronização
+### Fase 1: Sistema de Sincronização ✅ CONCLUÍDA
+- [x] Instalar `node-cron` e `p-queue`
+- [x] Criar `src/lib/tmdb-sync.ts`
+- [x] Criar tabela `SyncLog` no banco
+- [x] Implementar agendador de sincronização
+- [x] Criar rota API `/api/sync`
+- [x] Testes de sincronização
 
-### Fase 2: Bolinhas de Status (Semana 2-3)
-- [ ] Criar componente `StatusBubble.tsx`
-- [ ] Adicionar campo `productionStatus` a Entry
-- [ ] Integrar StatusBubble em todos os cards
-- [ ] Criar migração Prisma
-- [ ] Testes visuais em desktop, tablet, mobile
+### Fase 2: Bolinhas de Status ✅ CONCLUÍDA + REFINADA
+- [x] Criar componente `StatusBubble.tsx`
+- [x] Adicionar campo `productionStatus` a `Entry`
+- [x] Integrar `StatusBubble` em todos os cards
+- [x] Criar migração Prisma
+- [x] **Refinamento**: `Released` e `Ended` não renderizam bolinha (comportamento AniList)
+- [x] **Refinamento**: `StatusDot` removido de `profile/page.tsx` — barra de cor já indica status de watch
+- [ ] Validar que `StatusDot` foi removido de outros componentes de listagem onde não faz sentido
 
-### Fase 3: Sistema de Filtragem (Semana 3-4)
+### Fase 3: Sistema de Filtragem (pendente)
 - [ ] Criar `ProductionFilterBar.tsx`
-- [ ] Implementar lógica de filtros em `filter-engine.ts`
-- [ ] Atualizar `/api` routes para aceitar filtros
+- [ ] Implementar lógica de filtros em `browser-filter.ts`
+- [ ] Atualizar API routes para aceitar filtros
 - [ ] Integrar filtros em browser page
 - [ ] Testes de filtros
 
-### Fase 4: Sistema de Temporadas (Semana 4-5)
-- [ ] Revisar visibilidade de temporada e relação no frontend
-- [ ] Remover season pills de profile, cards e modal de título
-- [ ] Ajustar `ListEditor.tsx` para não exibir campos de temporada/episódio indesejados
-- [ ] Manter `relations` visíveis apenas em `titles/[id]`
-- [ ] Validar que a remoção de UI não quebrou layout nem funcionalidades
-- [ ] Testes de regressão para profile, browser e titles
-- [ ] Atualizar documentação de usuário com comportamento atual de temporada
+### Fase 4: Sistema de Temporadas ✅ CONCLUÍDA
+- [x] Revisar visibilidade de temporada e relação no frontend
+- [x] Remover season pills de profile, cards e modal de título
+- [x] Manter `relations` visíveis apenas em `titles/[id]`
+- [x] Validar que a remoção de UI não quebrou layout nem funcionalidades
+- [ ] Revisão final de `ListEditor.tsx` (Bug #3 — pendente de validação)
 
-### Fase 5: 100+ Conquistas (Semana 5-6)
-- [ ] Expandir `achievements.ts` para 100+ conquistas
-- [ ] Criar `AchievementEngine` para checking
-- [ ] Integrar em todas as ações do usuário
-- [ ] Criar UI de visualização de conquistas
-- [ ] Toasts de desbloqueio
-- [ ] Testes
+### Fase 5: 100+ Conquistas ✅ CONCLUÍDA
+- [x] Expandir `achievements.ts` para 100+ conquistas
+- [x] Criar `AchievementEngine` para checking
+- [x] Integrar em todas as ações do usuário
+- [x] Criar UI de visualização de conquistas
+- [x] Toasts de desbloqueio
 
-### Fase 6: Browser Aprimorado (Semana 6-7)
+### Fase 6: Browser Aprimorado (pendente)
 - [ ] Refatorar `/browser/page.tsx` para exibir dados por padrão
 - [ ] Criar `/browser/[filter]/page.tsx` dinâmica
-- [ ] Implementar filtros de produção status
+- [ ] Implementar filtros de production status
 - [ ] Links entre páginas
-- [ ] Testes de navegação
-- [ ] Otimização de performance
+- [ ] Testes de navegação e otimização de performance
 
-### Fase 7: Melhorias Visuais (Semana 7-8)
+### Fase 7: Melhorias Visuais (pendente)
 - [ ] Atualizar `AiringProgressCard.tsx` com novo layout
 - [ ] Atualizar `NextUpCard.tsx`
 - [ ] Criar `MediaCard.module.css`
@@ -2242,13 +915,13 @@ export default function FilteredBrowserPage({ params }: Props) {
 - [ ] Responsividade (5 col → 4 col → 3 col → 2 col → 1 col)
 - [ ] Testes em múltiplos breakpoints
 
-### Fase 8: QA & Otimização (Semana 8-9)
+### Fase 8: QA & Otimização (pendente)
 - [ ] Testes integrais de todas as features
 - [ ] Performance profiling
 - [ ] Otimização de queries
 - [ ] Cache estratégico
-- [ ] Bug fixes
-- [ ] Documentação
+- [ ] Bug fixes (Bug #1 e Bug #3)
+- [ ] Documentação final
 
 ---
 
@@ -2258,30 +931,30 @@ export default function FilteredBrowserPage({ params }: Props) {
 ┌─────────────────────────────────────────────────────────────┐
 │                        Cliente (React)                      │
 ├─────────────────────────────────────────────────────────────┤
-│  Page (page.tsx)  Profile  Browser  Gamification  Staff    │
-│        ↓              ↓        ↓          ↓         ↓       │
-│  Components (Cards, Modals, Forms, etc)                    │
-│        ↓              ↓        ↓          ↓         ↓       │
+│  page.tsx  Profile  Browser  Gamification  Staff  Titles   │
+│        ↓       ↓        ↓          ↓         ↓       ↓     │
+│  Components (Cards, Modals, StatusBubble, Forms, etc)      │
 └───────────────────────────────────────────────────────────┬─┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                    Next.js API Routes                       │
 ├─────────────────────────────────────────────────────────────┤
-│  /api/entries    /api/gamification   /api/sync    /api/staff
-│      ↓                 ↓                  ↓            ↓
-│   entries            XP/goals      TMDB Sync      staff data
+│  /api/entries   /api/gamification   /api/sync   /api/staff │
+│      ↓                 ↓                ↓            ↓     │
+│   entries            XP/goals      TMDB Sync    staff data │
 └────────────┬─────────────────────────────────────────────┬──┘
              ↓                                              ↓
        ┌──────────────────────────────────────────────────┐
        │           Camada de Lógica (src/lib)             │
        ├──────────────────────────────────────────────────┤
-       │ tmdb.ts  gamification.ts  personal-goals.ts  ... │
+       │ tmdb-sync.ts  gamification.ts  achievements.ts   │
+       │ production-status.ts  personal-goals.ts  ...     │
        └────────────────┬───────────────────────────┬─────┘
                         ↓                           ↓
        ┌──────────────────────────────────────────────────┐
        │            Prisma ORM + PostgreSQL               │
        ├──────────────────────────────────────────────────┤
-       │  Entry  Profile  UserGamification  PersonalGoal │
+       │  Entry  Profile  UserGamification  PersonalGoal  │
        │  Season  Episode  SyncLog  ActivityLog           │
        └──────────────────────────────────────────────────┘
                         ↓
@@ -2309,8 +982,8 @@ DATABASE_URL=postgresql://user:password@localhost:5432/hades
 ### Setup Inicial
 
 ```bash
-# 1. Instalar dependências (incluindo novas)
-npm install node-cron p-queue
+# 1. Instalar dependências
+npm install
 
 # 2. Configurar banco de dados
 npx prisma migrate deploy
@@ -2328,15 +1001,16 @@ npm run dev
 
 ## 📝 Notas Importantes
 
-1. **Sincronização**: Sistema automático a cada 6 horas + manual on-demand
-2. **Bolinhas**: Visíveis em TODOS os cards do site, corner superior esquerdo
-3. **Performance**: Fila de sincronização com max 5 requisições paralelas
-4. **Conquistas**: Desbloqueadas automaticamente ao atingir requirement
-5. **Browser**: Dados visíveis por padrão, click redireciona para filtrado
-6. **Seasons**: Sistema de temporadas com visibilidade condicional — removido de profile, browser e cards; mantido apenas nas páginas de título quando aplicável.
+1. **Bolinhas**: `StatusBubble` é inteligente — não renderiza para `Released` e `Ended`. Apenas statuses relevantes exibem indicador visual.
+2. **StatusDot**: removido dos cards de listagem/profile. Não deve ser reintroduzido. A barra de cor no topo do card indica o status de watch.
+3. **Sincronização**: automática a cada 6 horas + manual on-demand via `/api/sync`.
+4. **Performance**: fila de sincronização com max 5 requisições paralelas.
+5. **Conquistas**: desbloqueadas automaticamente ao atingir o requirement, com toast de notificação.
+6. **Temporadas**: dados completos no banco, mas renderização restrita à página `titles/[id]`.
+7. **Relations**: visível apenas em `titles/[id]`, nunca em cards ou listagens.
 
 ---
 
-**Documento Supremo Criado:** 12 de Maio de 2026  
-**Versão Final:** 3.0  
-**Status:** ✅ Pronto para Desenvolvimento
+**Versão:** 4.0  
+**Última Atualização:** 12 de Maio de 2026  
+**Status:** ✅ Fases 1, 2, 4, 5 concluídas — Fases 3, 6, 7, 8 pendentes

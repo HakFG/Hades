@@ -495,9 +495,9 @@ function MediaCardComponent({ item }: { item: MediaCard }) {
 onMouseLeave={() => setHoveredCard(null)}
           >
             <StatusBubble
-              status={item.productionStatus}
-              mediaType={item.type}
+              status={item.seasonStatus ?? null}
               size="sm"
+              position="tl"
             />
             {item.poster_path ? (
               <img

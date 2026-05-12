@@ -2,39 +2,42 @@
 
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
-import StatusDot from '@/components/StatusDot';
 import type { BrowserMediaItem } from '@/lib/browser-filter';
 
 interface MediaCardProps {
   item: BrowserMediaItem;
   href?: string;
   showStatus?: boolean;
-  /** Status da lista do usuário (WATCHING, UPCOMING, …) — exibe StatusDot. */
-  listStatus?: string | null;
+  /**
+   * Status real de exibição da temporada/série:
+   * "Airing" | "Not Yet Aired" | "Finished" | "Returning Series" | …
+   * Quando não fornecido, usa item.productionStatus (fallback do banco).
+   */
+  seasonStatus?: string | null;
 }
 
 export default function MediaCard({
   item,
   href,
   showStatus = true,
-  listStatus = null,
+  seasonStatus,
 }: MediaCardProps) {
-  const target = href ?? `/titles/${item.linkSlug}`;
-  const poster = item.posterPath ? `https://image.tmdb.org/t/p/w300${item.posterPath}` : '';
+  const target  = href ?? `/titles/${item.linkSlug}`;
+  const poster  = item.posterPath ? `https://image.tmdb.org/t/p/w300${item.posterPath}` : '';
+  // Prefere seasonStatus explícito, fallback para productionStatus armazenado
+  const dotStatus = seasonStatus ?? item.productionStatus ?? null;
 
   return (
     <div className="media-card-wrap">
       <Link href={target} className="media-card">
         <div className="poster">
           {showStatus && (
-            <StatusBubble
-              status={item.productionStatus}
-              mediaType={item.type === 'MOVIE' ? 'movie' : 'tv'}
-              size="md"
-            />
+            <StatusBubble status={dotStatus} size="md" position="tl" />
           )}
-          {showStatus && listStatus ? <StatusDot status={listStatus} size="md" position="br" /> : null}
-          {poster ? <img src={poster} alt={item.title} loading="lazy" /> : <div className="placeholder" />}
+          {poster
+            ? <img src={poster} alt={item.title} loading="lazy" />
+            : <div className="placeholder" />
+          }
           <div className="overlay">
             <strong>{item.productionStatus}</strong>
             {item.releaseDate && <span>{item.releaseDate.split('-')[0]}</span>}
@@ -42,8 +45,6 @@ export default function MediaCard({
         </div>
         <p>{item.title}</p>
       </Link>
-
-
 
       <style jsx>{`
         .media-card-wrap {

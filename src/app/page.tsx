@@ -6,7 +6,6 @@ import { getNextUpItems } from '@/lib/next-up';
 import NextUpCard from '@/components/NextUpCard';
 import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
-import StatusBubble from '@/components/StatusBubble';
 
 // ─── Skeleton (mantido igual) ────────────────────────────────────────────────
 
@@ -500,7 +499,6 @@ async function HomePageContent() {
               }}>
                 {popular.map((item: any) => (
                   <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
-                    <StatusBubble status="Returning Series" mediaType="tv" size="sm" />
                     <img src={`https://image.tmdb.org/t/p/w300${item.poster}`} alt={item.name} loading="lazy" />
                     <div className="cover-overlay" />
                     <div className="cover-title">{item.name}</div>
@@ -622,7 +620,6 @@ async function HomePageContent() {
                 {newlyAdded.length > 0 ? (
                   newlyAdded.map((item: any) => (
                     <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
-                      <StatusBubble status={item.type === 'movie' ? 'Released' : 'Returning Series'} mediaType={item.type === 'movie' ? 'movie' : 'tv'} size="sm" />
                       <img src={`https://image.tmdb.org/t/p/w300${item.poster_path}`} alt={item.name} loading="lazy" />
                       <div className="cover-overlay" />
                       <div className="cover-title">{item.name}</div>

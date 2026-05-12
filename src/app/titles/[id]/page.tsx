@@ -3,11 +3,11 @@ import { recordActivity } from '@/lib/activity';
 import { useState, useEffect, use, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
-import StatusDot from '@/components/StatusDot';
 import { silentPersistPosterIfChanged } from '@/lib/entry-poster-sync';
 import { getOrdinal, buildSeasonTitle, formatScore, scoreColor, extractTmdbPosterPath } from '@/lib/utils';
 import { emitXPNotification } from '@/hooks/useXPNotification';
 import { normalizeProductionStatus } from '@/lib/production-status';
+import { productionStatusToDisplayStatus } from '@/lib/series-status';
 import {
   fetchTitleData,
   getAutoRelations,
@@ -1848,8 +1848,11 @@ onClick={async () => {
 
             {/* Poster + botão de editar capa (aparece no hover) */}
             <div className="tp-poster-wrap" style={{position:'relative',marginBottom:8}}>
-              <StatusBubble status={productionStatus} mediaType={isTV ? 'tv' : 'movie'} size="lg" />
-              {entry?.status ? <StatusDot status={entry.status} size="lg" position="br" /> : null}
+              <StatusBubble
+                status={isTV ? (seasonStatus ?? productionStatusToDisplayStatus(productionStatus)) : productionStatusToDisplayStatus(productionStatus)}
+                size="lg"
+                position="tl"
+              />
               {poster
                 ?<img src={poster} style={{width:215,borderRadius:4,boxShadow:'0 6px 24px rgba(0,0,0,.5)',display:'block'}} alt="poster"/>
                 :<div style={{width:215,height:310,background:CARD,borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:13}}>Sem imagem</div>

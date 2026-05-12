@@ -1,62 +1,84 @@
-import {
-  PRODUCTION_STATUS_COLORS,
-  type MediaKind,
-  type ProductionStatus,
-} from '@/lib/production-status';
+'use client';
 
-// Statuses que NÃO exibem bolinha — são o estado "normal" de cada tipo
-const SILENT_STATUSES = new Set<string>(['Released', 'Ended']);
+import { resolveSeriesStatusDot } from '@/lib/series-status';
 
-interface StatusBubbleProps {
-  status?: ProductionStatus | string | null;
-  mediaType?: MediaKind | 'MOVIE' | 'TV_SEASON';
-  size?: 'sm' | 'md' | 'lg';
-  className?: string;
-}
+/**
+ * Bolinha de status da série/temporada baseada no status REAL de exibição:
+ *  - Airing          → verde pulsante
+ *  - Not Yet Aired   → laranja
+ *  - Returning Series→ azul
+ *  - In Production   → roxo
+ *  - Canceled        → cinza
+ *  - Finished / Ended / Released → SEM bolinha (null)
+ *
+ * Passa `status` como o `seasonStatus` (Airing | Finished | Not Yet Aired)
+ * ou como o `productionStatus` do banco (Returning Series, Ended, …).
+ * O componente resolve automaticamente qual cor mostrar (ou não mostrar).
+ */
 
 const SIZE_MAP = {
-  sm: { size: 8,  offset: 5 },
-  md: { size: 12, offset: 7 },
-  lg: { size: 16, offset: 9 },
+  sm: { size: 8,  offset: 5  },
+  md: { size: 11, offset: 6  },
+  lg: { size: 15, offset: 8  },
 };
+
+interface StatusBubbleProps {
+  status?: string | null;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+  /** Posição da bolinha. Padrão: top-left */
+  position?: 'tl' | 'tr' | 'bl' | 'br';
+}
 
 export default function StatusBubble({
   status,
-  mediaType,
   size = 'sm',
   className,
+  position = 'tl',
 }: StatusBubbleProps) {
-  // Determina o status normalizado
-  // Se não vier status, usa o padrão "silencioso" do tipo de mídia
-  const normalized = (
-    status ||
-    (mediaType === 'MOVIE' || mediaType === 'movie' ? 'Released' : 'Ended')
-  ) as ProductionStatus;
+  const cfg = resolveSeriesStatusDot(status);
+  if (!cfg) return null;
 
-  // Se for Released ou Ended, não renderiza nada
-  if (SILENT_STATUSES.has(normalized)) return null;
+  const dim = SIZE_MAP[size];
 
-  const color = PRODUCTION_STATUS_COLORS[normalized] ?? '#6b7280';
-  const dimensions = SIZE_MAP[size];
+  const posStyle =
+    position === 'tl' ? { top: dim.offset, left: dim.offset } :
+    position === 'tr' ? { top: dim.offset, right: dim.offset } :
+    position === 'bl' ? { bottom: dim.offset, left: dim.offset } :
+                        { bottom: dim.offset, right: dim.offset };
 
   return (
-    <span
-      className={className}
-      title={normalized}
-      aria-label={`Production status: ${normalized}`}
-      style={{
-        position: 'absolute',
-        top:    dimensions.offset,
-        left:   dimensions.offset,
-        width:  dimensions.size,
-        height: dimensions.size,
-        borderRadius:    '50%',
-        backgroundColor: color,
-        border:    '1px solid rgba(255,255,255,0.55)',
-        zIndex:    12,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.45)',
-        pointerEvents: 'none',
-      }}
-    />
+    <>
+      <span
+        className={`status-bubble-dot${cfg.pulse ? ' status-bubble-pulse' : ''}${className ? ` ${className}` : ''}`}
+        title={cfg.label}
+        aria-label={`Status: ${cfg.label}`}
+        style={{
+          position:        'absolute',
+          ...posStyle,
+          width:           dim.size,
+          height:          dim.size,
+          borderRadius:    '50%',
+          backgroundColor: cfg.color,
+          border:          '1.5px solid rgba(255,255,255,0.6)',
+          zIndex:          15,
+          boxShadow:       `0 2px 8px rgba(0,0,0,0.45), 0 0 6px ${cfg.color}66`,
+          pointerEvents:   'none',
+          display:         'block',
+        }}
+      />
+      {cfg.pulse && (
+        <style>{`
+          @keyframes status-bubble-pulse {
+            0%   { box-shadow: 0 0 0 0 ${cfg.color}88, 0 2px 8px rgba(0,0,0,0.45); }
+            70%  { box-shadow: 0 0 0 6px ${cfg.color}00, 0 2px 8px rgba(0,0,0,0.45); }
+            100% { box-shadow: 0 0 0 0 ${cfg.color}00, 0 2px 8px rgba(0,0,0,0.45); }
+          }
+          .status-bubble-pulse {
+            animation: status-bubble-pulse 2s infinite;
+          }
+        `}</style>
+      )}
+    </>
   );
 }

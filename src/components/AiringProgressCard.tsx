@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import StatusBubble from '@/components/StatusBubble';
-import StatusDot from '@/components/StatusDot';
 
 interface AiringProgressEntry {
   id: string;
@@ -17,6 +16,8 @@ interface AiringProgressEntry {
   totalEpisodes?: number | null;
   imagePath?: string | null;
   productionStatus?: string | null;
+  /** Status real de exibição: 'Airing' | 'Finished' | 'Not Yet Aired' | 'Returning Series' | … */
+  seasonStatus?: string | null;
   nextEpisode?: { episode_number: number; air_date: string } | null;
   inProduction?: boolean;
 }
@@ -111,11 +112,10 @@ export default function AiringProgressCard({ entry }: AiringProgressCardProps) {
       <Link href={`/titles/${slug}`} className="poster-link">
         <div className="poster">
           <StatusBubble
-            status={entry.productionStatus}
-            mediaType={entry.type === 'MOVIE' ? 'movie' : 'tv'}
+            status={entry.seasonStatus ?? entry.productionStatus}
             size="md"
+            position="tl"
           />
-          <StatusDot status={entry.status} size="md" position="br" />
           {poster ? (
             <img src={poster} alt={entry.title} loading="lazy" decoding="async" />
           ) : (

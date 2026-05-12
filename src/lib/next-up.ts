@@ -1,5 +1,15 @@
 // src/lib/next-up.ts
 import { prisma } from './prisma';
+import { productionStatusToDisplayStatus } from './series-status';
+
+/**
+ * Mapeia o productionStatus armazenado no banco para o status de exibição
+ * usado pelo StatusBubble. Séries com "Returning Series" aparecem como
+ * "Returning Series"; "Ended"/"Released" → null (sem bolinha).
+ */
+function deriveSeasonStatus(productionStatus?: string | null): string | null {
+  return productionStatusToDisplayStatus(productionStatus);
+}
 
 export interface NextUpItem {
   id: string;
@@ -8,6 +18,8 @@ export interface NextUpItem {
   type: 'MOVIE' | 'TV_SEASON';
   posterPath: string | null;
   productionStatus?: string | null;
+  /** Status real de exibição: 'Airing' | 'Not Yet Aired' | 'Finished' | 'Returning Series' | ... */
+  seasonStatus?: string | null;
   nextEpisodeNumber?: number;
   totalEpisodes?: number;
   currentProgress?: number;
@@ -16,8 +28,6 @@ export interface NextUpItem {
   score?: number;
   daysStalled?: number;
   urgencyScore?: number;
-  /** Status na lista (para StatusDot). */
-  listStatus?: string;
   parentTmdbId?: number | null;
   seasonNumber?: number | null;
 }
@@ -99,6 +109,7 @@ export async function getNextUpItems(
         type: 'TV_SEASON',
         posterPath: series.imagePath,
         productionStatus: series.productionStatus,
+        seasonStatus: deriveSeasonStatus(series.productionStatus),
         nextEpisodeNumber: currentProgress + 1,
         totalEpisodes: total,
         currentProgress,
@@ -107,7 +118,6 @@ export async function getNextUpItems(
         score: series.score ?? undefined,
         daysStalled,
         urgencyScore: urgency,
-        listStatus: series.status,
         parentTmdbId: series.parentTmdbId,
         seasonNumber: series.seasonNumber,
       });
@@ -144,6 +154,7 @@ export async function getNextUpItems(
         type: 'TV_SEASON',
         posterPath: series.imagePath,
         productionStatus: series.productionStatus,
+        seasonStatus: deriveSeasonStatus(series.productionStatus),
         nextEpisodeNumber: currentProgress + 1,
         totalEpisodes: total,
         currentProgress,
@@ -152,7 +163,6 @@ export async function getNextUpItems(
         score: series.score ?? undefined,
         daysStalled,
         urgencyScore: urgency,
-        listStatus: series.status,
         parentTmdbId: series.parentTmdbId,
         seasonNumber: series.seasonNumber,
       });
@@ -183,12 +193,12 @@ export async function getNextUpItems(
       type: 'MOVIE',
       posterPath: movie.imagePath,
       productionStatus: movie.productionStatus,
+      seasonStatus: null, // filmes não têm airing status
       reason: 'quick_movie',
       priority: 3,
       score: movie.score ?? undefined,
       daysStalled,
       urgencyScore: urgency,
-      listStatus: movie.status,
     });
   }
 
@@ -216,12 +226,12 @@ export async function getNextUpItems(
       type: 'MOVIE',
       posterPath: movie.imagePath,
       productionStatus: movie.productionStatus,
+      seasonStatus: null,
       reason: 'quick_movie',
       priority: 2,
       score: movie.score ?? undefined,
       daysStalled,
       urgencyScore: urgency,
-      listStatus: movie.status,
     });
   }
 

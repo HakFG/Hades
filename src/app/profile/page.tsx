@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
@@ -8,6 +8,7 @@ import { Suspense } from 'react';
 import ListEditor from '@/components/ListEditor';
 import PersonalGoalsSection from '@/components/PersonalGoalsSection';
 import StatusBubble from '@/components/StatusBubble';
+import { productionStatusToDisplayStatus } from '@/lib/series-status';
 import styles from './profile.module.css';
 import { emitXPNotification, type XPNotificationAward } from '@/hooks/useXPNotification';
 
@@ -218,8 +219,7 @@ export function EntryCard({ entry, onEdit, onToggleFav, onUpdateProgress }: {
         background: STATUS_COLOR[entry.status] ?? '#c9d0d8', zIndex: 4,
       }} />
       <StatusBubble
-        status={entry.productionStatus}
-        mediaType={entry.type}
+        status={productionStatusToDisplayStatus(entry.productionStatus)}
         size="sm"
       />
 

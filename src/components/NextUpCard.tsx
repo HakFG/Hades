@@ -4,7 +4,6 @@
 import Link from 'next/link';
 import { NextUpItem } from '@/lib/next-up';
 import StatusBubble from '@/components/StatusBubble';
-import StatusDot from '@/components/StatusDot';
 
 interface NextUpCardProps {
   item: NextUpItem;
@@ -87,11 +86,10 @@ export default function NextUpCard({ item }: NextUpCardProps) {
       <Link href={`/titles/${item.slug}`} className="nextup-link">
         <div className="poster">
           <StatusBubble
-            status={item.productionStatus}
-            mediaType={item.type === 'MOVIE' ? 'movie' : 'tv'}
+            status={item.seasonStatus ?? item.productionStatus}
             size="md"
+            position="tl"
           />
-          <StatusDot status={listStatus} size="md" position="br" />
 
           {poster ? (
             <img src={poster} alt={item.title} loading="lazy" decoding="async" />
