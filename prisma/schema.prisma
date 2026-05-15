@@ -86,6 +86,23 @@ model Entry {
   @@index([lastSyncedAt])
 }
 
+model PosterChoice {
+  id                 String   @id @default(cuid())
+  key                String   @unique
+  mediaType          String
+  tmdbId             Int
+  seasonNumber       Int?
+  title              String?
+  posterPath         String
+  officialPosterPath String?
+  source             String   @default("tmdb")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([mediaType, tmdbId])
+  @@index([key])
+}
+
 model Relation {
   id String @id @default(cuid())
 

@@ -196,6 +196,28 @@ const getYear = (d?: string | null) => d?.split('-')[0] ?? '';
 const tmdbImg = (p: string | null | undefined, size = 'w342') =>
   p ? `https://image.tmdb.org/t/p/${size}${p}` : null;
 
+async function fetchActivePosterChoice(args:{
+  mediaType:'MOVIE'|'TV_SEASON';
+  tmdbId:number;
+  seasonNumber?:number|null;
+  officialPosterPath?:string|null;
+}):Promise<string|null>{
+  const qs=new URLSearchParams({
+    mediaType:args.mediaType,
+    tmdbId:String(args.tmdbId),
+    gallery:'false',
+  });
+  if(args.seasonNumber!=null)qs.set('seasonNumber',String(args.seasonNumber));
+  if(args.officialPosterPath)qs.set('officialPosterPath',args.officialPosterPath);
+  try{
+    const res=await fetch(`/api/posters?${qs.toString()}`,{cache:'no-store'});
+    if(!res.ok)return null;
+    const data=await res.json();
+    return data.choice?.posterPath??null;
+  }catch{
+    return null;
+  }
+}
 
 function getFormat(networks:any[],companies:any[]){
   const s=['Netflix','Amazon','Prime Video','Hulu','Disney+','Apple TV+','Max','Paramount+','Crunchyroll','Peacock'];
@@ -431,6 +453,194 @@ function CoverModal({entryId,current,onSaved,onClose}:{
 }
 
 // ─── Modal: Adicionar Relation (Sistema Robusto Multi-Camada) ──────────────────
+interface PosterGalleryItem {
+  path:string;
+  url:string|null;
+  originalUrl:string|null;
+  language:string|null;
+  voteAverage:number;
+  voteCount:number;
+  source:'movie'|'season'|'series';
+  isOfficial:boolean;
+  isSelected:boolean;
+}
+
+function coverImageUrl(path:string|null|undefined, size='w500'){
+  if(!path)return null;
+  if(path.startsWith('http'))return path;
+  return `https://image.tmdb.org/t/p/${size}${path}`;
+}
+
+function modalErrorMessage(error:unknown, fallback:string){
+  return error instanceof Error ? error.message : fallback;
+}
+
+function CoverGalleryModal({mediaType,tmdbId,seasonNumber,title,current,officialPosterPath,onSaved,onClose}:{
+  mediaType:'MOVIE'|'TV_SEASON';
+  tmdbId:number;
+  seasonNumber?:number|null;
+  title:string;
+  current:string|null;
+  officialPosterPath:string|null;
+  onSaved:(p:string|null)=>void;
+  onClose:()=>void;
+}){
+  const[posters,setPosters]=useState<PosterGalleryItem[]>([]);
+  const[selected,setSelected]=useState<string|null>(current);
+  const[official,setOfficial]=useState<string|null>(officialPosterPath);
+  const[loading,setLoading]=useState(true);
+  const[saving,setSaving]=useState(false);
+  const[error,setError]=useState('');
+  const[inactiveChoice,setInactiveChoice]=useState(false);
+
+  useEffect(()=>{
+    const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
+    document.addEventListener('keydown',h);
+    document.body.style.overflow='hidden';
+    return()=>{document.removeEventListener('keydown',h);document.body.style.overflow='';};
+  },[onClose]);
+
+  useEffect(()=>{
+    let cancelled=false;
+    async function loadGallery(){
+      setLoading(true);
+      setError('');
+      try{
+        const qs=new URLSearchParams({mediaType,tmdbId:String(tmdbId)});
+        if(seasonNumber!=null)qs.set('seasonNumber',String(seasonNumber));
+        if(officialPosterPath)qs.set('officialPosterPath',officialPosterPath);
+        const res=await fetch(`/api/posters?${qs.toString()}`,{cache:'no-store'});
+        const data=await res.json();
+        if(!res.ok)throw new Error(data.error||'Erro ao carregar galeria');
+        if(cancelled)return;
+        setPosters(data.posters??[]);
+        setOfficial(data.officialPosterPath??officialPosterPath??null);
+        setInactiveChoice(Boolean(data.inactiveChoice));
+        setSelected(data.choice?.posterPath??current??data.officialPosterPath??officialPosterPath??null);
+      }catch(e){
+        if(!cancelled)setError(modalErrorMessage(e,'Erro ao carregar galeria'));
+      }finally{
+        if(!cancelled)setLoading(false);
+      }
+    }
+    loadGallery();
+    return()=>{cancelled=true;};
+  },[mediaType,tmdbId,seasonNumber,officialPosterPath,current]);
+
+  async function save(path:string|null){
+    if(!path)return;
+    setSaving(true);
+    setError('');
+    try{
+      const res=await fetch('/api/posters',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mediaType,tmdbId,seasonNumber,title,posterPath:path,officialPosterPath:official}),
+      });
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(data.error||'Erro ao salvar capa');
+      onSaved(path);
+      onClose();
+    }catch(e){
+      setError(modalErrorMessage(e,'Erro ao salvar capa'));
+    }finally{
+      setSaving(false);
+    }
+  }
+
+  async function restoreOfficial(){
+    setSaving(true);
+    setError('');
+    try{
+      const res=await fetch('/api/posters',{
+        method:'DELETE',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mediaType,tmdbId,seasonNumber,officialPosterPath:official}),
+      });
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok)throw new Error(data.error||'Erro ao restaurar capa oficial');
+      onSaved(null);
+      onClose();
+    }catch(e){
+      setError(modalErrorMessage(e,'Erro ao restaurar capa oficial'));
+    }finally{
+      setSaving(false);
+    }
+  }
+
+  const selectedPreview=coverImageUrl(selected,'w500');
+
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:CARD,borderRadius:8,width:'min(1040px,96vw)',maxHeight:'90vh',boxShadow:'0 24px 70px rgba(0,0,0,.72)',animation:'scaleIn .25s ease',display:'grid',gridTemplateRows:'auto 1fr auto',overflow:'hidden'}}>
+        <div style={{display:'flex',alignItems:'center',gap:14,padding:'18px 22px',borderBottom:'1px solid rgba(255,255,255,.07)'}}>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:16,fontWeight:800,color:TEXT}}>Galeria de capas</div>
+            <div style={{fontSize:12,color:MUTED,marginTop:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{title}</div>
+          </div>
+          <button onClick={onClose} aria-label="Fechar" style={{width:34,height:34,borderRadius:4,border:'1px solid rgba(255,255,255,.09)',background:'#1e1c1c',color:MUTED,cursor:'pointer',fontSize:18}}>x</button>
+        </div>
+
+        <div style={{display:'grid',gridTemplateColumns:'180px 1fr',gap:18,padding:22,overflow:'hidden'}}>
+          <div style={{minWidth:0}}>
+            <div style={{aspectRatio:'2/3',borderRadius:6,overflow:'hidden',background:'#161414',border:'1px solid rgba(255,255,255,.08)',boxShadow:'0 12px 28px rgba(0,0,0,.35)'}}>
+              {selectedPreview
+                ?<img src={selectedPreview} alt="preview" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+                :<div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:12}}>Sem capa</div>}
+            </div>
+            <button onClick={restoreOfficial} disabled={saving||!official} style={{marginTop:12,width:'100%',padding:10,borderRadius:4,border:'1px solid rgba(255,255,255,.1)',background:'#1e1c1c',color:TEXT,cursor:saving?'wait':'pointer',fontWeight:700,fontSize:12}}>
+              Usar capa oficial
+            </button>
+            {inactiveChoice&&(
+              <div style={{marginTop:12,fontSize:11,lineHeight:1.45,color:'#f1c40f',background:'rgba(241,196,15,.08)',border:'1px solid rgba(241,196,15,.2)',borderRadius:4,padding:10}}>
+                A capa oficial mudou no TMDB. A escolha antiga foi deixada em segundo plano.
+              </div>
+            )}
+          </div>
+
+          <div style={{overflow:'auto',paddingRight:4}}>
+            {loading&&<div style={{height:300,display:'flex',alignItems:'center',justifyContent:'center',color:MUTED,fontSize:13}}>Carregando capas do TMDB...</div>}
+            {!loading&&error&&<div style={{padding:24,background:'#1e1c1c',borderRadius:6,color:'#e74c3c',fontSize:13}}>{error}</div>}
+            {!loading&&!error&&posters.length===0&&<div style={{padding:24,background:'#1e1c1c',borderRadius:6,color:MUTED,fontSize:13}}>Nenhuma capa encontrada no TMDB.</div>}
+            {!loading&&!error&&posters.length>0&&(
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(118px,1fr))',gap:14}}>
+                {posters.map((item,i)=>(
+                  <button key={item.path} onClick={()=>setSelected(item.path)} style={{appearance:'none',border:'none',padding:0,background:'transparent',cursor:'pointer',animation:`fadeInUp .28s ease ${Math.min(i,18)*.025}s both`}}>
+                    <div style={{
+                      position:'relative',aspectRatio:'2/3',borderRadius:6,overflow:'hidden',
+                      border:selected===item.path?`2px solid ${ACCENT}`:'1px solid rgba(255,255,255,.08)',
+                      boxShadow:selected===item.path?'0 0 0 3px rgba(230,125,153,.18),0 14px 30px rgba(0,0,0,.45)':'0 8px 20px rgba(0,0,0,.25)',
+                      transform:selected===item.path?'translateY(-3px)':'translateY(0)',
+                      transition:'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+                    }}>
+                      {item.url&&<img src={item.url} alt="" loading="lazy" style={{width:'100%',height:'100%',objectFit:'cover',display:'block',transition:'transform .22s ease'}}/>}
+                      <div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,.82),transparent 48%)',opacity:.85}}/>
+                      <div style={{position:'absolute',left:7,right:7,bottom:7,display:'flex',gap:5,flexWrap:'wrap'}}>
+                        {item.isOfficial&&<span style={{fontSize:9,fontWeight:800,color:'#161414',background:'#f1c40f',borderRadius:3,padding:'2px 5px'}}>OFICIAL</span>}
+                        {item.source!=='movie'&&<span style={{fontSize:9,fontWeight:800,color:'white',background:'rgba(0,0,0,.55)',borderRadius:3,padding:'2px 5px'}}>{item.source==='season'?'TEMP':'SERIE'}</span>}
+                        {item.language&&<span style={{fontSize:9,fontWeight:800,color:'white',background:'rgba(230,125,153,.75)',borderRadius:3,padding:'2px 5px'}}>{item.language.toUpperCase()}</span>}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{display:'flex',gap:10,padding:'16px 22px',borderTop:'1px solid rgba(255,255,255,.07)',background:'#242121'}}>
+          <button onClick={()=>save(selected)} disabled={saving||!selected} style={{flex:1,padding:12,background:saving?'#555':ACCENT,border:'none',borderRadius:4,color:'white',fontSize:14,fontWeight:800,cursor:saving?'wait':'pointer',fontFamily:'Overpass,sans-serif'}}>
+            {saving?'Salvando...':'Salvar capa global'}
+          </button>
+          <button onClick={onClose} style={{width:140,padding:12,background:'transparent',border:'1px solid rgba(255,255,255,.1)',borderRadius:4,color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'Overpass,sans-serif'}}>
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AddRelModal({onAdd,onClose}:{
   onAdd:(r:RelationItem)=>void; onClose:()=>void;
 }){
@@ -1274,6 +1484,12 @@ md.poster_path = mdEn.poster_path || md.poster_path;
 md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
 // ✅ sinopse (md.overview) NÃO é sobrescrita – permanece em pt-BR
         if (cancelled) return;
+        const moviePosterChoice = await fetchActivePosterChoice({
+          mediaType:'MOVIE',
+          tmdbId:parsed.movieId,
+          officialPosterPath:md.poster_path,
+        });
+        if (!cancelled) setCustomPoster(moviePosterChoice);
         setMovie(md);
 
         if (!cancelled && entryId && md.poster_path) {
@@ -1407,6 +1623,14 @@ sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
           sd?.seasons?.find((s) => s.season_number === seasonNumber)?.poster_path ?? null;
         const liveTmdbPosterForSync =
           (seasonData?.poster_path ?? seasonStubPoster ?? sd.poster_path) ?? null;
+
+        const tvPosterChoice = await fetchActivePosterChoice({
+          mediaType:'TV_SEASON',
+          tmdbId:showId,
+          seasonNumber,
+          officialPosterPath:liveTmdbPosterForSync,
+        });
+        if (!cancelled) setCustomPoster(tvPosterChoice);
 
         if (!cancelled && entryId && liveTmdbPosterForSync) {
           void silentPersistPosterIfChanged({
@@ -1969,14 +2193,18 @@ onClick={async () => {
       </div>
 
       {/* ── Modais ── */}
-      {showCoverEdit&&entry&&(
-        <CoverModal
-          entryId={entry.id}
-          current={customPoster??rawPosterPath??null}
+      {showCoverEdit&&(
+        <CoverGalleryModal
+          mediaType={isTV?'TV_SEASON':'MOVIE'}
+          tmdbId={isTV?showId!:movie!.id}
+          seasonNumber={seasonNumber}
+          title={displayTitle}
+          current={rawPosterPath}
+          officialPosterPath={liveTmdbPoster}
           onSaved={(p) => {
-            if (p && !String(p).includes('image.tmdb.org')) setCustomPoster(p);
-            else setCustomPoster(null);
+            setCustomPoster(p);
             setShowCoverEdit(false);
+            if(entry && p) setEntry(prev=>prev?{...prev,imagePath:p}:prev);
           }}
           onClose={()=>setShowCoverEdit(false)}
         />

@@ -7,6 +7,7 @@ import { normalizeProductionStatus } from '@/lib/production-status';
 import { syncEntrySeasonEpisodes } from '@/lib/seasons';
 import { buildSeasonTitle } from '@/lib/utils';
 import { isCustomNonTmdbPoster } from '@/lib/entry-poster-sync';
+import { resolveEntryPosterPath } from '@/lib/poster-system';
 
 const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
@@ -80,13 +81,24 @@ export async function syncEntryWithTmdb(entryId: string) {
       media.in_production,
     );
 
+    const liveOfficialPosterPath = isTV
+      ? season?.poster_path ?? media.poster_path ?? null
+      : media.poster_path ?? null;
+    const syncedPosterPath = isCustomNonTmdbPoster(entry.imagePath)
+      ? entry.imagePath
+      : await resolveEntryPosterPath({
+          mediaType: isTV ? 'TV_SEASON' : 'MOVIE',
+          tmdbId: isTV ? showId : entry.tmdbId,
+          seasonNumber: isTV ? entry.seasonNumber : null,
+          liveOfficialPosterPath,
+          fallbackPosterPath: entry.imagePath,
+        });
+
     const nextData: Record<string, any> = isTV
       ? {
           title: buildSeasonTitle(media.name ?? entry.title, entry.seasonNumber ?? 1),
           productionStatus,
-          imagePath: isCustomNonTmdbPoster(entry.imagePath)
-            ? entry.imagePath
-            : season?.poster_path ?? media.poster_path ?? entry.imagePath ?? null,
+          imagePath: syncedPosterPath,
           bannerPath: media.backdrop_path ?? null,
           synopsis: season?.overview || media.overview || null,
           releaseDate: season?.air_date || entry.releaseDate || media.first_air_date || null,
@@ -109,9 +121,7 @@ export async function syncEntryWithTmdb(entryId: string) {
       : {
           title: media.title ?? entry.title,
           productionStatus,
-          imagePath: isCustomNonTmdbPoster(entry.imagePath)
-            ? entry.imagePath
-            : media.poster_path ?? entry.imagePath ?? null,
+          imagePath: syncedPosterPath,
           bannerPath: media.backdrop_path ?? null,
           synopsis: media.overview || null,
           releaseDate: media.release_date || null,

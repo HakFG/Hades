@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
 import { awardXP } from '@/lib/gamification';
 import { normalizeProductionStatus } from '@/lib/production-status';
+import { resolveEntryPosterPath } from '@/lib/poster-system';
 
 const TMDB    = 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
@@ -278,13 +279,20 @@ const productionStatus = normalizeProductionStatus(
 const englishTitle = seriesEnName
   ? buildSeasonTitle(seriesEnName, seasonNumber ?? 1)
   : title.trim();
+      const chosenSeasonPoster = await resolveEntryPosterPath({
+        mediaType: 'TV_SEASON',
+        tmdbId: parentTmdbId,
+        seasonNumber: seasonNumber ?? 1,
+        liveOfficialPosterPath: poster_path ?? null,
+        fallbackPosterPath: poster_path ?? null,
+      });
 
       const existingEntry = await prisma.entry.findUnique({ where: { tmdbId } });
       const entry = await prisma.entry.upsert({
         where:  { tmdbId },
         update: {
           title:         title.trim(),
-          imagePath:     poster_path ?? null,
+          imagePath:     chosenSeasonPoster,
           totalEpisodes: totalEpisodes ?? 0,
           seasonNumber:  seasonNumber ?? null,
           releaseDate,
@@ -313,7 +321,7 @@ finishDate:    finishDate ? new Date(finishDate) : null,
   notes:         notes ?? null,
   hidden:        hidden ?? false,
   totalEpisodes: totalEpisodes ?? 0,
-  imagePath:     poster_path ?? null,
+  imagePath:     chosenSeasonPoster,
   releaseDate,
   endDate,
   genres:        extra.genres     || null,
@@ -373,12 +381,18 @@ genres      = (d.genres ?? []).map((g: any) => g.name).join(', ');
         movieProductionStatus = normalizeProductionStatus(d.status, 'movie');
       } catch { /* mantém nulls */ }
 
+      const chosenMoviePoster = await resolveEntryPosterPath({
+        mediaType: 'MOVIE',
+        tmdbId,
+        liveOfficialPosterPath: poster_path ?? null,
+        fallbackPosterPath: poster_path ?? null,
+      });
       const existingEntry = await prisma.entry.findUnique({ where: { tmdbId } });
       const entry = await prisma.entry.upsert({
         where:  { tmdbId },
         update: {
           title:         title.trim(),
-          imagePath:     poster_path ?? null,
+          imagePath:     chosenMoviePoster,
           totalEpisodes: 1,
           releaseDate,
           genres:        genres     || undefined,
@@ -402,7 +416,7 @@ finishDate:    finishDate ? new Date(finishDate) : null,
   notes:         notes ?? null,
   hidden:        hidden ?? false,
   totalEpisodes: 1,
-  imagePath:     poster_path ?? null,
+  imagePath:     chosenMoviePoster,
   releaseDate,
   genres:        genres  || null,
   studio,

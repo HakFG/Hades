@@ -10,6 +10,7 @@ import NextUpCard from '@/components/NextUpCard';
 import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
 import StatusBubble from '@/components/StatusBubble';
+import { choiceIsActive, normalizePosterPath, posterChoiceKey } from '@/lib/poster-system';
 
 // ─── Skeleton (mantido igual) ────────────────────────────────────────────────
 
@@ -78,6 +79,41 @@ function buildSeasonSlug(showId: number, seasonNumber: number): string {
 }
 function buildMovieSlug(movieId: number): string {
   return `movie-${movieId}`;
+}
+
+type HomePosterItem = {
+  id?: number | string;
+  tmdbId?: number;
+  showId?: number;
+  seasonNumber?: number;
+  type?: string;
+  poster?: string | null;
+  poster_path?: string | null;
+};
+
+async function applyHomePosterChoices(popular: HomePosterItem[], newlyAdded: HomePosterItem[]) {
+  const keyFor = (item: HomePosterItem) => {
+    if (item.type === 'movie') return posterChoiceKey({ mediaType: 'MOVIE', tmdbId: Number(item.tmdbId ?? item.id) });
+    return posterChoiceKey({ mediaType: 'TV_SEASON', tmdbId: Number(item.showId ?? item.tmdbId), seasonNumber: item.seasonNumber ?? 1 });
+  };
+
+  const allItems = [
+    ...popular.map((item) => ({ item, field: 'poster' as const, type: 'tv' })),
+    ...newlyAdded.map((item) => ({ item, field: 'poster_path' as const, type: item.type })),
+  ];
+  const keys = allItems.map(({ item, type }) => keyFor({ ...item, type }));
+  const choices = await prisma.posterChoice.findMany({ where: { key: { in: keys } } });
+  const byKey = new Map(choices.map((choice) => [choice.key, choice]));
+
+  for (const wrapped of allItems) {
+    const item = wrapped.item;
+    const key = keyFor({ ...item, type: wrapped.type });
+    const choice = byKey.get(key);
+    const official = normalizePosterPath(item[wrapped.field]);
+    if (choice && choiceIsActive(choice, official)) {
+      item[wrapped.field] = choice.posterPath;
+    }
+  }
 }
 
 // ─── Data fetching (igual ao original) ────────────────────────────────────────
@@ -240,6 +276,8 @@ async function getHomeData() {
   ]);
   const uniqueNews = Array.from(new Map(newsResults.flat().map(item => [item.title, item])).values())
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 8);
+
+  await applyHomePosterChoices(popularResults, newlyAdded);
 
   return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressWithStatus, nextUp: nextUpItems };
 }
