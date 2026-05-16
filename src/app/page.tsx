@@ -2,11 +2,10 @@ import { prisma } from '@/lib/prisma';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { getOrdinal } from '@/lib/utils';
-import { getNextUpItems } from '@/lib/next-up';
 import { entryStatusToBubbleStatus } from '@/lib/series-status';
 import { titlePageSeasonStatus } from '@/lib/tmdb-status';
 import { productionStatusToDisplayStatus } from '@/lib/series-status';
-import NextUpCard from '@/components/NextUpCard';
+import SpinTheWheel from '@/components/SpinTheWheel';
 import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
 import StatusBubble from '@/components/StatusBubble';
@@ -269,7 +268,14 @@ async function getHomeData() {
     seasonStatus: entryStatusToBubbleStatus(entry),
   }));
 
-  const nextUpItems = await getNextUpItems(4);
+  const planningEntries = await prisma.entry.findMany({
+    where: { status: 'PLANNING' },
+    select: { id: true, tmdbId: true, type: true, title: true, imagePath: true, synopsis: true, parentTmdbId: true, seasonNumber: true },
+  });
+  const planningItems = planningEntries.map(e => ({
+    ...e,
+    slug: e.type === 'MOVIE' ? buildMovieSlug(e.tmdbId) : buildSeasonSlug(e.parentTmdbId ?? e.tmdbId, e.seasonNumber ?? 1)
+  }));
 
   const [popularResults, newsResults] = await Promise.all([
     Promise.all(popularPromises), Promise.all(newsPromises),
@@ -279,7 +285,7 @@ async function getHomeData() {
 
   await applyHomePosterChoices(popularResults, newlyAdded);
 
-  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressWithStatus, nextUp: nextUpItems };
+  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressWithStatus, planningItems };
 }
 
 // ─── Componente principal com layout corrigido ────────────────────────────────
@@ -293,7 +299,7 @@ export default async function HomePage() {
 }
 
 async function HomePageContent() {
-  const { airing, popular, news, newlyAdded, inProgress, nextUp } = await getHomeData();
+  const { airing, popular, news, newlyAdded, inProgress, planningItems } = await getHomeData();
 
   return (
     <div style={{
@@ -678,26 +684,8 @@ async function HomePageContent() {
               )}
             </div>
 
-            {/* NEXT UP */}
-            <div className="side-panel">
-              <div className="side-panel-header">
-                <div className="side-panel-header-dot" style={{ background: '#f39c12', boxShadow: '0 0 8px rgba(243,156,18,0.6)' }} />
-                <h3 className="side-panel-header-title" style={{ color: '#f39c12' }}>Next Up</h3>
-              </div>
-              {nextUp && nextUp.length > 0 ? (
-                <div className="cards-grid-5 stagger" style={{ padding: '14px' }}>
-                  {nextUp.map((item) => (
-                    <div key={item.id} className="card-hover-effect">
-                      <NextUpCard item={item} />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)' }}>
-                  No suggestions for now.
-                </div>
-              )}
-            </div>
+            {/* ROLETA DO DESTINO */}
+            <SpinTheWheel items={planningItems} />
 
             {/* NEWLY ADDED (grid 3 colunas) */}
             <div className="side-panel">

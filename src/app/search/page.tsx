@@ -198,7 +198,7 @@ export default function SearchPage() {
   const [isFilterActive, setIsFilterActive] = useState(false);
 
   // ─── CORREÇÃO 1: cada seção tem seu próprio estado de visibilidade ────────
-  const [activeSection, setActiveSection] = useState<'trending' | 'popularNow' | 'allTime' | null>(null);
+  const [activeSections, setActiveSections] = useState<Record<string, boolean>>({ trending: true, popularNow: true, allTime: true });
 
   const [trending, setTrending] = useState<MediaCard[]>([]);
   const [popularNow, setPopularNow] = useState<MediaCard[]>([]);
@@ -292,7 +292,7 @@ setAllTimePopular((await expandLatest(allTimeData.results ?? [])).sort(sortByPop
   useEffect(() => {
     loadGenres();
     loadInitialSections();
-    setActiveSection(null);
+    // setActiveSection(null);
   }, [loadGenres, loadInitialSections]);
 
   // ─── Busca com filtros ────────────────────────────────────────────────────
@@ -569,13 +569,13 @@ onMouseLeave={() => setHoveredCard(null)}
   function SectionBlock({ sectionKey }: { sectionKey: SectionKey }) {
     const meta = SECTION_META[sectionKey];
     const data = SECTION_DATA[sectionKey];
-    const isOpen = activeSection === sectionKey;
+    const isOpen = activeSections[sectionKey] ?? false;
 
     return (
       <div style={{ marginBottom: '16px' }}>
         {/* Cabeçalho clicável */}
         <button
-          onClick={() => setActiveSection(isOpen ? null : sectionKey)}
+          onClick={() => setActiveSections(prev => ({ ...prev, [sectionKey]: !prev[sectionKey] }))}
           style={{
             width: '100%', display: 'flex', alignItems: 'center', gap: '14px',
             background: isOpen ? 'rgba(230,125,153,0.08)' : 'rgb(50,47,47)',
@@ -681,7 +681,7 @@ onMouseLeave={() => setHoveredCard(null)}
               setSelectedGenre(''); setSelectedYear('');
               setSelectedFormat(''); setSelectedStatus('');
               setIsFilterActive(false); setScrollPage(1); setHasMore(true);
-              setActiveSection(null);
+              setActiveSections({ trending: true, popularNow: true, allTime: true });
             }}
             style={{
               background: mediaType === type ? 'linear-gradient(135deg, rgb(230,125,153), rgb(200,90,120))' : 'transparent',
