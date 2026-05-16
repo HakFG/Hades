@@ -2,17 +2,26 @@ import { prisma } from '@/lib/prisma';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { getOrdinal } from '@/lib/utils';
-import { entryStatusToBubbleStatus } from '@/lib/series-status';
+import { entryStatusToBubbleStatus, productionStatusToDisplayStatus } from '@/lib/series-status';
 import { titlePageSeasonStatus } from '@/lib/tmdb-status';
-import { productionStatusToDisplayStatus } from '@/lib/series-status';
 import SpinTheWheel from '@/components/SpinTheWheel';
 import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
 import StatusBubble from '@/components/StatusBubble';
 import { choiceIsActive, normalizePosterPath, posterChoiceKey } from '@/lib/poster-system';
 
-// ─── Skeleton (mantido igual) ────────────────────────────────────────────────
+// Novos componentes importados
+import TodaySession from '@/components/TodaySession';
+import ReleaseCalendar from '@/components/ReleaseCalendar';
+import type { CalendarEpisode } from '@/components/ReleaseCalendar';
+import WeeklyStats from '@/components/WeeklyStats';
+import AchievementShowcase from '@/components/AchievementShowcase';
 
+import { getNextUpItems } from '@/lib/next-up';
+import { getGamificationStats } from '@/lib/gamification';
+import { getWeeklyStats } from '@/lib/weekly-stats';
+
+// ─── Skeleton ────────────────────────────────────────────────────────────────
 function HomePageSkeleton() {
   return (
     <div style={{
@@ -34,6 +43,7 @@ function HomePageSkeleton() {
       `}</style>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '32px' }}>
         <div>
+          <div className="sk" style={{ height: '150px', borderRadius: '12px', marginBottom: '24px' }} />
           <div className="sk" style={{ height: '18px', width: '180px', marginBottom: '20px' }} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '16px', marginBottom: '48px' }}>
             {[...Array(6)].map((_, i) => (
@@ -72,7 +82,6 @@ function HomePageSkeleton() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function buildSeasonSlug(showId: number, seasonNumber: number): string {
   return `tv-${showId}-s${seasonNumber}`;
 }
@@ -115,11 +124,18 @@ async function applyHomePosterChoices(popular: HomePosterItem[], newlyAdded: Hom
   }
 }
 
-// ─── Data fetching (igual ao original) ────────────────────────────────────────
-
+// ─── Data fetching ────────────────────────────────────────────────────────────
 async function getHomeData() {
   const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
+  // 1. Busca dados do usuário, next-up e gamificação
+  const [weeklyStats, gamificationStats, nextUpItems] = await Promise.all([
+    getWeeklyStats('main'),
+    getGamificationStats('main'),
+    getNextUpItems(2),
+  ]);
+
+  // 2. Títulos sendo assistidos (WATCHING)
   const myWatching = await prisma.entry.findMany({
     where: { status: 'WATCHING', type: 'TV_SEASON' },
     include: {
@@ -129,16 +145,47 @@ async function getHomeData() {
           airDate: true,
           seasonNumber: true,
           episodes: {
-            select: { airDate: true },
+            select: { airDate: true, episodeNumber: true, title: true, stillPath: true },
             orderBy: { episodeNumber: 'asc' },
           },
         },
         orderBy: { seasonNumber: 'asc' },
       },
     },
-    take: 6,
   });
-  const airingPromises = myWatching.map(async (entry) => {
+
+  // Prepara calendário de lançamentos baseados nos títulos WATCHING
+  const calendarEpisodes: CalendarEpisode[] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const next7Days = new Date(today);
+  next7Days.setDate(today.getDate() + 7);
+
+  for (const entry of myWatching) {
+    for (const season of entry.seasons) {
+      for (const ep of season.episodes) {
+        if (ep.airDate) {
+          const ad = new Date(ep.airDate);
+          if (ad >= today && ad < next7Days) {
+            calendarEpisodes.push({
+              id: `${entry.id}-${season.seasonNumber}-${ep.episodeNumber}`,
+              showName: entry.title,
+              episodeName: ep.title ?? `Episódio ${ep.episodeNumber}`,
+              seasonNumber: season.seasonNumber,
+              episodeNumber: ep.episodeNumber,
+              airDate: ep.airDate,
+              posterPath: ep.stillPath ?? entry.imagePath,
+              slug: buildSeasonSlug(entry.parentTmdbId ?? entry.tmdbId, season.seasonNumber)
+            });
+          }
+        }
+      }
+    }
+  }
+  calendarEpisodes.sort((a, b) => new Date(a.airDate).getTime() - new Date(b.airDate).getTime());
+
+  // Limitar os airings para exibir apenas 5
+  const airingPromises = myWatching.slice(0, 5).map(async (entry) => {
     const res = await fetch(
       `https://api.themoviedb.org/3/tv/${entry.parentTmdbId}?api_key=${apiKey}`,
       { next: { revalidate: 3600 } }
@@ -155,6 +202,7 @@ async function getHomeData() {
   let airingResults = await Promise.all(airingPromises);
   airingResults = airingResults.filter(e => e.nextEpisode !== null);
 
+  // Trending & Popular
   const trendingRes = await fetch(
     `https://api.themoviedb.org/3/trending/tv/week?api_key=${apiKey}`,
     { next: { revalidate: 3600 } }
@@ -174,71 +222,88 @@ async function getHomeData() {
     ).then(r => r.ok ? r.json() : null).catch(() => null);
     return {
       id: item.id, showId: item.id,
-      name: `${item.name}${lastSeason && seasonNumber > 1 ? ' ' + getOrdinal(seasonNumber) + ' Season' : ''}`,
+      name: `${item.name}${lastSeason && seasonNumber > 1 ? ' ' + getOrdinal(seasonNumber) + ' Temporada' : ''}`,
       poster: lastSeason?.poster_path || item.poster_path,
       seasonNumber, slug: buildSeasonSlug(item.id, seasonNumber),
       bubbleStatus: titlePageSeasonStatus(seasonDetail?.episodes ?? null),
     };
   });
 
+  // Notícias em PT-BR (Foco em séries, filmes, anúncios)
   const newsSources = [
-    { name: 'Deadline', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://deadline.com/category/film/feed/', sourceSite: 'Deadline', twitter: '@DEADLINE' },
-    { name: 'Variety', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://variety.com/c/film/news/feed/', sourceSite: 'Variety', twitter: '@Variety' },
-    { name: 'THR', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.hollywoodreporter.com/c/movies/movie-news/feed/', sourceSite: 'THR', twitter: '@THR' },
+    { name: 'Omelete', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.omelete.com.br/rss', sourceSite: 'Omelete' },
+    { name: 'AdoroCinema', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.adorocinema.com/rss/noticias.xml', sourceSite: 'AdoroCinema' },
+    { name: 'CinePOP', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://cinepop.com.br/feed/', sourceSite: 'CinePOP' },
   ];
-  const movieTvKeywords = ['movie', 'film', 'series', 'tv', 'television', 'episode', 'season', 'streaming', 'netflix', 'amazon', 'hbo', 'disney+', 'marvel', 'dc', 'casting', 'premiere', 'release date', 'sequel', 'remake', 'actor', 'director'];
-  function isMovieTVNews(title: string, description: string = ''): boolean {
+  // Notícias relevantes: anúncios, estreias, renovações, cancelamentos, trailers, datas
+  const HIGH_RELEVANCE_KEYWORDS = [
+    'estreia', 'temporada', 'renovada', 'renovação', 'cancelada', 'cancelamento',
+    'anunciou', 'confirmada', 'confirmado', 'data de lançamento', 'previsão de estreia',
+    'trailer', 'teaser', 'elenco confirmado', 'nova série', 'novo filme', 'continuação',
+    'sequência', 'spinoff', 'spin-off', 'retorno', 'volta', 'episódio final',
+    'última temporada', 'primera temporada', 'segunda temporada', 'terceira temporada',
+  ];
+  const GENERAL_CINEMA_KEYWORDS = [
+    'filme', 'série', 'cinema', 'streaming', 'netflix', 'amazon prime', 'hbo', 'max',
+    'disney+', 'apple tv', 'paramount+', 'globoplay', 'crunchyroll', 'marvel', 'dc',
+    'bilheteria', 'oscar', 'emmy', 'golden globe', 'diretor', 'ator', 'atriz',
+  ];
+  const BLACKLIST = [
+    'jogo', 'xbox', 'playstation', 'nintendo', 'steam', 'futebol', 'política',
+    'eleição', 'governo', 'concurso público', 'bolsa de valores', 'criptomoeda',
+    'review de game', 'esport', 'moba', 'rpg de mesa',
+  ];
+  function isRelevantCinemaNews(title: string, description: string = ''): boolean {
     const text = (title + ' ' + description).toLowerCase();
-    return movieTvKeywords.some(k => text.includes(k)) && !['game', 'playstation', 'xbox', 'nintendo'].some(t => text.includes(t));
+    const blacklisted = BLACKLIST.some(b => text.includes(b));
+    if (blacklisted) return false;
+    const highRelevance = HIGH_RELEVANCE_KEYWORDS.some(k => text.includes(k));
+    if (highRelevance) return true;
+    const generalCinema = GENERAL_CINEMA_KEYWORDS.some(k => text.includes(k));
+    return generalCinema;
   }
   const newsPromises = newsSources.map(async (source) => {
     try {
       const response = await fetch(source.url, { next: { revalidate: 3600 } });
       const newsData = await response.json();
-      return (newsData.items || []).filter((item: any) => isMovieTVNews(item.title, item.description || '')).slice(0, 3).map((item: any) => ({
-        title: item.title, link: item.link, pubDate: item.pubDate,
-        thumbnail: item.thumbnail || item.enclosure?.link || '',
-        source: source.sourceSite, twitter: source.twitter
-      }));
+      return (newsData.items || [])
+        .filter((item: any) => isRelevantCinemaNews(item.title, item.description || ''))
+        .slice(0, 15)
+        .map((item: any) => ({
+          title: item.title, link: item.link, pubDate: item.pubDate,
+          thumbnail: item.thumbnail || item.enclosure?.link || '',
+          source: source.sourceSite,
+        }));
     } catch { return []; }
   });
 
+  // Newly Added (Séries e Filmes) - Expandido para 6 títulos
   const [movieChanges, tvChanges] = await Promise.all([
     fetch(`https://api.themoviedb.org/3/movie/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.json()),
     fetch(`https://api.themoviedb.org/3/tv/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.json()),
   ]);
   const recentlyAddedItems: any[] = [];
   if (movieChanges.results?.length) {
-    for (const id of movieChanges.results.slice(0, 10).map((c: any) => c.id)) {
+    for (const id of movieChanges.results.slice(0, 20).map((c: any) => c.id)) {
       try {
-        const d = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${apiKey}`, { next: { revalidate: 3600 } }).then(r => r.json());
+        const d = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } }).then(r => r.json());
         if (d && !d.status_code && d.poster_path) recentlyAddedItems.push({ id: `movie-${d.id}`, tmdbId: d.id, name: d.title, type: 'movie', releaseDate: d.release_date, poster_path: d.poster_path, slug: buildMovieSlug(d.id), addedAt: new Date().toISOString(), bubbleStatus: productionStatusToDisplayStatus(d.status) });
-      } catch {}
+      } catch { }
     }
   }
   if (tvChanges.results?.length) {
-    for (const id of tvChanges.results.slice(0, 10).map((c: any) => c.id)) {
+    for (const id of tvChanges.results.slice(0, 20).map((c: any) => c.id)) {
       try {
-        const d = await fetch(`https://api.themoviedb.org/3/tv/${id}?api_key=${apiKey}`, { next: { revalidate: 3600 } }).then(r => r.json());
+        const d = await fetch(`https://api.themoviedb.org/3/tv/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } }).then(r => r.json());
         if (d && !d.status_code && d.poster_path && d.seasons) {
-          const s1 = await fetch(`https://api.themoviedb.org/3/tv/${d.id}/season/1?api_key=${apiKey}&language=en-US`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
-          recentlyAddedItems.push({ id: `tv-${d.id}`, tmdbId: d.id, name: `${d.name} Season 1`, type: 'tv', releaseDate: d.first_air_date, poster_path: d.poster_path, seasonNumber: 1, slug: buildSeasonSlug(d.id, 1), addedAt: new Date().toISOString(), bubbleStatus: titlePageSeasonStatus(s1?.episodes ?? null) });
+          const s1 = await fetch(`https://api.themoviedb.org/3/tv/${d.id}/season/1?api_key=${apiKey}&language=pt-BR`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+          recentlyAddedItems.push({ id: `tv-${d.id}`, tmdbId: d.id, name: `${d.name} 1ª Temp`, type: 'tv', releaseDate: d.first_air_date, poster_path: d.poster_path, seasonNumber: 1, slug: buildSeasonSlug(d.id, 1), addedAt: new Date().toISOString(), bubbleStatus: titlePageSeasonStatus(s1?.episodes ?? null) });
         }
-      } catch {}
+      } catch { }
     }
   }
-  const [latestMovies, latestTV] = await Promise.all([
-    fetch(`https://api.themoviedb.org/3/movie/latest?api_key=${apiKey}`, { next: { revalidate: 3600 } }).then(r => r.json()),
-    fetch(`https://api.themoviedb.org/3/tv/latest?api_key=${apiKey}`, { next: { revalidate: 3600 } }).then(r => r.json()),
-  ]);
-  if (latestMovies?.id && latestMovies.poster_path && !recentlyAddedItems.some(i => i.id === `movie-${latestMovies.id}`))
-    recentlyAddedItems.push({ id: `movie-${latestMovies.id}`, tmdbId: latestMovies.id, name: latestMovies.title, type: 'movie', releaseDate: latestMovies.release_date, poster_path: latestMovies.poster_path, slug: buildMovieSlug(latestMovies.id), addedAt: new Date().toISOString(), bubbleStatus: productionStatusToDisplayStatus(latestMovies.status) });
-  if (latestTV?.id && latestTV.poster_path && latestTV.seasons && !recentlyAddedItems.some(i => i.id === `tv-${latestTV.id}`)) {
-    const s1 = await fetch(`https://api.themoviedb.org/3/tv/${latestTV.id}/season/1?api_key=${apiKey}&language=en-US`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
-    recentlyAddedItems.push({ id: `tv-${latestTV.id}`, tmdbId: latestTV.id, name: `${latestTV.name} Season 1`, type: 'tv', releaseDate: latestTV.first_air_date, poster_path: latestTV.poster_path, seasonNumber: 1, slug: buildSeasonSlug(latestTV.id, 1), addedAt: new Date().toISOString(), bubbleStatus: titlePageSeasonStatus(s1?.episodes ?? null) });
-  }
 
-  const newlyAdded = recentlyAddedItems.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()).slice(0, 6);
+  const newlyAdded = recentlyAddedItems.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()).slice(0, 12);
 
   const airingEntryIds = new Set(airingResults.map(e => e.id));
   const inProgressEntries = await prisma.entry.findMany({
@@ -261,7 +326,7 @@ async function getHomeData() {
       },
     },
     orderBy: { updatedAt: 'desc' },
-    take: 6,
+    take: 5,
   });
   const inProgressWithStatus = inProgressEntries.map((entry) => ({
     ...entry,
@@ -281,15 +346,25 @@ async function getHomeData() {
     Promise.all(popularPromises), Promise.all(newsPromises),
   ]);
   const uniqueNews = Array.from(new Map(newsResults.flat().map(item => [item.title, item])).values())
-    .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 8);
+    .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 20);
 
   await applyHomePosterChoices(popularResults, newlyAdded);
 
-  return { airing: airingResults, popular: popularResults, news: uniqueNews, newlyAdded, inProgress: inProgressWithStatus, planningItems };
+  return {
+    weeklyStats,
+    gamificationStats,
+    nextUpItems,
+    calendarEpisodes,
+    airing: airingResults,
+    popular: popularResults,
+    news: uniqueNews,
+    newlyAdded,
+    inProgress: inProgressWithStatus,
+    planningItems
+  };
 }
 
-// ─── Componente principal com layout corrigido ────────────────────────────────
-
+// ─── Componente principal ──────────────────────────────────────────────────────
 export default async function HomePage() {
   return (
     <Suspense fallback={<HomePageSkeleton />}>
@@ -299,7 +374,19 @@ export default async function HomePage() {
 }
 
 async function HomePageContent() {
-  const { airing, popular, news, newlyAdded, inProgress, planningItems } = await getHomeData();
+  const data = await getHomeData();
+  const {
+    weeklyStats,
+    gamificationStats,
+    nextUpItems,
+    calendarEpisodes,
+    airing,
+    popular,
+    news,
+    newlyAdded,
+    inProgress,
+    planningItems
+  } = data;
 
   return (
     <div style={{
@@ -309,65 +396,39 @@ async function HomePageContent() {
       color: 'rgb(220,210,215)',
     }}>
       <style>{`
-        /* ── Animações e estilos originais (mantidos) ── */
+        /* ── Animações e estilos mantidos e melhorados ── */
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes shimmer {
-          0%   { background-position: -600px 0; }
-          100% { background-position: 600px 0; }
-        }
-        @keyframes glow-pulse {
-          0%, 100% { box-shadow: 0 0 8px rgba(230,125,153,0.25); }
-          50%       { box-shadow: 0 0 22px rgba(230,125,153,0.55); }
-        }
-        @keyframes borderGlow {
-          0%, 100% { border-color: rgba(230,125,153,0.3); }
-          50%       { border-color: rgba(230,125,153,0.7); }
-        }
-        @keyframes slideInLeft {
-          from { opacity: 0; transform: translateX(-24px); }
-          to   { opacity: 1; transform: translateX(0); }
         }
         @keyframes popIn {
           0%   { opacity: 0; transform: scale(0.85); }
           70%  { transform: scale(1.04); }
           100% { opacity: 1; transform: scale(1); }
         }
-        @keyframes neonPulse {
-          0%   { box-shadow: 0 0 0 0 rgba(230,125,153,0.4); }
-          70%  { box-shadow: 0 0 0 8px rgba(230,125,153,0); }
-          100% { box-shadow: 0 0 0 0 rgba(230,125,153,0); }
+        @keyframes slideInLeft {
+          from { opacity: 0; transform: translateX(-24px); }
+          to   { opacity: 1; transform: translateX(0); }
         }
-        @keyframes textGlow {
-          0%, 100% { text-shadow: 0 0 2px rgba(230,125,153,0.2); }
-          50%       { text-shadow: 0 0 8px rgba(230,125,153,0.6); }
-        }
-
         .hades-home {
           max-width: 1440px;
           margin: 0 auto;
           padding: 28px 28px 60px;
           animation: fadeUp 0.5s ease-out both;
         }
-
-        /* ── Grid responsivo para cards laterais ── */
+        
         .cards-grid-5 {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
           gap: 14px;
-          width: 100%;
         }
-
         @media (min-width: 1200px) {
           .cards-grid-5 {
             grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
             gap: 16px;
           }
         }
-
-        /* ── Wrapper do card com animação de hover ── */
+        
         .card-hover-effect {
           transition: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
           will-change: transform;
@@ -376,16 +437,11 @@ async function HomePageContent() {
           transform: translateY(-8px);
           filter: brightness(1.05);
         }
-
-        /* Força os cards a herdarem o hover e aplica borda brilhante */
-        .card-hover-effect:hover .airing-root,
-        .card-hover-effect:hover .nextup-root,
         .card-hover-effect:hover > * {
           border-color: rgba(230,125,153, 0.7) !important;
           box-shadow: 0 20px 28px -12px rgba(0,0,0,0.5), 0 0 0 2px rgba(230,125,153, 0.3) !important;
         }
-
-        /* ── Seção headers ── */
+        
         .section-head {
           display: flex;
           align-items: center;
@@ -418,40 +474,130 @@ async function HomePageContent() {
           letter-spacing: 1px;
         }
 
-        /* ── Side panels ── */
+        .page-main-grid {
+          display: grid;
+          grid-template-columns: 1fr minmax(320px, 440px);
+          gap: 40px;
+          align-items: flex-start;
+        }
+        @media (max-width: 1140px) {
+          .page-main-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        .sidebar {
+          min-width: 0;
+          width: 100%;
+          max-width: 440px;
+        }
+        @media (max-width: 1140px) {
+          .sidebar {
+            max-width: 100%;
+          }
+        }
+
         .side-panel {
-          background: rgb(50,47,47);
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.05);
+          background: linear-gradient(180deg, rgba(38,34,34,0.98), rgba(28,25,25,0.96));
+          border-radius: 20px;
+          border: 1px solid rgba(255,255,255,0.08);
           overflow: hidden;
           margin-bottom: 24px;
+          box-shadow: 0 22px 48px rgba(0,0,0,0.18);
         }
         .side-panel-header {
-          padding: 12px 16px;
+          padding: 18px 18px 16px;
           display: flex;
           align-items: center;
-          gap: 8px;
-          border-bottom: 1px solid rgba(255,255,255,0.06);
+          gap: 10px;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
           background: rgba(230,125,153,0.08);
         }
         .side-panel-header-dot {
-          width: 8px; height: 8px;
+          width: 10px; height: 10px;
           border-radius: 50%;
           background: rgb(230,125,153);
-          box-shadow: 0 0 8px rgba(230,125,153,0.6);
-          animation: glow-pulse 2.5s infinite;
+          box-shadow: 0 0 16px rgba(230,125,153,0.45);
         }
         .side-panel-header-title {
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 800;
           letter-spacing: 2px;
           text-transform: uppercase;
           color: rgb(230,125,153);
           margin: 0;
         }
-        .side-panel-body { padding: 14px; }
+        .side-panel-header-pill {
+          margin-left: auto;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.8);
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 999px;
+          padding: 6px 10px;
+        }
+        .side-panel-grid {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 8px;
+          padding: 14px 14px 16px;
+          align-items: start;
+        }
+        @media (max-width: 840px) {
+          .side-panel-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 640px) {
+          .side-panel-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+        .side-panel-empty {
+          min-height: 220px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 14px;
+          padding: 28px 20px;
+          color: rgba(255,255,255,0.78);
+          text-align: center;
+          border-radius: 18px;
+          background: radial-gradient(circle at top, rgba(230,125,153,0.16), transparent 30%), rgba(28,24,24,0.96);
+          border: 1px solid rgba(255,255,255,0.06);
+        }
+        .side-panel-empty-graphic {
+          width: 64px;
+          height: 64px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(230,125,153,0.14);
+          border: 1px solid rgba(255,255,255,0.08);
+          box-shadow: 0 0 0 1px rgba(255,255,255,0.04);
+        }
+        .side-panel-empty-graphic span {
+          font-size: 22px;
+          color: rgb(230,125,153);
+          line-height: 1;
+        }
+        .side-panel-empty-title {
+          font-size: 14px;
+          font-weight: 700;
+          color: rgb(242,236,240);
+          margin: 0;
+        }
+        .side-panel-empty-text {
+          font-size: 12px;
+          color: rgba(255,255,255,0.6);
+          line-height: 1.6;
+          max-width: 240px;
+        }
 
-        /* ── Cover card (popular) ── */
         .cover-card {
           position: relative;
           border-radius: 8px;
@@ -485,8 +631,8 @@ async function HomePageContent() {
           position: absolute;
           bottom: 0; left: 0; right: 0;
           padding: 32px 10px 10px;
-          font-size: 11px;
-          font-weight: 700;
+          font-size: 7px;
+          font-weight: 300;
           color: white;
           line-height: 1.3;
           text-align: center;
@@ -497,7 +643,6 @@ async function HomePageContent() {
         }
         .cover-card:hover .cover-title { opacity: 1; transform: translateY(0); }
 
-        /* ── News cards ── */
         .news-card {
           display: flex;
           gap: 14px;
@@ -536,14 +681,12 @@ async function HomePageContent() {
           color: rgb(230,125,153);
           border: 1px solid rgba(230,125,153,0.2);
         }
-
         .glow-divider {
           height: 1px;
           background: linear-gradient(to right, transparent, rgba(230,125,153,0.35), transparent);
-          margin: 28px 0;
+          margin: 36px 0;
           border: none;
         }
-
         .grain-overlay {
           position: fixed; inset: 0; pointer-events: none; z-index: 1000;
           opacity: 0.025;
@@ -557,40 +700,34 @@ async function HomePageContent() {
         .stagger > *:nth-child(4) { animation: popIn 0.4s 0.20s ease both; }
         .stagger > *:nth-child(5) { animation: popIn 0.4s 0.25s ease both; }
         .stagger > *:nth-child(6) { animation: popIn 0.4s 0.30s ease both; }
-        .stagger > *:nth-child(7) { animation: popIn 0.4s 0.35s ease both; }
-        .stagger > *:nth-child(8) { animation: popIn 0.4s 0.40s ease both; }
-
-        * { scrollbar-color: rgba(230,125,153,0.4) rgba(58,55,55,0.5); scrollbar-width: thin; }
-
-        .news-card:nth-child(1) { animation-delay: 0.05s; }
-        .news-card:nth-child(2) { animation-delay: 0.12s; }
-        .news-card:nth-child(3) { animation-delay: 0.19s; }
-        .news-card:nth-child(4) { animation-delay: 0.26s; }
-        .news-card:nth-child(5) { animation-delay: 0.33s; }
-        .news-card:nth-child(6) { animation-delay: 0.40s; }
-        .news-card:nth-child(7) { animation-delay: 0.47s; }
-        .news-card:nth-child(8) { animation-delay: 0.54s; }
+        
+        .news-stagger > *:nth-child(n) { animation: slideInLeft 0.4s ease both; }
       `}</style>
 
       <div className="grain-overlay" />
 
       <div className="hades-home">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 304px', gap: '36px', alignItems: 'flex-start' }}>
+        <div className="page-main-grid">
 
-          {/* COLUNA ESQUERDA (Popular Seasons + News) */}
-          <div>
-            <section style={{ marginBottom: '44px' }}>
+          {/* COLUNA PRINCIPAL (Esquerda) */}
+          <div className="w-full min-w-0">
+
+            {/* 1. SESSÃO DE HOJE */}
+            {nextUpItems && nextUpItems.length > 0 && (
+              <TodaySession items={nextUpItems} currentStreak={gamificationStats.streak.current} />
+            )}
+
+            <hr className="glow-divider" />
+
+            {/* 2. POPULAR SEASONS */}
+            <section className="mb-11">
               <div className="section-head">
                 <div className="section-head-bar" />
-                <h2 className="section-head-title">Popular Seasons</h2>
+                <h2 className="section-head-title">Populares na Semana</h2>
                 <div className="section-head-line" />
-                <span className="section-head-count">{popular.length} titles</span>
+                <span className="section-head-count">{popular.length} títulos</span>
               </div>
-              <div className="stagger" style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
-                gap: '20px',
-              }}>
+              <div className="stagger grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                 {popular.map((item: any) => (
                   <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
                     <StatusBubble status={item.bubbleStatus} size="md" />
@@ -601,100 +738,73 @@ async function HomePageContent() {
                 ))}
               </div>
             </section>
+
             <hr className="glow-divider" />
-            <section style={{ marginBottom: '44px' }}>
-              <SpinTheWheel items={planningItems} />
-            </section>
-            <hr className="glow-divider" />
+
+            {/* 3. NOTÍCIAS PT-BR */}
             <section>
               <div className="section-head">
                 <div className="section-head-bar" />
-                <h2 className="section-head-title">Films &amp; Series News</h2>
+                <h2 className="section-head-title">Notícias de Filmes e Séries</h2>
                 <div className="section-head-line" />
-                <span className="section-head-count">{news.length} articles</span>
+                <span className="section-head-count">{news.length} artigos</span>
               </div>
-              {news.length > 0 ? (
-                news.map((article: any, i: number) => (
-                  <a key={i} href={article.link} target="_blank" rel="noopener noreferrer" className="news-card">
-                    {article.thumbnail && <img src={article.thumbnail} className="news-thumb" alt="news" loading="lazy" />}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <span className="news-source-badge">{article.source || 'News'}</span>
-                        {article.twitter && <span style={{ fontSize: '9px', color: 'rgba(220,210,215,0.35)' }}>{article.twitter}</span>}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 news-stagger">
+                {news.length > 0 ? (
+                  news.map((article: any, i: number) => (
+                    <a
+                      key={i}
+                      href={article.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="news-card"
+                      style={{ animationDelay: `${i * 0.05}s` }}
+                    >
+                      {article.thumbnail && <img src={article.thumbnail} className="news-thumb" alt="news" loading="lazy" />}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="news-source-badge">{article.source || 'Notícia'}</span>
+                        </div>
+                        <p className="m-0 text-[13px] font-semibold text-white/90 leading-snug line-clamp-2">
+                          {article.title}
+                        </p>
+                        <p className="m-0 mt-1 text-[10px] text-white/40">
+                          {article.pubDate ? new Date(article.pubDate).toLocaleDateString('pt-BR', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recente'}
+                        </p>
                       </div>
-                      <p style={{ margin: '0 0 5px', fontSize: '13px', fontWeight: '600', color: 'rgb(220,210,215)', lineHeight: '1.4', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                        {article.title}
-                      </p>
-                      <p style={{ margin: 0, fontSize: '10px', color: 'rgba(220,210,215,0.4)' }}>
-                        {article.pubDate ? new Date(article.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent'}
-                      </p>
-                    </div>
-                  </a>
-                ))
-              ) : (
-                <div style={{ background: 'rgb(52,49,49)', borderRadius: '10px', padding: '28px', textAlign: 'center', color: 'rgba(220,210,215,0.35)' }}>
-                  Loading news...
-                </div>
-              )}
+                    </a>
+                  ))
+                ) : (
+                  <div className="col-span-full bg-[#343131] rounded-xl p-8 text-center text-white/40 text-sm">
+                    Carregando notícias...
+                  </div>
+                )}
+              </div>
             </section>
-          </div>
 
-          {/* COLUNA DIREITA */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-            <div style={{ marginBottom: '20px' }}>
-              <ChallengeWidget compact />
-            </div>
+            <hr className="glow-divider" />
 
-            {/* AIRING NOW */}
-            <div className="side-panel">
-              <div className="side-panel-header">
-                <div className="side-panel-header-dot" style={{ background: '#2ecc71', boxShadow: '0 0 8px rgba(46,204,113,0.6)' }} />
-                <h3 className="side-panel-header-title" style={{ color: '#2ecc71' }}>Airing Now</h3>
+            {/* 4. CALENDÁRIO DE LANÇAMENTOS */}
+            <ReleaseCalendar episodes={calendarEpisodes} />
+
+            <hr className="glow-divider" />
+
+            {/* 5. ROLETA DO DESTINO */}
+            <section className="mb-11">
+              <SpinTheWheel items={planningItems} />
+            </section>
+
+            <hr className="glow-divider" />
+
+            {/* 6. NEWLY ADDED (Agora expandido na coluna principal) */}
+            <section className="mb-11">
+              <div className="section-head">
+                <div className="section-head-bar" style={{ background: 'linear-gradient(to bottom, #10b981, rgba(16,185,129,0.3))' }} />
+                <h2 className="section-head-title" style={{ color: '#10b981' }}>Adicionados Recentemente</h2>
+                <div className="section-head-line" style={{ background: 'linear-gradient(to right, rgba(16,185,129,0.25), transparent)' }} />
               </div>
-              {airing.length > 0 ? (
-                <div className="cards-grid-5 stagger" style={{ padding: '14px' }}>
-                  {airing.map((e: any) => (
-                    <div key={e.id} className="card-hover-effect">
-                      <AiringProgressCard entry={e} />
-                      {/* Se seus componentes não tiverem a área de progresso, você pode inserir manualmente aqui */}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)' }}>
-                  No series currently airing.
-                </div>
-              )}
-            </div>
-
-            {/* IN PROGRESS */}
-            <div className="side-panel">
-              <div className="side-panel-header">
-                <div className="side-panel-header-dot" style={{ background: 'rgb(230,125,153)' }} />
-                <h3 className="side-panel-header-title">In Progress</h3>
-              </div>
-              {inProgress.length > 0 ? (
-                <div className="cards-grid-5 stagger" style={{ padding: '14px' }}>
-                  {inProgress.map((e: any) => (
-                    <div key={e.id} className="card-hover-effect">
-                      <AiringProgressCard entry={e} />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ padding: '24px 16px', textAlign: 'center', fontSize: '12px', color: 'rgba(220,210,215,0.35)' }}>
-                  No titles in progress.
-                </div>
-              )}
-            </div>
-
-            {/* NEWLY ADDED (grid 3 colunas) */}
-            <div className="side-panel">
-              <div className="side-panel-header">
-                <div className="side-panel-header-dot" />
-                <h3 className="side-panel-header-title">Newly Added</h3>
-              </div>
-              <div className="stagger" style={{ padding: '14px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+              <div className="stagger grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3">
                 {newlyAdded.length > 0 ? (
                   newlyAdded.map((item: any) => (
                     <Link key={item.id} href={`/titles/${item.slug}`} className="cover-card">
@@ -705,12 +815,76 @@ async function HomePageContent() {
                     </Link>
                   ))
                 ) : (
-                  <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px', fontSize: '12px', color: 'rgba(220,210,215,0.35)' }}>
-                    Loading newly added titles...
+                  <div className="col-span-full text-center py-8 text-white/30 text-xs">
+                    Nenhum título adicionado recentemente.
                   </div>
                 )}
               </div>
+            </section>
+          </div>
+
+          {/* COLUNA LATERAL (Direita) */}
+          <div className="sidebar flex flex-col gap-0 w-full">
+
+
+            {/* 7. AIRING NOW */}
+            <div className="side-panel">
+              <div className="side-panel-header">
+                <div className="side-panel-header-dot" style={{ background: '#2ecc71', boxShadow: '0 0 12px rgba(46,204,113,0.45)' }} />
+                <h3 className="side-panel-header-title" style={{ color: '#2ecc71' }}>Em Exibição</h3>
+                <span className="side-panel-header-pill">{airing.length} itens</span>
+              </div>
+              {airing.length > 0 ? (
+                <div className="side-panel-grid">
+                  {airing.map((e: any) => (
+                    <AiringProgressCard key={e.id} entry={e} />
+                  ))}
+                </div>
+              ) : (
+                <div className="side-panel-empty">
+                  <div className="side-panel-empty-graphic"><span>⏳</span></div>
+                  <div className="side-panel-empty-title">Ainda não há exibições</div>
+                  <div className="side-panel-empty-text">
+                    Acompanhe as séries em alta para ver as próximas exibições aparecerem aqui.
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* 8. IN PROGRESS */}
+            <div className="side-panel">
+              <div className="side-panel-header">
+                <div className="side-panel-header-dot" style={{ background: 'rgb(230,125,153)', boxShadow: '0 0 16px rgba(230,125,153,0.35)' }} />
+                <h3 className="side-panel-header-title">Em Andamento</h3>
+                <span className="side-panel-header-pill">{inProgress.length} itens</span>
+              </div>
+              {inProgress.length > 0 ? (
+                <div className="side-panel-grid">
+                  {inProgress.map((e: any) => (
+                    <AiringProgressCard key={e.id} entry={e} />
+                  ))}
+                </div>
+              ) : (
+                <div className="side-panel-empty">
+                  <div className="side-panel-empty-graphic"><span>🎬</span></div>
+                  <div className="side-panel-empty-title">Nada em andamento ainda</div>
+                  <div className="side-panel-empty-text">
+                    Marque episódios como assistidos para acompanhar sua jornada e preencher essa área com estilo.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 9. DESAFIOS ATUAIS */}
+            <div className="mb-5">
+              <ChallengeWidget compact />
+            </div>
+
+            {/* 10. VITRINE DE CONQUISTAS RECENTES */}
+            <AchievementShowcase achievements={gamificationStats.achievements} />
+
+            {/* 11. NÚMEROS DA SEMANA */}
+            <WeeklyStats stats={weeklyStats} />
           </div>
         </div>
       </div>

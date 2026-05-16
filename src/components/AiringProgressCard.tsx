@@ -1,8 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import StatusBubble from '@/components/StatusBubble';
 
 interface AiringProgressEntry {
   id: string;
@@ -16,7 +15,6 @@ interface AiringProgressEntry {
   totalEpisodes?: number | null;
   imagePath?: string | null;
   productionStatus?: string | null;
-  /** Status real de exibição: 'Airing' | 'Finished' | 'Not Yet Aired' | 'Returning Series' | … */
   seasonStatus?: string | null;
   nextEpisode?: { episode_number: number; air_date: string } | null;
   inProduction?: boolean;
@@ -24,48 +22,23 @@ interface AiringProgressEntry {
 
 interface AiringProgressCardProps {
   entry: AiringProgressEntry;
+  /** Lado para onde o painel de hover abre. 'right' (padrão) ou 'left' */
+  panelSide?: 'right' | 'left';
 }
 
-export default function AiringProgressCard({ entry }: AiringProgressCardProps) {
+export default function AiringProgressCard({ entry, panelSide = 'right' }: AiringProgressCardProps) {
   const [progress, setProgress] = useState(entry.progress ?? 0);
   const [isUpdating, setIsUpdating] = useState(false);
 
   const isSeries = entry.type === 'TV_SEASON';
   const totalEpisodes = entry.totalEpisodes ?? 0;
-  const completed = isSeries ? totalEpisodes > 0 && progress >= totalEpisodes : entry.status === 'COMPLETED';
+  const completed = isSeries
+    ? totalEpisodes > 0 && progress >= totalEpisodes
+    : entry.status === 'COMPLETED';
+
   const slug = isSeries
     ? `tv-${entry.parentTmdbId ?? entry.tmdbId}-s${entry.seasonNumber ?? 1}`
     : `movie-${entry.tmdbId}`;
-
-  const progressLabel = isSeries
-    ? `Ep ${progress}/${totalEpisodes || '?'}`
-    : entry.status === 'COMPLETED'
-      ? 'Completed'
-      : 'Movie';
-
-  const progressPercent = isSeries && totalEpisodes > 0
-    ? Math.min(100, Math.round((progress / totalEpisodes) * 100))
-    : 0;
-
-  const nextInfo = entry.nextEpisode
-    ? `Next Ep ${entry.nextEpisode.episode_number} • ${new Date(entry.nextEpisode.air_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
-    : entry.inProduction
-      ? 'In production'
-      : 'Season ended';
-
-  const actionLabel = isSeries ? '+' : '✓';
-  const canUpdate = !completed && (isSeries ? totalEpisodes > 0 : entry.status !== 'COMPLETED');
-  const statusBadge = isSeries ? 'Série' : 'Filme';
-
-  const buttonTitle = isSeries
-    ? completed
-      ? 'Completed'
-      : 'Atualizar episódio'
-    : entry.status === 'COMPLETED'
-      ? 'Completed'
-      : 'Marcar como visto';
-
-  const updatedPercentage = useMemo(() => progressPercent, [progressPercent]);
 
   const poster = entry.imagePath
     ? entry.imagePath.startsWith('http')
@@ -73,274 +46,304 @@ export default function AiringProgressCard({ entry }: AiringProgressCardProps) {
       : `https://image.tmdb.org/t/p/w300${entry.imagePath}`
     : '';
 
-  async function handleIncrement(event: React.MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!canUpdate || isUpdating) return;
+  const remaining = isSeries
+    ? totalEpisodes > 0 ? totalEpisodes - progress : '?'
+    : completed ? 0 : 1;
+
+  const remainingLabel = isSeries
+    ? remaining === '?' ? '? ep. restante'
+      : remaining === 0 ? 'Concluído'
+      : `${remaining} ep. restante${Number(remaining) > 1 ? 's' : ''}`
+    : completed ? 'Concluído' : '1 ep. restante';
+
+  const barPercent = isSeries
+    ? totalEpisodes > 0 ? Math.min((progress / totalEpisodes) * 100, 100) : 0
+    : completed ? 100 : 0;
+
+  const progressLabel = isSeries
+    ? `${progress}/${totalEpisodes > 0 ? totalEpisodes : '?'}`
+    : completed ? '1/1' : '0/1';
+
+  const canUpdate = !completed && !isUpdating && (isSeries ? true : entry.status !== 'COMPLETED');
+
+  async function handleIncrement(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canUpdate) return;
 
     const nextProgress = isSeries
-      ? (totalEpisodes > 0 ? Math.min(progress + 1, totalEpisodes) : progress + 1)
+      ? totalEpisodes > 0 ? Math.min(progress + 1, totalEpisodes) : progress + 1
       : 1;
-
     const nextStatus = !isSeries
       ? 'COMPLETED'
-      : totalEpisodes > 0 && nextProgress >= totalEpisodes
-        ? 'COMPLETED'
-        : entry.status;
+      : totalEpisodes > 0 && nextProgress >= totalEpisodes ? 'COMPLETED' : entry.status;
 
     setIsUpdating(true);
-
     try {
-      const response = await fetch(`/api/entries/${entry.id}`, {
+      const res = await fetch(`/api/entries/${entry.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ progress: nextProgress, status: nextStatus }),
       });
-
-      if (response.ok) {
-        setProgress(nextProgress);
-      }
-    } catch (error) {
-      console.error('Failed to update entry progress', error);
+      if (res.ok) setProgress(nextProgress);
+    } catch (err) {
+      console.error('Failed to update entry progress', err);
     } finally {
       setIsUpdating(false);
     }
   }
 
+  const isLeft = panelSide === 'left';
+
   return (
-    <div className="airing-root">
-      <Link href={`/titles/${slug}`} className="poster-link">
-        <div className="poster">
-          <StatusBubble
-            status={entry.seasonStatus ?? entry.productionStatus}
-            size="md"
-            position="tl"
-          />
-          {poster ? (
-            <img src={poster} alt={entry.title} loading="lazy" decoding="async" />
-          ) : (
-            <div className="placeholder">{isSeries ? '📺' : '🎬'}</div>
-          )}
-          <div className="overlay">
-            <strong>{entry.productionStatus ?? '—'}</strong>
-            {nextInfo && <span>{nextInfo}</span>}
-          </div>
-        </div>
-      </Link>
-
-      <div className="body">
-        <div className="row-top">
-          <p className="title">{entry.title}</p>
-          <button
-            type="button"
-            title={buttonTitle}
-            disabled={!canUpdate || isUpdating}
-            className="inc"
-            onClick={handleIncrement}
-          >
-            {isUpdating ? '…' : actionLabel}
-          </button>
-        </div>
-
-        <div className="meta-row">
-          <span className="badge">{statusBadge}</span>
-          <span className="ep">{progressLabel}</span>
-        </div>
-
-        {isSeries && totalEpisodes > 0 && (
-          <div className="bar-block">
-            <div className="track">
-              <div className="fill" style={{ width: `${updatedPercentage}%` }} />
-            </div>
-            <span className="pct">{updatedPercentage}%</span>
-          </div>
-        )}
-
-      </div>
-
+    <div className="apc-shell">
       <style jsx>{`
-        .airing-root {
-          display: grid;
-          gap: 8px;
+        .apc-shell {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
           min-width: 0;
-          text-align: left;
-          background: rgb(52, 49, 49);
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          border-radius: 10px;
-          overflow: hidden;
-          transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-        }
-        .airing-root:hover {
-          border-color: rgba(230, 125, 153, 0.35);
-          box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
-          transform: translateY(-3px);
+          position: relative;
         }
 
-        .poster-link {
-          display: block;
-          text-decoration: none;
-          color: inherit;
-        }
-
-        .poster {
+        .apc-poster-wrap {
           position: relative;
           aspect-ratio: 2 / 3;
-          overflow: hidden;
-          background: rgb(58, 55, 55);
         }
 
-        img,
-        .placeholder {
+        .apc-poster-inner {
           display: block;
           width: 100%;
           height: 100%;
-          object-fit: cover;
-          transition: transform 0.22s ease;
+          border-radius: 4px;
+          overflow: hidden;
+          position: relative;
+          z-index: 1;
+          background: #3a3535;
+          transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
         }
 
-        .placeholder {
+        .apc-shell:hover .apc-poster-inner {
+          transform: translateY(-3px) scale(1.03);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.55), 0 0 0 1px rgba(230,125,153,0.3);
+        }
+
+        .apc-poster-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          transition: transform 0.25s ease;
+        }
+
+        .apc-shell:hover .apc-poster-img {
+          transform: scale(1.06);
+        }
+
+        .apc-poster-placeholder {
+          width: 100%;
+          height: 100%;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 28px;
-          background: linear-gradient(135deg, rgb(58, 55, 55), rgb(42, 39, 39));
+          font-size: 20px;
+          background: linear-gradient(135deg, #3a3535, #262323);
         }
 
-        .airing-root:hover img {
-          transform: scale(1.04);
-        }
-
-        .overlay {
+        .apc-poster-inner::after {
+          content: '';
           position: absolute;
-          inset: auto 0 0;
-          display: grid;
-          gap: 4px;
-          padding: 28px 8px 8px;
-          background: linear-gradient(transparent, rgba(20, 18, 18, 0.92));
-          opacity: 0;
-          transition: opacity 0.18s ease;
+          inset: 0;
+          background: linear-gradient(to top, rgba(20,18,18,0.65) 0%, transparent 50%);
+          pointer-events: none;
+          border-radius: inherit;
         }
 
-        .airing-root:hover .overlay {
-          opacity: 1;
-        }
-
-        .overlay strong {
-          font-size: 10px;
-          color: rgb(232, 226, 223);
-          line-height: 1.25;
-        }
-
-        .overlay span {
-          font-size: 9px;
-          color: rgba(230, 125, 153, 0.95);
-          line-height: 1.3;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-
-        .body {
-          padding: 0 10px 10px;
-          display: grid;
-          gap: 6px;
-        }
-
-        .row-top {
+        /* ── Painel hover ── */
+        .apc-hover-panel {
+          position: absolute;
+          top: 0;
+          width: 152px;
+          background: rgba(20,18,18,0.97);
+          backdrop-filter: blur(16px);
+          border: 1px solid rgba(230,125,153,0.22);
+          border-radius: 7px;
+          padding: 11px 12px 13px;
           display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
+          flex-direction: column;
           gap: 8px;
+          z-index: 30;
+          pointer-events: none;
+          opacity: 0;
+          box-shadow: 0 10px 36px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03);
+          transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .title {
-          margin: 0;
+        .apc-shell:hover .apc-hover-panel {
+          opacity: 1;
+          transform: translateX(0) !important;
+          pointer-events: auto;
+        }
+
+        .apc-panel-remaining {
           font-size: 11px;
-          font-weight: 800;
-          line-height: 1.25;
-          color: rgb(232, 226, 223);
+          font-weight: 700;
+          color: #e67d99;
+          line-height: 1.2;
+        }
+
+        .apc-panel-title {
+          font-size: 10px;
+          color: rgba(232,224,216,0.72);
+          line-height: 1.35;
           overflow: hidden;
           display: -webkit-box;
-          -webkit-line-clamp: 2;
+          -webkit-line-clamp: 3;
           -webkit-box-orient: vertical;
-          min-width: 0;
-          flex: 1;
+          font-weight: 500;
         }
 
-        .inc {
-          flex-shrink: 0;
-          min-width: 32px;
-          height: 32px;
-          border-radius: 10px;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          background: rgba(230, 125, 153, 0.18);
-          color: #e8e2df;
-          cursor: pointer;
-          font-weight: 800;
-          font-size: 15px;
-          line-height: 1;
-          transition: transform 0.15s ease, background 0.15s ease;
+        .apc-bar-track {
+          height: 3px;
+          background: rgba(255,255,255,0.1);
+          border-radius: 99px;
+          overflow: hidden;
+          margin-bottom: 4px;
         }
 
-        .inc:disabled {
-          background: rgba(255, 255, 255, 0.06);
-          color: rgba(220, 210, 215, 0.45);
-          cursor: not-allowed;
+        .apc-bar-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #e67d99, #c9965a);
+          border-radius: 99px;
+          transition: width 0.35s ease;
         }
 
-        .inc:not(:disabled):hover {
-          transform: scale(1.04);
+        .apc-bar-label {
+          font-size: 9px;
+          color: rgba(232,224,216,0.4);
+          letter-spacing: 0.03em;
+          font-weight: 600;
         }
 
-        .meta-row {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          align-items: center;
-        }
-
-        .badge {
-          font-size: 8px;
-          font-weight: 800;
+        .apc-inc-btn {
+          width: 100%;
+          padding: 5px 8px;
+          background: rgba(230,125,153,0.12);
+          border: 1px solid rgba(230,125,153,0.26);
+          border-radius: 4px;
+          color: #e67d99;
+          font-size: 9px;
+          font-weight: 700;
           letter-spacing: 0.04em;
           text-transform: uppercase;
-          padding: 2px 6px;
-          border-radius: 4px;
-          background: rgba(230, 125, 153, 0.12);
-          color: rgba(230, 125, 153, 0.95);
-          border: 1px solid rgba(230, 125, 153, 0.22);
+          cursor: pointer;
+          transition: background 0.15s, border-color 0.15s, transform 0.12s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
-        .ep {
+        .apc-inc-btn:hover:not(:disabled) {
+          background: rgba(230,125,153,0.26);
+          border-color: rgba(230,125,153,0.5);
+          transform: translateY(-1px);
+        }
+
+        .apc-inc-btn:active:not(:disabled) { transform: translateY(0); }
+        .apc-inc-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .apc-completed-badge {
           font-size: 9px;
-          color: rgba(220, 210, 215, 0.55);
+          text-align: center;
+          color: rgba(46,204,113,0.85);
+          font-weight: 700;
+          letter-spacing: 0.05em;
         }
 
-        .bar-block {
-          display: grid;
-          gap: 4px;
-        }
-
-        .track {
-          height: 5px;
-          border-radius: 99px;
-          background: rgba(255, 255, 255, 0.08);
+        /* ── Título ── */
+        .apc-title {
+          font-size: 7px;
+          font-weight: 600;
+          color: rgba(232,224,216,0.62);
+          line-height: 1.35;
+          text-align: center;
           overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          text-decoration: none;
+          padding: 0 1px;
+          transition: color 0.2s ease;
         }
 
-        .fill {
-          height: 100%;
-          border-radius: 99px;
-          background: linear-gradient(90deg, rgb(230, 125, 153), rgb(245, 90, 130));
-          transition: width 0.2s ease;
-        }
-
-        .pct {
-          font-size: 9px;
-          color: rgba(220, 210, 215, 0.5);
-        }
+        .apc-shell:hover .apc-title { color: #e67d99; }
       `}</style>
+
+      <div className="apc-poster-wrap">
+        <Link href={`/titles/${slug}`} className="apc-poster-inner">
+          {poster ? (
+            <img src={poster} alt={entry.title} className="apc-poster-img" loading="lazy" decoding="async" />
+          ) : (
+            <div className="apc-poster-placeholder">{isSeries ? '📺' : '🎬'}</div>
+          )}
+        </Link>
+
+        {/* Painel hover — abre para a direita ou esquerda via prop */}
+        <div
+          className="apc-hover-panel"
+          style={{
+            ...(isLeft
+              ? { right: 'calc(100% + 8px)', left: 'auto', transform: 'translateX(6px)' }
+              : { left: 'calc(100% + 8px)', right: 'auto', transform: 'translateX(-6px)' }
+            ),
+          }}
+        >
+          {/* Seta */}
+          <span style={{
+            position: 'absolute',
+            top: '14px',
+            width: '8px',
+            height: '8px',
+            background: 'rgba(20,18,18,0.97)',
+            ...(isLeft
+              ? {
+                  right: '-5px',
+                  borderRight: '1px solid rgba(230,125,153,0.22)',
+                  borderTop: '1px solid rgba(230,125,153,0.22)',
+                  transform: 'rotate(45deg)',
+                }
+              : {
+                  left: '-5px',
+                  borderLeft: '1px solid rgba(230,125,153,0.22)',
+                  borderBottom: '1px solid rgba(230,125,153,0.22)',
+                  transform: 'rotate(45deg)',
+                }
+            ),
+          }} />
+
+          <div className="apc-panel-remaining">{remainingLabel}</div>
+          <div className="apc-panel-title">{entry.title}</div>
+
+          <div>
+            <div className="apc-bar-track">
+              <div className="apc-bar-fill" style={{ width: `${barPercent}%` }} />
+            </div>
+            <div className="apc-bar-label">Progress: {progressLabel}</div>
+          </div>
+
+          {completed ? (
+            <div className="apc-completed-badge">✓ CONCLUÍDO</div>
+          ) : (
+            <button className="apc-inc-btn" onClick={handleIncrement} disabled={!canUpdate}>
+              {isUpdating ? '...' : '+ 1 ep'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <Link href={`/titles/${slug}`} className="apc-title" title={entry.title}>
+        {entry.title}
+      </Link>
     </div>
   );
 }

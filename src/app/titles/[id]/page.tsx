@@ -269,36 +269,29 @@ function LoadingScreen(){
     <div style={{
       position:'fixed',inset:0,background:BG,
       display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-      gap:32,fontFamily:'Overpass,sans-serif',zIndex:9999,
-      animation:'fadeIn .3s ease',
+      gap:22,fontFamily:'Overpass,sans-serif',zIndex:9999,
+      animation:'fadeIn .28s ease',
     }}>
-      {/* Spinner rosa */}
       <div style={{
-        width:54,height:54,borderRadius:'50%',
-        border:'3px solid rgba(230,125,153,.18)',
-        borderTopColor:ACCENT,
-        animation:'spin .85s linear infinite',
-      }}/>
-
-      {/* Esqueleto da página */}
-      <div style={{width:900,maxWidth:'92vw',display:'flex',gap:28}}>
-        {/* Sidebar */}
-        <div style={{width:200,flexShrink:0,display:'flex',flexDirection:'column',gap:10}}>
-          <Sk w="200px" h="295px" r="6px"/>
-          <Sk w="200px" h="38px" r="4px"/>
-          <div style={{background:CARD,borderRadius:4,padding:16,display:'flex',flexDirection:'column',gap:10}}>
-            {[...Array(8)].map((_,i)=><div key={i} style={{display:'flex',flexDirection:'column',gap:4}}>
-              <Sk w="55%" h="10px"/><Sk w="80%" h="13px"/>
-            </div>)}
-          </div>
+        width:180,height:180,display:'flex',alignItems:'center',justifyContent:'center',
+        borderRadius:28,background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.08)',
+        boxShadow:'0 24px 48px rgba(0,0,0,0.24)',backdropFilter:'blur(12px)',padding:24,
+      }}>
+        <div style={{
+          width:96,height:96,borderRadius:'50%',border:'6px solid rgba(230,125,153,0.22)',
+          borderTopColor:ACCENT,animation:'spin 1.1s cubic-bezier(0.47,0,0.75,0.72) infinite',
+          display:'flex',alignItems:'center',justifyContent:'center',
+          position:'relative',
+        }}>
+          <div style={{width:20,height:20,borderRadius:'50%',background:ACCENT,boxShadow:'0 0 24px rgba(230,125,153,0.45)'}}/>
+          <div style={{position:'absolute',inset:0,borderRadius:'50%',boxShadow:'0 0 0 1px rgba(255,255,255,0.06)'}}/>
         </div>
-        {/* Main */}
-        <div style={{flex:1,paddingTop:90,display:'flex',flexDirection:'column',gap:14}}>
-          <Sk w="60%" h="30px"/><Sk w="18%" h="13px"/>
-          <Sk h="130px" r="4px"/><Sk h="100px" r="4px"/>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            {[...Array(4)].map((_,i)=><Sk key={i} h="80px" r="4px"/>)}
-          </div>
+      </div>
+
+      <div style={{textAlign:'center',maxWidth:420,color:TEXT}}>
+        <div style={{fontSize:20,fontWeight:700,marginBottom:10}}>Carregando a página</div>
+        <div style={{fontSize:14,color:MUTED,lineHeight:1.7}}>
+          Aguarde um momento enquanto trazemos os detalhes do título e preparamos a página para você.
         </div>
       </div>
     </div>

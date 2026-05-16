@@ -260,6 +260,7 @@ export default function ChallengeWidget({ compact = false }: { compact?: boolean
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
+        overflow: 'hidden',
         borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
         {(['daily', 'weekly', 'special'] as const).map((category) => {

@@ -25,7 +25,7 @@
 
 ---
 
-### 1.2 Remoção da aba Next Up
+### 1.2 Remoção da aba Next Up - JÁ FOI REMOVIDO
 - A aba **Next Up foi removida** por ter se tornado inutilizada
 - A lógica de próximo episódio migra para o card "Sessão de hoje"
 
@@ -80,7 +80,7 @@
 
 ---
 
-### 1.8 Roleta do destino — título aleatório da watchlist
+### 1.8 Roleta do destino — título aleatório da watchlist - JÁ FOI FEITO, PORÉM COLOCAR ELE EM BAIXO DE SÉRIES E FILM LIST.
 - Botão estilizado (temática mitológica/Hades) que **sorteia um título aleatório** da watchlist com `status: PLANNING`
 - Exibe card com poster e sinopse do título sorteado
 - Incentiva o usuário a começar algo que está postergando
