@@ -168,7 +168,7 @@ Substituir os dropdowns atuais (Genre ▼, Year ▼, Any Format ▼, Status ▼)
 
 | Tipo | Descrição | Exemplo |
 |---|---|---|
-| `Sequel` | Continuação direta | Breaking Bad → Better Call Saul (cronologicamente) |
+| `Sequel` | Continuação direta | The Mandalorian 3rd Season -> Star Wars: The Mandalorian and Grogu (cronologicamente) |
 | `Prequel` | Obra anterior direta | — |
 | `Spin-off` | Derivação com personagens/universo — **somente primeira temporada** de cada série conta | Yellowstone ↔ 1923 (T1 de cada) |
 | `Side Story` | Obras independentes baseadas no mesmo personagem/conceito | Batman (2022) ↔ Batman (Nolan) |

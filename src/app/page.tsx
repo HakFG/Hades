@@ -602,6 +602,10 @@ async function HomePageContent() {
               </div>
             </section>
             <hr className="glow-divider" />
+            <section style={{ marginBottom: '44px' }}>
+              <SpinTheWheel items={planningItems} />
+            </section>
+            <hr className="glow-divider" />
             <section>
               <div className="section-head">
                 <div className="section-head-bar" />
@@ -683,9 +687,6 @@ async function HomePageContent() {
                 </div>
               )}
             </div>
-
-            {/* ROLETA DO DESTINO */}
-            <SpinTheWheel items={planningItems} />
 
             {/* NEWLY ADDED (grid 3 colunas) */}
             <div className="side-panel">
