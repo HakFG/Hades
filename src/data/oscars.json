@@ -1,0 +1,208 @@
+{
+  "2026": [
+    {
+      "id": "2026-best-picture-one-battle-after-another",
+      "title": "One Battle after Another",
+      "categories": ["Best Picture", "Adapted Screenplay"],
+      "result": "winner"
+    },
+    {
+      "id": "2026-best-picture-sinners",
+      "title": "Sinners",
+      "categories": ["Best Picture", "Original Screenplay", "Actor in a Leading Role"],
+      "result": "winner"
+    },
+    {
+      "id": "2026-best-picture-hamnet",
+      "title": "Hamnet",
+      "categories": ["Best Picture", "Actress in a Leading Role", "Adapted Screenplay"],
+      "result": "winner"
+    },
+    {
+      "id": "2026-best-picture-frankenstein",
+      "title": "Frankenstein",
+      "categories": ["Best Picture", "Production Design"],
+      "result": "winner"
+    },
+    {
+      "id": "2026-best-picture-bugonia",
+      "title": "Bugonia",
+      "categories": ["Best Picture", "Adapted Screenplay"],
+      "result": "nominated"
+    },
+    {
+      "id": "2026-best-picture-f1",
+      "title": "F1",
+      "categories": ["Best Picture", "Sound"],
+      "result": "winner"
+    },
+    {
+      "id": "2026-best-picture-marty-supreme",
+      "title": "Marty Supreme",
+      "categories": ["Best Picture", "Original Screenplay"],
+      "result": "nominated"
+    },
+    {
+      "id": "2026-best-picture-the-secret-agent",
+      "title": "The Secret Agent",
+      "categories": ["Best Picture", "Actor in a Leading Role"],
+      "result": "nominated"
+    },
+    {
+      "id": "2026-best-picture-sentimental-value",
+      "title": "Sentimental Value",
+      "categories": ["Best Picture", "Original Screenplay"],
+      "result": "nominated"
+    },
+    {
+      "id": "2026-best-picture-train-dreams",
+      "title": "Train Dreams",
+      "categories": ["Best Picture", "Adapted Screenplay"],
+      "result": "nominated"
+    }
+  ],
+  "2025": [
+    {
+      "id": "2025-best-picture-anora",
+      "tmdbId": 1064213,
+      "title": "Anora",
+      "categories": ["Best Picture", "Best Director", "Original Screenplay"],
+      "result": "winner"
+    },
+    {
+      "id": "2025-best-picture-the-brutalist",
+      "tmdbId": 549509,
+      "title": "The Brutalist",
+      "categories": ["Best Picture", "Actor in a Leading Role"],
+      "result": "winner"
+    },
+    {
+      "id": "2025-best-picture-conclave",
+      "tmdbId": 974576,
+      "title": "Conclave",
+      "categories": ["Best Picture", "Adapted Screenplay"],
+      "result": "winner"
+    },
+    {
+      "id": "2025-best-picture-emilia-perez",
+      "tmdbId": 974950,
+      "title": "Emilia Perez",
+      "categories": ["Best Picture", "Actress in a Supporting Role"],
+      "result": "winner"
+    },
+    {
+      "id": "2025-best-picture-a-complete-unknown",
+      "tmdbId": 661539,
+      "title": "A Complete Unknown",
+      "categories": ["Best Picture"],
+      "result": "nominated"
+    },
+    {
+      "id": "2025-best-picture-dune-part-two",
+      "tmdbId": 693134,
+      "title": "Dune: Part Two",
+      "categories": ["Best Picture", "Visual Effects", "Sound"],
+      "result": "winner"
+    },
+    {
+      "id": "2025-best-picture-im-still-here",
+      "tmdbId": 1000837,
+      "title": "I'm Still Here",
+      "categories": ["Best Picture", "International Feature Film"],
+      "result": "winner"
+    },
+    {
+      "id": "2025-best-picture-nickel-boys",
+      "tmdbId": 1028196,
+      "title": "Nickel Boys",
+      "categories": ["Best Picture"],
+      "result": "nominated"
+    },
+    {
+      "id": "2025-best-picture-the-substance",
+      "tmdbId": 933260,
+      "title": "The Substance",
+      "categories": ["Best Picture", "Makeup and Hairstyling"],
+      "result": "winner"
+    },
+    {
+      "id": "2025-best-picture-wicked",
+      "tmdbId": 402431,
+      "title": "Wicked",
+      "categories": ["Best Picture", "Costume Design", "Production Design"],
+      "result": "winner"
+    }
+  ],
+  "2024": [
+    {
+      "id": "2024-best-picture-oppenheimer",
+      "tmdbId": 872585,
+      "title": "Oppenheimer",
+      "categories": ["Best Picture", "Best Director", "Actor in a Leading Role"],
+      "result": "winner"
+    },
+    {
+      "id": "2024-best-picture-poor-things",
+      "tmdbId": 792307,
+      "title": "Poor Things",
+      "categories": ["Best Picture", "Actress in a Leading Role", "Production Design"],
+      "result": "winner"
+    },
+    {
+      "id": "2024-best-picture-american-fiction",
+      "tmdbId": 1056360,
+      "title": "American Fiction",
+      "categories": ["Best Picture", "Adapted Screenplay"],
+      "result": "winner"
+    },
+    {
+      "id": "2024-best-picture-anatomy-of-a-fall",
+      "tmdbId": 915935,
+      "title": "Anatomy of a Fall",
+      "categories": ["Best Picture", "Original Screenplay"],
+      "result": "winner"
+    },
+    {
+      "id": "2024-best-picture-barbie",
+      "tmdbId": 346698,
+      "title": "Barbie",
+      "categories": ["Best Picture", "Original Song"],
+      "result": "winner"
+    },
+    {
+      "id": "2024-best-picture-the-holdovers",
+      "tmdbId": 840430,
+      "title": "The Holdovers",
+      "categories": ["Best Picture", "Actress in a Supporting Role"],
+      "result": "winner"
+    },
+    {
+      "id": "2024-best-picture-killers-of-the-flower-moon",
+      "tmdbId": 466420,
+      "title": "Killers of the Flower Moon",
+      "categories": ["Best Picture"],
+      "result": "nominated"
+    },
+    {
+      "id": "2024-best-picture-maestro",
+      "tmdbId": 523607,
+      "title": "Maestro",
+      "categories": ["Best Picture"],
+      "result": "nominated"
+    },
+    {
+      "id": "2024-best-picture-past-lives",
+      "tmdbId": 666277,
+      "title": "Past Lives",
+      "categories": ["Best Picture"],
+      "result": "nominated"
+    },
+    {
+      "id": "2024-best-picture-the-zone-of-interest",
+      "tmdbId": 467244,
+      "title": "The Zone of Interest",
+      "categories": ["Best Picture", "International Feature Film", "Sound"],
+      "result": "winner"
+    }
+  ]
+}

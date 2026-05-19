@@ -1,413 +1,491 @@
-// app/search/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/static-components, @next/next/no-img-element */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { Film, Search, Tv, Users, X } from 'lucide-react';
+import AdvancedFilterChips, { type AdvancedFilters } from '@/components/AdvancedFilterChips';
+import GenreGrid from '@/components/GenreGrid';
 import ListEditor from '@/components/ListEditor';
-import StatusBubble from '@/components/StatusBubble';
-import { getOrdinal, buildSeasonTitle } from '@/lib/utils';
+import OscarSection from '@/components/OscarSection';
+import SearchMediaCard, {
+  type SearchEntryStatus,
+  type SearchMediaItem,
+} from '@/components/SearchMediaCard';
 import { emitXPNotification } from '@/hooks/useXPNotification';
 import { normalizeProductionStatus } from '@/lib/production-status';
+import { buildSeasonTitle } from '@/lib/utils';
 import { titlePageSeasonStatus } from '@/lib/tmdb-status';
 
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const TMDB = 'https://api.themoviedb.org/3';
 
-// ─── Tipos ─────────────────────────────────────────────────────────────────────
+type MediaType = 'tv' | 'movie' | 'people';
 
-interface RawShow {
+interface RawTitle {
   id: number;
   name?: string;
   title?: string;
   poster_path: string | null;
+  backdrop_path?: string | null;
+  overview?: string | null;
   vote_average?: number;
   first_air_date?: string;
   release_date?: string;
   popularity?: number;
 }
 
-interface MediaCard {
-  tmdbId: number;
-  parentTmdbId?: number;
-  title: string;
-  poster_path: string | null;
-  type: 'MOVIE' | 'TV_SEASON';
-  episode_count?: number;
-  season_number?: number;
-  linkSlug: string;
-  popularity?: number;
-  airYear?: string;
-  airDate?: string;      
-  seriesStatus?: string; 
-  productionStatus?: string;
-  seasonStatus?: 'Airing' | 'Finished' | 'Not Yet Aired';
+interface PersonResult {
+  id: number;
+  name: string;
+  profile_path: string | null;
+  known_for_department: string | null;
+  popularity: number;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+interface EditorEntry {
+  id: string;
+  tmdbId: number;
+  parentTmdbId?: number | null;
+  seasonNumber?: number | null;
+  title: string;
+  type: 'MOVIE' | 'TV_SEASON';
+  status: 'WATCHING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REWATCHING' | 'UPCOMING';
+  score: number;
+  progress: number;
+  totalEpisodes?: number | null;
+  imagePath?: string | null;
+  poster_path?: string | null;
+  isFavorite: boolean;
+  startDate?: string | null;
+  finishDate?: string | null;
+  rewatchCount: number;
+  notes?: string | null;
+  hidden: boolean;
+  updatedAt: string;
+}
 
+type AddMediaPayload = Partial<EditorEntry> & {
+  gamification?: Parameters<typeof emitXPNotification>[0][];
+};
 
+const EMPTY_ADVANCED: AdvancedFilters = {
+  minRating: 0,
+  maxRuntime: 0,
+  network: '',
+  hiddenGems: false,
+};
 
-// ─── FIX FORMATO: Mapeamento correto de with_type do TMDB ─────────────────────
-// TMDB with_type values:
-//   0 = Documentary
-//   1 = News
-//   2 = Miniseries
-//   3 = Reality
-//   4 = Scripted (TV Series normal)
-//   5 = Talk Show
-//   6 = Video (inclui OVAs, Specials curtos)
-// Para "TV Series" usamos type=4 (Scripted)
-// Para "Miniseries" usamos type=2
-// Para "Special / OVA" usamos type=6
-
-const FORMAT_TV_OPTIONS = [
-  { value: '',         label: 'Any Format'  },
-  { value: 'scripted', label: 'TV Series'   },
-  { value: 'miniseries',label: 'Miniseries' },
-  { value: 'special',  label: 'Special'     },
-  { value: 'reality',  label: 'Reality'     },
-  { value: 'documentary', label: 'Documentary' },
-];
-
-const FORMAT_MOVIE_OPTIONS = [
-  { value: '',         label: 'Any Format'  },
-  { value: 'movie',    label: 'Movie'       },
-  { value: 'short',    label: 'Short Film'  },
-];
-
-// ─── Expander ─────────────────────────────────────────────────────────────────
+function movieToCard(movie: RawTitle): SearchMediaItem {
+  return {
+    tmdbId: movie.id,
+    title: movie.title ?? movie.name ?? 'Untitled',
+    poster_path: movie.poster_path,
+    backdrop_path: movie.backdrop_path ?? null,
+    type: 'MOVIE',
+    linkSlug: `movie-${movie.id}`,
+    popularity: movie.popularity,
+    airYear: movie.release_date ? movie.release_date.split('-')[0] : undefined,
+    airDate: movie.release_date ?? null,
+    productionStatus: 'Released',
+    overview: movie.overview ?? null,
+    voteAverage: movie.vote_average ?? null,
+  };
+}
 
 function resolveSeasonStatus(
-  season: any,
-  allSeasons: any[],
+  season: { air_date?: string | null; season_number: number },
+  allSeasons: Array<{ air_date?: string | null; season_number: number }>,
   seriesStatus: string,
   inProduction: boolean,
-): 'Airing' | 'Finished' | 'Not Yet Aired' {
+) {
   const today = new Date().toISOString().split('T')[0];
-  const airDate: string | undefined = season.air_date;
-
-  // Ainda não estreou
+  const airDate = season.air_date ?? undefined;
   if (!airDate || airDate > today) return 'Not Yet Aired';
-
-  // Série encerrada: toda temporada já passada é Finished
   if (!inProduction && seriesStatus !== 'Returning Series') return 'Finished';
 
-  // Série em produção: só a temporada mais recente (maior season_number) é Airing
-  const maxSeasonNumber = Math.max(
-    ...allSeasons
-      .filter(s => s.season_number > 0 && s.air_date && s.air_date <= today)
-      .map(s => s.season_number)
-  );
+  const airedNumbers = allSeasons
+    .filter((item) => item.season_number > 0 && item.air_date && item.air_date <= today)
+    .map((item) => item.season_number);
+  const maxSeasonNumber = airedNumbers.length ? Math.max(...airedNumbers) : season.season_number;
 
   return season.season_number === maxSeasonNumber ? 'Airing' : 'Finished';
 }
 
-async function expandShow(show: RawShow, includeSpecials = false, onlyInProduction = false): Promise<MediaCard[]> {
+async function expandShow(show: RawTitle, includeSpecials = false): Promise<SearchMediaItem[]> {
   try {
-    const [res, resEn] = await Promise.all([
-      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
-      fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`),
-    ]);
-    if (!res.ok) return [];
-    const detail   = await res.json();
-    // ✅ Série não está em produção? descarta
-    if (onlyInProduction && !detail.in_production) return [];
-    const detailEn = resEn.ok ? await resEn.json() : detail;
-    // Nome sempre em inglês para títulos e cards
-    const showName = detailEn.name || detail.name;
-    const seasons: any[] = detail.seasons ?? [];
-    const seriesStatus: string = detail.status ?? '';
-    const inProduction: boolean = detail.in_production ?? false;
+    const response = await fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`);
+    if (!response.ok) return [];
+    const detail = await response.json();
+    const showName = detail.name ?? show.name ?? 'Untitled';
+    const seasons = (detail.seasons ?? []) as Array<{
+      id: number;
+      season_number: number;
+      episode_count?: number | null;
+      poster_path?: string | null;
+      air_date?: string | null;
+      overview?: string | null;
+    }>;
+    const visibleSeasons = seasons.filter((season) => includeSpecials || season.season_number > 0);
+    const productionStatus = normalizeProductionStatus(detail.status, 'tv', detail.in_production);
 
-
-    const visibleSeasons = seasons.filter(s => includeSpecials || s.season_number > 0);
-
-    return Promise.all(visibleSeasons.map(async s => {
+    return Promise.all(
+      visibleSeasons.map(async (season) => {
         const seasonDetail = await fetch(
-          `${TMDB}/tv/${show.id}/season/${s.season_number}?api_key=${API_KEY}&language=en-US`,
-          { cache: 'no-store' }
-        ).then(r => r.ok ? r.json() : null).catch(() => null);
-        const seasonStatus = (
-          titlePageSeasonStatus(seasonDetail?.episodes ?? null)
-          ?? resolveSeasonStatus(s, seasons, seriesStatus, inProduction)
-        ) as MediaCard['seasonStatus'];
+          `${TMDB}/tv/${show.id}/season/${season.season_number}?api_key=${API_KEY}&language=en-US`,
+          { cache: 'no-store' },
+        )
+          .then((res) => (res.ok ? res.json() : null))
+          .catch(() => null);
+        const seasonStatus =
+          titlePageSeasonStatus(seasonDetail?.episodes ?? null) ??
+          resolveSeasonStatus(season, seasons, detail.status ?? '', Boolean(detail.in_production));
+
         return {
-          tmdbId: s.id,
+          tmdbId: season.id,
           parentTmdbId: show.id,
-          title: buildSeasonTitle(showName, s.season_number),
-          poster_path: s.poster_path || show.poster_path,
+          title: buildSeasonTitle(showName, season.season_number),
+          poster_path: season.poster_path ?? show.poster_path,
+          backdrop_path: detail.backdrop_path ?? show.backdrop_path ?? null,
           type: 'TV_SEASON' as const,
-          episode_count: s.episode_count,
-          season_number: s.season_number,
-          linkSlug: `tv-${show.id}-s${s.season_number}`,
+          episode_count: season.episode_count ?? null,
+          season_number: season.season_number,
+          linkSlug: `tv-${show.id}-s${season.season_number}`,
           popularity: show.popularity,
-          airYear: s.air_date ? s.air_date.split('-')[0] : undefined,
-          airDate: s.air_date ?? undefined,
-          seriesStatus,
-          productionStatus: normalizeProductionStatus(seriesStatus, 'tv', inProduction),
-          seasonStatus, // ← 'Airing' | 'Finished' | 'Not Yet Aired'
+          airYear: season.air_date ? season.air_date.split('-')[0] : undefined,
+          airDate: season.air_date ?? null,
+          seriesStatus: detail.status ?? '',
+          productionStatus,
+          seasonStatus,
+          overview: season.overview || detail.overview || show.overview || null,
+          voteAverage: detail.vote_average ?? show.vote_average ?? null,
         };
-      }));
+      }),
+    );
   } catch {
     return [];
   }
 }
 
-function movieToCard(m: RawShow): MediaCard {
+function isAdvancedActive(filters: AdvancedFilters) {
+  return Boolean(filters.minRating || filters.maxRuntime || filters.network || filters.hiddenGems);
+}
+
+function applyClientFilters(items: SearchMediaItem[], selectedYear: string, filters: AdvancedFilters) {
+  return items.filter((item) => {
+    if (selectedYear && item.airYear !== selectedYear) return false;
+    if (filters.minRating && (item.voteAverage ?? 0) < filters.minRating) return false;
+    return true;
+  });
+}
+
+function normalizeEditorEntry(entry: Partial<EditorEntry>, item: SearchMediaItem): EditorEntry {
   return {
-    tmdbId: m.id,
-    title: m.title ?? m.name ?? 'Sem título',
-    poster_path: m.poster_path,
-    type: 'MOVIE' as const,
-    linkSlug: `movie-${m.id}`,
-    popularity: m.popularity,
-    airYear: m.release_date ? m.release_date.split('-')[0] : undefined,
-    productionStatus: 'Released',
+    id: entry.id ?? '',
+    tmdbId: entry.tmdbId ?? item.tmdbId,
+    parentTmdbId: entry.parentTmdbId ?? item.parentTmdbId ?? null,
+    seasonNumber: entry.seasonNumber ?? item.season_number ?? null,
+    title: entry.title ?? item.title,
+    type: entry.type ?? item.type,
+    status: entry.status ?? 'PLANNING',
+    score: entry.score ?? 0,
+    progress: entry.progress ?? 0,
+    totalEpisodes: entry.totalEpisodes ?? item.episode_count ?? (item.type === 'MOVIE' ? 1 : null),
+    imagePath: entry.imagePath ?? item.poster_path ?? null,
+    poster_path: entry.poster_path ?? item.poster_path ?? null,
+    isFavorite: entry.isFavorite ?? false,
+    startDate: entry.startDate ?? null,
+    finishDate: entry.finishDate ?? null,
+    rewatchCount: entry.rewatchCount ?? 0,
+    notes: entry.notes ?? null,
+    hidden: entry.hidden ?? false,
+    updatedAt: entry.updatedAt ?? new Date().toISOString(),
   };
 }
 
-/**
- * Determina se uma temporada está ativamente "em exibição".
- *
- * Critérios (todos precisam ser verdadeiros):
- *   1. A série pai tem status "Returning Series" (ainda produzindo)
- *   2. A air_date da temporada já passou (já começou a ir ao ar)
- *   3. É a temporada com o maior season_number da série
- *      OU sua air_date é do ano atual / ano anterior
- *      (cobre casos de séries com temporadas sobrepostas)
- */
-function isSeasonAiring(card: MediaCard): boolean {
-  // Usa o status já resolvido pelo resolveSeasonStatus dentro do expandShow
-  // Elimina toda heurística — a fonte da verdade é a mesma lógica do page.tsx de detalhe
-  return card.seasonStatus === 'Airing';
-}
-
-// ─── Componente principal ─────────────────────────────────────────────────────
-
 export default function SearchPage() {
-  const [mediaType, setMediaType] = useState<'movie' | 'tv'>('tv');
+  const [mediaType, setMediaType] = useState<MediaType>('tv');
   const [query, setQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
   const [selectedFormat, setSelectedFormat] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>(EMPTY_ADVANCED);
   const [genres, setGenres] = useState<{ id: number; name: string }[]>([]);
 
-  const [results, setResults] = useState<MediaCard[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [isFilterActive, setIsFilterActive] = useState(false);
+  const [results, setResults] = useState<SearchMediaItem[]>([]);
+  const [peopleResults, setPeopleResults] = useState<PersonResult[]>([]);
+  const [suggestions, setSuggestions] = useState<SearchMediaItem[]>([]);
+  const [trending, setTrending] = useState<SearchMediaItem[]>([]);
+  const [popularNow, setPopularNow] = useState<SearchMediaItem[]>([]);
+  const [allTimePopular, setAllTimePopular] = useState<SearchMediaItem[]>([]);
 
-  // ─── CORREÇÃO 1: cada seção tem seu próprio estado de visibilidade ────────
-  const [activeSections, setActiveSections] = useState<Record<string, boolean>>({ trending: true, popularNow: true, allTime: true });
-
-  const [trending, setTrending] = useState<MediaCard[]>([]);
-  const [popularNow, setPopularNow] = useState<MediaCard[]>([]);
-  const [allTimePopular, setAllTimePopular] = useState<MediaCard[]>([]);
+  const [statusMap, setStatusMap] = useState<Record<number, SearchEntryStatus>>({});
+  const [activeSections, setActiveSections] = useState<Record<string, boolean>>({
+    suggestions: true,
+    trending: true,
+    popularNow: true,
+    allTime: true,
+  });
   const [loadingSections, setLoadingSections] = useState(true);
-
-  // Scroll infinito
+  const [searching, setSearching] = useState(false);
   const [scrollPage, setScrollPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
+  const [editorData, setEditorData] = useState<EditorEntry | null>(null);
+  const [urlReady, setUrlReady] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Editor
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editorData, setEditorData] = useState<any>(null);
+  const years = useMemo(
+    () => Array.from({ length: new Date().getFullYear() - 1874 + 7 }, (_, i) => 1874 + i).reverse(),
+    [],
+  );
 
-  // Hover state para cards
-  const [hoveredCard, setHoveredCard] = useState<number | null>(null);
+  const hasFilters = Boolean(
+    selectedGenre || selectedYear || selectedFormat || selectedStatus || isAdvancedActive(advancedFilters),
+  );
+  const activeFilterCount = [
+    selectedGenre,
+    selectedYear,
+    selectedFormat,
+    selectedStatus,
+    advancedFilters.minRating ? 'rating' : '',
+    advancedFilters.maxRuntime ? 'runtime' : '',
+    advancedFilters.network,
+    advancedFilters.hiddenGems ? 'hidden' : '',
+  ].filter(Boolean).length;
 
-  // ─── Gêneros ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('type');
+    if (type === 'movie' || type === 'tv' || type === 'people') setMediaType(type);
+    setQuery(params.get('q') ?? '');
+    setSelectedGenre(params.get('genre') ?? '');
+    setSelectedYear(params.get('year') ?? '');
+    setSelectedFormat(params.get('format') ?? '');
+    setSelectedStatus(params.get('status') ?? '');
+    setAdvancedFilters({
+      minRating: Number(params.get('rating') ?? 0),
+      maxRuntime: Number(params.get('runtime') ?? 0),
+      network: params.get('network') ?? '',
+      hiddenGems: params.get('hidden') === '1',
+    });
+    setUrlReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    const params = new URLSearchParams();
+    if (mediaType !== 'tv') params.set('type', mediaType);
+    if (query) params.set('q', query);
+    if (selectedGenre && mediaType !== 'people') params.set('genre', selectedGenre);
+    if (selectedYear && mediaType !== 'people') params.set('year', selectedYear);
+    if (selectedFormat && mediaType !== 'people') params.set('format', selectedFormat);
+    if (selectedStatus && mediaType === 'tv') params.set('status', selectedStatus);
+    if (advancedFilters.minRating) params.set('rating', String(advancedFilters.minRating));
+    if (advancedFilters.maxRuntime) params.set('runtime', String(advancedFilters.maxRuntime));
+    if (advancedFilters.network && mediaType === 'tv') params.set('network', advancedFilters.network);
+    if (advancedFilters.hiddenGems) params.set('hidden', '1');
+    window.history.replaceState(null, '', params.size ? `?${params.toString()}` : window.location.pathname);
+  }, [advancedFilters, mediaType, query, selectedFormat, selectedGenre, selectedStatus, selectedYear, urlReady]);
+
   const loadGenres = useCallback(async () => {
+    if (mediaType === 'people') {
+      setGenres([]);
+      return;
+    }
     try {
-      // ✅ CORRIGIDO: language=en-US
-      const res = await fetch(`${TMDB}/genre/${mediaType}/list?api_key=${API_KEY}&language=en-US`);
-      const data = await res.json();
+      const response = await fetch(`${TMDB}/genre/${mediaType}/list?api_key=${API_KEY}&language=en-US`);
+      const data = await response.json();
       setGenres(data.genres ?? []);
-    } catch (err) { console.error(err); }
+    } catch (error) {
+      console.error(error);
+    }
   }, [mediaType]);
 
-  // ─── CORREÇÃO 2: All Time Popular usa top_rated + discover com vote_count ─
-  // TMDB não tem endpoint de "all time popular" literal.
-  // A melhor aproximação é /discover com sort_by=vote_count.desc (filmes/séries
-  // com mais votos de todos os tempos = mais populares historicamente).
-  // Para TV também combinamos com popularity.desc da lista /top_rated.
   const loadInitialSections = useCallback(async () => {
+    if (mediaType === 'people') {
+      setLoadingSections(false);
+      return;
+    }
+
     setLoadingSections(true);
     try {
-      const sortByPop = (a: MediaCard, b: MediaCard) => (b.popularity || 0) - (a.popularity || 0);
+      const sortByPop = (a: SearchMediaItem, b: SearchMediaItem) => (b.popularity ?? 0) - (a.popularity ?? 0);
 
       if (mediaType === 'tv') {
-        // ✅ CORRIGIDO: todas com language=en-US
         const [trendRes, onAirRes, allTimeRes] = await Promise.all([
           fetch(`${TMDB}/trending/tv/week?api_key=${API_KEY}&language=en-US`),
           fetch(`${TMDB}/tv/on_the_air?api_key=${API_KEY}&language=en-US`),
-          // All Time: discover sorted by vote_count (quantidade de votos = popularidade histórica)
           fetch(`${TMDB}/discover/tv?api_key=${API_KEY}&language=en-US&sort_by=vote_count.desc&vote_count.gte=5000&page=1`),
         ]);
         const [trendData, onAirData, allTimeData] = await Promise.all([
-          trendRes.json(), onAirRes.json(), allTimeRes.json(),
+          trendRes.json(),
+          onAirRes.json(),
+          allTimeRes.json(),
         ]);
+        const expandLatest = async (shows: RawTitle[]) => {
+          const collected: SearchMediaItem[] = [];
+          for (const show of shows.slice(0, 18)) {
+            if (collected.length >= 8) break;
+            const seasons = await expandShow(show);
+            const latest = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0))[0];
+            if (latest) collected.push({ ...latest, popularity: show.popularity });
+          }
+          return collected;
+        };
 
-const expandLatest = async (shows: RawShow[]) => {
-  const collected: MediaCard[] = [];
-  for (const show of shows.slice(0, 20)) {
-    if (collected.length >= 6) break;
-    const seasons = await expandShow(show, false, false);
-    if (!seasons.length) continue;
-    const sorted = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0));
-    collected.push({ ...sorted[0], popularity: show.popularity });
-  }
-  return collected;
-};
-
-setTrending((await expandLatest(trendData.results ?? [])).sort(sortByPop));
-setPopularNow((await expandLatest(onAirData.results ?? [])).sort(sortByPop));
-setAllTimePopular((await expandLatest(allTimeData.results ?? [])).sort(sortByPop));
+        setTrending((await expandLatest(trendData.results ?? [])).sort(sortByPop));
+        setPopularNow((await expandLatest(onAirData.results ?? [])).sort(sortByPop));
+        setAllTimePopular((await expandLatest(allTimeData.results ?? [])).sort(sortByPop));
       } else {
-        // ✅ CORRIGIDO: todas com language=en-US
         const [trendRes, nowPlayingRes, allTimeRes] = await Promise.all([
           fetch(`${TMDB}/trending/movie/week?api_key=${API_KEY}&language=en-US`),
           fetch(`${TMDB}/movie/now_playing?api_key=${API_KEY}&language=en-US`),
-          // All Time movies: vote_count decrescente = mais votados da história
           fetch(`${TMDB}/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=vote_count.desc&vote_count.gte=10000&page=1`),
         ]);
         const [trendData, nowPlayingData, allTimeData] = await Promise.all([
-          trendRes.json(), nowPlayingRes.json(), allTimeRes.json(),
+          trendRes.json(),
+          nowPlayingRes.json(),
+          allTimeRes.json(),
         ]);
-
-        setTrending((trendData.results?.slice(0, 6) ?? []).map(movieToCard).sort(sortByPop));
-        setPopularNow((nowPlayingData.results?.slice(0, 6) ?? []).map(movieToCard).sort(sortByPop));
-        setAllTimePopular((allTimeData.results?.slice(0, 6) ?? []).map(movieToCard).sort(sortByPop));
+        setTrending((trendData.results?.slice(0, 8) ?? []).map(movieToCard).sort(sortByPop));
+        setPopularNow((nowPlayingData.results?.slice(0, 8) ?? []).map(movieToCard).sort(sortByPop));
+        setAllTimePopular((allTimeData.results?.slice(0, 8) ?? []).map(movieToCard).sort(sortByPop));
       }
-    } catch (err) {
-      console.error('Erro ao carregar seções:', err);
+    } catch (error) {
+      console.error('Failed to load search sections:', error);
     } finally {
       setLoadingSections(false);
+    }
+  }, [mediaType]);
+
+  const loadSuggestions = useCallback(async () => {
+    if (mediaType === 'people') {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/search/suggestions?type=${mediaType}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      setSuggestions(data.suggestions ?? []);
+    } catch (error) {
+      console.error(error);
     }
   }, [mediaType]);
 
   useEffect(() => {
     loadGenres();
     loadInitialSections();
-    // setActiveSection(null);
-  }, [loadGenres, loadInitialSections]);
+    loadSuggestions();
+  }, [loadGenres, loadInitialSections, loadSuggestions]);
 
-  // ─── Busca com filtros ────────────────────────────────────────────────────
-  const performSearch = useCallback(async (page: number, resetResults = true) => {
-    if (mediaType === 'movie') {
-      // ✅ CORRIGIDO: language=en-US
-      let url = `${TMDB}/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=popularity.desc&page=${page}`;
+  const performSearch = useCallback(
+    async (page: number, resetResults = true) => {
+      if (mediaType === 'people') return;
+
+      if (mediaType === 'movie') {
+        let url = `${TMDB}/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=${
+          advancedFilters.hiddenGems ? 'vote_average.desc' : 'popularity.desc'
+        }&page=${page}`;
+        if (selectedGenre) url += `&with_genres=${selectedGenre}`;
+        if (selectedYear) url += `&primary_release_year=${selectedYear}`;
+        if (selectedFormat === 'short') url += '&with_runtime.lte=40';
+        if (advancedFilters.maxRuntime) url += `&with_runtime.lte=${advancedFilters.maxRuntime}`;
+        if (advancedFilters.minRating) url += `&vote_average.gte=${advancedFilters.minRating}`;
+        if (advancedFilters.hiddenGems) url += '&vote_count.gte=120&vote_count.lte=5000';
+
+        const response = await fetch(url);
+        const data = await response.json();
+        const cards = applyClientFilters((data.results ?? []).map(movieToCard), selectedYear, advancedFilters);
+        setResults((prev) => (resetResults ? cards : [...prev, ...cards]));
+        setHasMore(data.page < data.total_pages);
+        return;
+      }
+
+      let url = `${TMDB}/discover/tv?api_key=${API_KEY}&language=en-US&sort_by=${
+        advancedFilters.hiddenGems ? 'vote_average.desc' : 'popularity.desc'
+      }&page=${page}`;
       if (selectedGenre) url += `&with_genres=${selectedGenre}`;
-      if (selectedYear) url += `&primary_release_year=${selectedYear}`;
-      // Filtro de formato para filmes: short films via runtime
-      if (selectedFormat === 'short') url += `&with_runtime.lte=40`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const cards = (data.results ?? []).map(movieToCard);
-      if (resetResults) setResults(cards); else setResults(prev => [...prev, ...cards]);
+      if (selectedFormat === 'scripted') url += '&with_type=4';
+      if (selectedFormat === 'miniseries') url += '&with_type=2';
+      if (selectedFormat === 'special') url += '&with_type=6';
+      if (selectedFormat === 'reality') url += '&with_type=3';
+      if (selectedFormat === 'documentary') url += '&with_type=0';
+      if (selectedStatus === 'airing') url += '&with_status=returning';
+      if (selectedStatus === 'finished') url += '&with_status=ended';
+      if (selectedStatus === 'not_yet_aired') url += '&with_status=planned';
+      if (advancedFilters.network) url += `&with_networks=${advancedFilters.network}`;
+      if (advancedFilters.maxRuntime) url += `&with_runtime.lte=${advancedFilters.maxRuntime}`;
+      if (advancedFilters.minRating) url += `&vote_average.gte=${advancedFilters.minRating}`;
+      if (advancedFilters.hiddenGems) url += '&vote_count.gte=80&vote_count.lte=3000';
+
+      const response = await fetch(url);
+      const data = await response.json();
+      const shows = (data.results ?? []) as RawTitle[];
+      let cards = (await Promise.all(shows.map((show) => expandShow(show, selectedFormat === 'special')))).flat();
+      cards = applyClientFilters(cards, selectedYear, advancedFilters);
+      if (selectedStatus === 'airing') cards = cards.filter((item) => item.seasonStatus === 'Airing');
+      if (selectedStatus === 'finished') cards = cards.filter((item) => item.seasonStatus === 'Finished');
+      if (selectedStatus === 'not_yet_aired') cards = cards.filter((item) => item.seasonStatus === 'Not Yet Aired');
+      setResults((prev) => (resetResults ? cards : [...prev, ...cards]));
       setHasMore(data.page < data.total_pages);
-    } else {
-      // ✅ CORRIGIDO: language=en-US
-      let url = `${TMDB}/discover/tv?api_key=${API_KEY}&language=en-US&sort_by=popularity.desc&page=${page}`;
-if (selectedGenre) url += `&with_genres=${selectedGenre}`;
-// Sem filtro de ano aqui — o TMDB filtra pela série pai, não pela temporada.
-// O filtro real é feito por airYear após a expansão.
-if (selectedFormat === 'scripted')    url += `&with_type=4`;
-if (selectedFormat === 'miniseries')  url += `&with_type=2`;
-if (selectedFormat === 'special')     url += `&with_type=6`;
-if (selectedFormat === 'reality')     url += `&with_type=3`;
-if (selectedFormat === 'documentary') url += `&with_type=0`;
-if (selectedStatus === 'airing')       url += `&with_status=returning`;
-if (selectedStatus === 'finished')     url += `&with_status=ended`;
-if (selectedStatus === 'not_yet_aired') url += `&with_status=planned`;
-
-const res = await fetch(url);
-const data = await res.json();
-const shows: RawShow[] = data.results ?? [];
-let allSeasonCards = (await Promise.all(
-  shows.map(s => expandShow(s, selectedFormat === 'special'))
-)).flat();
-
-// Filtro de ano por air_date da temporada (não da série pai)
-if (selectedYear) {
-  allSeasonCards = allSeasonCards.filter(
-    card => card.airYear !== undefined && card.airYear === selectedYear
+    },
+    [advancedFilters, mediaType, selectedFormat, selectedGenre, selectedStatus, selectedYear],
   );
-}
-
-// Filtro de status "airing": apenas a temporada ativa de cada série
-if (selectedStatus === 'airing') {
-  allSeasonCards = allSeasonCards.filter(isSeasonAiring);
-}
-
-if (selectedStatus === 'finished') {
-  allSeasonCards = allSeasonCards.filter(c => c.seasonStatus === 'Finished');
-}
-
-if (selectedStatus === 'not_yet_aired') {
-  allSeasonCards = allSeasonCards.filter(c => c.seasonStatus === 'Not Yet Aired');
-}
-
-if (resetResults) setResults(allSeasonCards);
-else setResults(prev => [...prev, ...allSeasonCards]);
-      setHasMore(data.page < data.total_pages);
-    }
-  }, [mediaType, selectedGenre, selectedYear, selectedFormat, selectedStatus]);
 
   useEffect(() => {
-    const hasFilters = !!(selectedGenre || selectedYear || selectedFormat || selectedStatus);
-    setIsFilterActive(hasFilters);
+    if (!urlReady || mediaType === 'people') return;
     if (hasFilters && !query.trim()) {
-      setScrollPage(1); setHasMore(true);
+      setScrollPage(1);
       performSearch(1, true).catch(console.error);
     } else if (!hasFilters && !query.trim()) {
-      setResults([]); setHasMore(false);
+      setResults([]);
+      setHasMore(false);
     }
-  }, [selectedGenre, selectedYear, selectedFormat, selectedStatus, query, performSearch]);
+  }, [hasFilters, mediaType, performSearch, query, urlReady]);
 
-const handleTextSearch = async () => {
-  if (!query.trim()) return;
-  setSearching(true);
-  setResults([]);
-  try {
-    // ✅ JÁ CORRETO: language=en-US
-    const res = await fetch(`${TMDB}/search/${mediaType}?api_key=${API_KEY}&language=en-US&query=${encodeURIComponent(query.trim())}`);
-    const data = await res.json();
-    if (mediaType === 'tv') {
-const expanded = await Promise.all((data.results ?? []).map((show: RawShow) => expandShow(show, false)));
-let allCards: MediaCard[] = expanded.flat();
+  const handleTextSearch = useCallback(async () => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
 
-if (selectedYear) {
-  // Filtra apenas temporadas com airYear definido E igual ao ano selecionado
-  // Temporadas sem air_date (airYear === undefined) são excluídas ao usar filtro de ano
-  allCards = allCards.filter(
-    (card: MediaCard) => card.airYear !== undefined && card.airYear === selectedYear
-  );
-}
-setResults(allCards);
-    } else {
-      let movieCards: MediaCard[] = (data.results ?? []).map(movieToCard);
-      if (selectedYear) {
-        movieCards = movieCards.filter((card: MediaCard) => card.airYear === selectedYear);
+    setSearching(true);
+    setResults([]);
+    setPeopleResults([]);
+    try {
+      if (mediaType === 'people') {
+        const response = await fetch(`/api/staff/search?q=${encodeURIComponent(trimmed)}`);
+        const data = await response.json();
+        setPeopleResults(data.results ?? []);
+        setHasMore(false);
+        return;
       }
-      setResults(movieCards);
-    }
-    setHasMore(false);
-  } catch (err) {
-    console.error(err);
-  } finally {
-    setSearching(false);
-  }
-};
 
-  // Scroll infinito
+      const response = await fetch(
+        `${TMDB}/search/${mediaType}?api_key=${API_KEY}&language=en-US&query=${encodeURIComponent(trimmed)}`,
+      );
+      const data = await response.json();
+      if (mediaType === 'tv') {
+        const expanded = await Promise.all((data.results ?? []).map((show: RawTitle) => expandShow(show)));
+        setResults(applyClientFilters(expanded.flat(), selectedYear, advancedFilters));
+      } else {
+        setResults(applyClientFilters((data.results ?? []).map(movieToCard), selectedYear, advancedFilters));
+      }
+      setHasMore(false);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSearching(false);
+    }
+  }, [advancedFilters, mediaType, query, selectedYear]);
+
   useEffect(() => {
     if (observerRef.current) observerRef.current.disconnect();
     observerRef.current = new IntersectionObserver(async (entries) => {
-      if (entries[0].isIntersecting && hasMore && !loadingMore && !searching && results.length > 0 && isFilterActive && !query.trim()) {
+      if (entries[0].isIntersecting && hasMore && !loadingMore && !searching && results.length > 0 && hasFilters && !query.trim()) {
         setLoadingMore(true);
         const nextPage = scrollPage + 1;
         await performSearch(nextPage, false);
@@ -417,33 +495,39 @@ setResults(allCards);
     });
     if (loadMoreRef.current) observerRef.current.observe(loadMoreRef.current);
     return () => observerRef.current?.disconnect();
-  }, [hasMore, loadingMore, searching, results.length, isFilterActive, query, performSearch, scrollPage]);
+  }, [hasFilters, hasMore, loadingMore, performSearch, query, results.length, scrollPage, searching]);
 
-  // ─── Card component ───────────────────────────────────────────────────────
-function MediaCardComponent({ item }: { item: MediaCard }) {
-  const hov = hoveredCard === item.tmdbId;
-  const displayTitle = item.title || 'Sem título';
+  const visibleIds = useMemo(() => {
+    const ids = [...results, ...trending, ...popularNow, ...allTimePopular, ...suggestions].map((item) => item.tmdbId);
+    return Array.from(new Set(ids)).filter(Boolean);
+  }, [allTimePopular, popularNow, results, suggestions, trending]);
 
-    const openEditor = async () => {
-  // Busca entry existente no banco pelo slug
-  const slug = item.linkSlug;
-  let existingEntry = null;
-  try {
-    const r = await fetch(`/api/entry/${slug}`);
-    if (r.ok) existingEntry = await r.json();
-  } catch {}
+  useEffect(() => {
+    if (!visibleIds.length) {
+      setStatusMap({});
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/search/status?ids=${visibleIds.join(',')}`, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setStatusMap(data?.entries ?? {}))
+      .catch((error) => {
+        if (error?.name !== 'AbortError') console.error(error);
+      });
+    return () => controller.abort();
+  }, [visibleIds]);
 
-  if (existingEntry) {
-    // Entry já existe: abre o editor com os dados reais
-    setEditorData({
-      ...existingEntry,
-      poster_path: item.poster_path,
-      totalEpisodes: item.episode_count ?? existingEntry.totalEpisodes ?? null,
-    });
-  } else {
-    // Entry não existe: cria via add-media antes de abrir
+  const openEditor = useCallback(async (item: SearchMediaItem, entry?: SearchEntryStatus | null) => {
+    let fullEntry: AddMediaPayload | null = null;
     try {
-      const r = await fetch('/api/add-media', {
+      const response = await fetch(`/api/entry/${entry?.slug ?? item.linkSlug}`);
+      if (response.ok) fullEntry = await response.json();
+    } catch {
+      fullEntry = null;
+    }
+
+    if (!fullEntry) {
+      const response = await fetch('/api/add-media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -459,462 +543,819 @@ function MediaCardComponent({ item }: { item: MediaCard }) {
           progress: 0,
         }),
       });
-      if (r.ok) {
-        existingEntry = await r.json();
-        emitXPNotification(existingEntry.gamification);
+      if (!response.ok) {
+        alert('Erro ao preparar entrada. Tente novamente.');
+        return;
       }
-    } catch {}
-
-    if (!existingEntry) {
-      alert('Erro ao preparar entrada. Tente novamente.');
-      return;
+      fullEntry = (await response.json()) as AddMediaPayload;
+      if (Array.isArray(fullEntry?.gamification)) {
+        fullEntry.gamification.forEach(emitXPNotification);
+      }
     }
 
-    setEditorData({
-      ...existingEntry,
-      poster_path: item.poster_path,
-      totalEpisodes: item.episode_count ?? existingEntry.totalEpisodes ?? null,
-    });
-  }
+    if (!fullEntry) return;
+    setEditorData(normalizeEditorEntry(fullEntry, item));
+  }, []);
 
-  setEditorOpen(true);
-};
-
-    return (
-      <div style={{ position: 'relative' }}>
-        <Link href={`/titles/${item.linkSlug}`} style={{ textDecoration: 'none', display: 'block' }}>
-          <div
-            style={{
-              position: 'relative', overflow: 'hidden', borderRadius: '8px',
-              boxShadow: hov ? '0 12px 32px rgba(0,0,0,0.5), 0 0 0 1.5px rgba(230,125,153,0.5)' : '0 4px 12px rgba(0,0,0,0.25)',
-              transform: hov ? 'translateY(-6px) scale(1.03)' : 'none',
-              transition: 'all 0.25s cubic-bezier(0.34,1.56,0.64,1)',
-            }}
-            onMouseEnter={() => setHoveredCard(item.tmdbId)}
-onMouseLeave={() => setHoveredCard(null)}
-          >
-            <StatusBubble
-              status={item.seasonStatus ?? null}
-              size="sm"
-              position="tl"
-            />
-            {item.poster_path ? (
-              <img
-  src={`https://image.tmdb.org/t/p/w300${item.poster_path}`}
-  style={{ width: '100%', display: 'block', aspectRatio: '2/3', objectFit: 'cover' }}
-  alt={displayTitle}
-  loading="lazy"
-/>
-            ) : (
-              <div style={{ width: '100%', aspectRatio: '2/3', background: 'rgb(58,55,55)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8ba2b9', fontSize: '32px' }}>
-                🎬
-              </div>
-            )}
-            {/* Overlay de ação — aparece no hover */}
-            <div style={{
-              position: 'absolute', inset: 0,
-              background: hov ? 'linear-gradient(to top, rgba(20,18,18,0.92) 0%, rgba(20,18,18,0.15) 60%, transparent)' : 'transparent',
-              transition: 'background 0.25s ease',
-              borderRadius: '8px',
-            }} />
-            {/* Botão editar */}
-            <button
-              style={{
-                position: 'absolute', top: '8px', right: '8px',
-                background: hov ? '#e67d99' : 'rgba(0,0,0,0)',
-                border: 'none', borderRadius: '50%',
-                width: '32px', height: '32px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '14px', color: 'white', cursor: 'pointer',
-                opacity: hov ? 1 : 0,
-                transform: hov ? 'scale(1)' : 'scale(0.7)',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-              }}
-              onClick={e => { e.preventDefault(); e.stopPropagation(); openEditor(); }}
-              title="Add to list"
-            >
-              ✎
-            </button>
-          </div>
-        </Link>
-        <p style={{
-          fontSize: '12px', fontWeight: '600', marginTop: '8px',
-          color: hov ? 'rgb(230,125,153)' : 'rgba(220,210,215,0.7)',
-          lineHeight: '1.3', textAlign: 'center',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          transition: 'color 0.2s',
-        }}>
-          {displayTitle}
-        </p>
-      </div>
-    );
-  }
-
-  // ─── CORREÇÃO 1: SectionGrid clicável com toggle ───────────────────────────
-  type SectionKey = 'trending' | 'popularNow' | 'allTime';
-
-  const SECTION_META: Record<SectionKey, { label: string; icon: string; desc: string }> = {
-    trending:   { label: 'Trending',         icon: '🔥', desc: 'This week' },
-    popularNow: { label: 'Popular Now',       icon: '📺', desc: mediaType === 'tv' ? 'On the air' : 'Now playing' },
-    allTime:    { label: 'All Time Popular',  icon: '🏆', desc: 'Most voted ever' },
+  const resetForType = (type: MediaType) => {
+    setMediaType(type);
+    setQuery('');
+    setResults([]);
+    setPeopleResults([]);
+    setSelectedGenre('');
+    setSelectedYear('');
+    setSelectedFormat('');
+    setSelectedStatus('');
+    setAdvancedFilters(EMPTY_ADVANCED);
+    setScrollPage(1);
+    setHasMore(false);
+    setActiveSections({ suggestions: true, trending: true, popularNow: true, allTime: true });
   };
 
-  const SECTION_DATA: Record<SectionKey, MediaCard[]> = {
-    trending:   trending,
-    popularNow: popularNow,
-    allTime:    allTimePopular,
+  const clearSearch = () => {
+    setQuery('');
+    setSelectedGenre('');
+    setSelectedYear('');
+    setSelectedFormat('');
+    setSelectedStatus('');
+    setAdvancedFilters(EMPTY_ADVANCED);
+    setResults([]);
+    setPeopleResults([]);
+    setHasMore(false);
   };
 
-  function SectionBlock({ sectionKey }: { sectionKey: SectionKey }) {
-    const meta = SECTION_META[sectionKey];
-    const data = SECTION_DATA[sectionKey];
-    const isOpen = activeSections[sectionKey] ?? false;
+  const renderGrid = (items: SearchMediaItem[], priority = false) => (
+    <div className="media-grid">
+      {items.map((item, index) => (
+        <SearchMediaCard
+          key={`${item.tmdbId}-${index}`}
+          item={item}
+          entry={statusMap[item.tmdbId] ?? null}
+          priority={priority && index < 4}
+          onEdit={openEditor}
+        />
+      ))}
+    </div>
+  );
+
+  const sectionData = {
+    suggestions,
+    trending,
+    popularNow,
+    allTime: allTimePopular,
+  };
+
+  const sectionMeta = {
+    suggestions: {
+      label: 'Not in your list',
+      desc: 'Ranked with your history, trending titles and stronger ratings',
+    },
+    trending: { label: 'Trending', desc: 'This week' },
+    popularNow: { label: 'Popular Now', desc: mediaType === 'tv' ? 'On the air' : 'Now playing' },
+    allTime: { label: 'All Time Popular', desc: 'Most voted ever' },
+  };
+
+  function SectionBlock({ sectionKey }: { sectionKey: keyof typeof sectionData }) {
+    const data = sectionData[sectionKey];
+    const meta = sectionMeta[sectionKey];
+    const isOpen = activeSections[sectionKey] ?? true;
 
     return (
-      <div style={{ marginBottom: '16px' }}>
-        {/* Cabeçalho clicável */}
+      <section className="section-block">
         <button
-          onClick={() => setActiveSections(prev => ({ ...prev, [sectionKey]: !prev[sectionKey] }))}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', gap: '14px',
-            background: isOpen ? 'rgba(230,125,153,0.08)' : 'rgb(50,47,47)',
-            border: isOpen ? '1px solid rgba(230,125,153,0.35)' : '1px solid rgba(255,255,255,0.05)',
-            borderRadius: isOpen ? '10px 10px 0 0' : '10px',
-            padding: '14px 18px', cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLElement).style.borderColor = 'rgba(230,125,153,0.25)'; }}
-          onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.05)'; }}
+          type="button"
+          className={`section-toggle ${isOpen ? 'open' : ''}`}
+          onClick={() => setActiveSections((prev) => ({ ...prev, [sectionKey]: !prev[sectionKey] }))}
         >
-          <span style={{ fontSize: '20px' }}>{meta.icon}</span>
-          <div style={{ flex: 1, textAlign: 'left' }}>
-            <div style={{ fontSize: '14px', fontWeight: '700', color: isOpen ? 'rgb(230,125,153)' : 'rgb(220,210,215)', lineHeight: 1 }}>
-              {meta.label}
-            </div>
-            <div style={{ fontSize: '11px', color: 'rgba(220,210,215,0.4)', marginTop: '3px' }}>
-              {meta.desc} · {data.length} titles
-            </div>
-          </div>
-          {/* Chevron */}
-          <span style={{
-            fontSize: '12px', color: isOpen ? 'rgb(230,125,153)' : 'rgba(220,210,215,0.35)',
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.25s ease',
-            display: 'inline-block',
-          }}>▼</span>
+          <span>{meta.label}</span>
+          <small>{meta.desc} · {data.length} titles</small>
         </button>
-
-        {/* Conteúdo expandível */}
-        <div style={{
-          background: 'rgb(46,43,43)',
-          border: isOpen ? '1px solid rgba(230,125,153,0.35)' : 'none',
-          borderTop: 'none',
-          borderRadius: '0 0 10px 10px',
-          overflow: 'hidden',
-          maxHeight: isOpen ? '1000px' : '0',
-          transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)',
-        }}>
-          <div style={{ padding: '20px' }}>
-            {data.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '30px', color: 'rgba(220,210,215,0.3)', fontSize: '13px' }}>
-                Loading...
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '18px' }}>
-                {data.map((item, idx) => <MediaCardComponent key={`${item.tmdbId}-${idx}`} item={item} />)}
-              </div>
-            )}
+        {isOpen && (
+          <div className="section-content">
+            {data.length ? renderGrid(data, sectionKey === 'suggestions') : <div className="empty">Loading...</div>}
           </div>
-        </div>
-      </div>
+        )}
+      </section>
     );
   }
 
-  const years = Array.from({ length: new Date().getFullYear() - 1874 + 7 }, (_, i) => 1874 + i).reverse();
-  const formatOptions = mediaType === 'tv' ? FORMAT_TV_OPTIONS : FORMAT_MOVIE_OPTIONS;
-
-  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div style={{
-      maxWidth: '1200px', margin: '0 auto', padding: '32px 24px 80px',
-      fontFamily: "'Overpass', -apple-system, BlinkMacSystemFont, sans-serif",
-      background: 'rgb(42,39,39)', minHeight: '100vh', color: 'rgb(220,210,215)',
-    }}>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
+    <main className="search-page">
+      <style jsx global>{`
+        body {
+          background: rgb(42, 39, 39);
+        }
+      `}</style>
+      <style jsx global>{`
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
         @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(14px); }
-          to   { opacity: 1; transform: translateY(0); }
+          from {
+            opacity: 0;
+            transform: translateY(12px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
-        @keyframes shimmerIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to   { opacity: 1; transform: scale(1); }
+
+        @keyframes softPulse {
+          0%,
+          100% {
+            box-shadow: 0 2px 12px rgba(230, 125, 153, 0.26);
+          }
+          50% {
+            box-shadow: 0 4px 20px rgba(230, 125, 153, 0.42);
+          }
         }
-        .search-results-grid > * {
-          animation: shimmerIn 0.3s ease both;
+
+        @keyframes panelIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
-        .search-results-grid > *:nth-child(1)  { animation-delay: 0.02s; }
-        .search-results-grid > *:nth-child(2)  { animation-delay: 0.04s; }
-        .search-results-grid > *:nth-child(3)  { animation-delay: 0.06s; }
-        .search-results-grid > *:nth-child(4)  { animation-delay: 0.08s; }
-        .search-results-grid > *:nth-child(5)  { animation-delay: 0.10s; }
-        .search-results-grid > *:nth-child(6)  { animation-delay: 0.12s; }
-        .search-results-grid > *:nth-child(7)  { animation-delay: 0.14s; }
-        .search-results-grid > *:nth-child(8)  { animation-delay: 0.16s; }
-        .search-results-grid > *:nth-child(9)  { animation-delay: 0.18s; }
-        .search-results-grid > *:nth-child(10) { animation-delay: 0.20s; }
-        * { scrollbar-color: rgba(230,125,153,0.4) rgba(58,55,55,0.5); scrollbar-width: thin; }
+
+        @keyframes cardCascade {
+          from {
+            opacity: 0;
+            transform: translateY(10px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes drawerIn {
+          from {
+            opacity: 0;
+            transform: translateY(-4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .search-page {
+          max-width: 1200px;
+          min-height: 100vh;
+          margin: 0 auto;
+          padding: 32px 24px 80px;
+          color: rgb(220, 210, 215);
+          font-family: 'Overpass', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        .search-page .search-type-tabs {
+          display: flex;
+          width: fit-content;
+          max-width: 100%;
+          gap: 4px;
+          margin-bottom: 22px;
+          padding: 4px;
+          border-radius: 10px;
+          background: rgb(50, 47, 47);
+          border: 1px solid rgba(255, 255, 255, 0.05);
+          overflow-x: auto;
+          animation: panelIn 0.28s ease both;
+        }
+
+        .search-page .search-type-tabs button,
+        .search-page .search-button,
+        .search-page .clear-button {
+          font: inherit;
+          cursor: pointer;
+        }
+
+        .search-page .search-type-tabs button {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-height: 36px;
+          padding: 8px 16px;
+          border: 0;
+          border-radius: 7px;
+          background: transparent;
+          color: rgba(220, 210, 215, 0.55);
+          font-size: 14px;
+          font-weight: 800;
+          white-space: nowrap;
+          transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        }
+
+        .search-page .search-type-tabs button:hover,
+        .search-page .search-type-tabs button:focus-visible {
+          transform: translateY(-1px);
+          color: rgb(232, 226, 223);
+          outline: none;
+          box-shadow: 0 0 0 3px rgba(230, 125, 153, 0.12);
+        }
+
+        .search-page .search-type-tabs button.active {
+          color: white;
+          background: linear-gradient(135deg, rgb(230, 125, 153), rgb(200, 90, 120));
+          box-shadow: 0 2px 12px rgba(230, 125, 153, 0.35);
+          animation: softPulse 3.8s ease-in-out infinite;
+        }
+
+        .search-page .toolbar {
+          display: grid;
+          gap: 12px;
+          margin-bottom: 26px;
+          padding: 16px;
+          border-radius: 8px;
+          background: linear-gradient(180deg, rgb(48, 45, 45), rgb(43, 40, 40));
+          border: 1px solid rgba(255, 255, 255, 0.07);
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+          animation: panelIn 0.34s ease both;
+        }
+
+        .search-page .search-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto auto;
+          gap: 10px;
+        }
+
+        .search-page .input-wrap {
+          position: relative;
+          min-width: 0;
+        }
+
+        .search-page .input-wrap svg {
+          position: absolute;
+          top: 50%;
+          left: 13px;
+          transform: translateY(-50%);
+          color: rgba(220, 210, 215, 0.4);
+          pointer-events: none;
+        }
+
+        .search-page input[type='text'] {
+          width: 100%;
+          min-height: 42px;
+          padding: 11px 14px 11px 38px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgb(58, 55, 55);
+          color: rgb(220, 210, 215);
+          font: inherit;
+          font-size: 14px;
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .search-page input[type='text']:focus {
+          border-color: rgba(230, 125, 153, 0.5);
+          background: rgb(61, 57, 57);
+          box-shadow: 0 0 0 3px rgba(230, 125, 153, 0.08);
+        }
+
+        .search-page .search-button,
+        .search-page .clear-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          min-height: 42px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 900;
+          transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .search-page .search-button {
+          padding: 0 18px;
+          border: 0;
+          color: white;
+          background: linear-gradient(135deg, rgb(230, 125, 153), rgb(200, 90, 120));
+          box-shadow: 0 4px 14px rgba(230, 125, 153, 0.35);
+        }
+
+        .search-page .search-button:hover,
+        .search-page .clear-button:hover,
+        .search-page .search-button:focus-visible,
+        .search-page .clear-button:focus-visible {
+          transform: translateY(-1px);
+          outline: none;
+          box-shadow: 0 8px 22px rgba(230, 125, 153, 0.22);
+        }
+
+        .search-page .search-button:active,
+        .search-page .clear-button:active,
+        .search-page .search-type-tabs button:active,
+        .search-page .section-toggle:active {
+          transform: translateY(0);
+        }
+
+        .search-page .clear-button {
+          width: 42px;
+          padding: 0;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: transparent;
+          color: rgba(220, 210, 215, 0.55);
+        }
+
+        .search-page .filter-drawer {
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgba(32, 29, 29, 0.38);
+          overflow: hidden;
+          transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .search-page .filter-drawer[open] {
+          border-color: rgba(230, 125, 153, 0.18);
+          background: rgba(32, 29, 29, 0.5);
+        }
+
+        .search-page .filter-drawer summary {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          min-height: 40px;
+          padding: 0 12px;
+          cursor: pointer;
+          list-style: none;
+          color: rgba(232, 226, 223, 0.86);
+          font-size: 12px;
+          font-weight: 900;
+          text-transform: uppercase;
+          transition: color 0.18s ease, background 0.18s ease;
+        }
+
+        .search-page .filter-drawer summary:hover {
+          color: rgb(232, 226, 223);
+          background: rgba(255, 255, 255, 0.025);
+        }
+
+        .search-page .filter-drawer summary::-webkit-details-marker {
+          display: none;
+        }
+
+        .search-page .filter-drawer summary small {
+          color: rgba(220, 210, 215, 0.4);
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: none;
+        }
+
+        .search-page .filter-body {
+          display: grid;
+          gap: 12px;
+          padding: 12px;
+          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          animation: drawerIn 0.22s ease both;
+        }
+
+        .search-page .basic-filters {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .search-page .basic-filters span {
+          color: rgba(220, 210, 215, 0.38);
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+
+        .search-page select {
+          min-height: 34px;
+          padding: 0 10px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgb(58, 55, 55);
+          color: rgba(220, 210, 215, 0.72);
+          font: inherit;
+          font-size: 12px;
+          font-weight: 800;
+          transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        }
+
+        .search-page select:hover {
+          border-color: rgba(230, 125, 153, 0.24);
+          transform: translateY(-1px);
+        }
+
+        .search-page .content {
+          animation: fadeUp 0.28s ease;
+        }
+
+        .search-page .result-head {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 18px;
+        }
+
+        .search-page .result-head h2 {
+          margin: 0;
+          color: rgb(230, 125, 153);
+          font-size: 14px;
+          font-weight: 900;
+          text-transform: uppercase;
+        }
+
+        .search-page .result-head span {
+          color: rgba(220, 210, 215, 0.38);
+          font-size: 11px;
+          font-weight: 800;
+        }
+
+        .search-page .result-head::after {
+          content: '';
+          flex: 1;
+          height: 1px;
+          background: linear-gradient(to right, rgba(230, 125, 153, 0.25), transparent);
+        }
+
+        .search-page .media-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(104px, 118px));
+          justify-content: start;
+          gap: 16px;
+        }
+
+        .search-page .media-grid > * {
+          animation: cardCascade 0.32s ease both;
+        }
+
+        .search-page .media-grid > *:nth-child(1) { animation-delay: 0ms; }
+        .search-page .media-grid > *:nth-child(2) { animation-delay: 22ms; }
+        .search-page .media-grid > *:nth-child(3) { animation-delay: 44ms; }
+        .search-page .media-grid > *:nth-child(4) { animation-delay: 66ms; }
+        .search-page .media-grid > *:nth-child(5) { animation-delay: 88ms; }
+        .search-page .media-grid > *:nth-child(6) { animation-delay: 110ms; }
+        .search-page .media-grid > *:nth-child(7) { animation-delay: 132ms; }
+        .search-page .media-grid > *:nth-child(8) { animation-delay: 154ms; }
+        .search-page .media-grid > *:nth-child(n + 9) { animation-delay: 176ms; }
+
+        .search-page .section-block {
+          margin-bottom: 14px;
+        }
+
+        .search-page .section-toggle {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          gap: 4px;
+          width: 100%;
+          padding: 14px 16px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgb(50, 47, 47);
+          color: rgb(220, 210, 215);
+          text-align: left;
+          cursor: pointer;
+          font: inherit;
+          transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        }
+
+        .search-page .section-toggle:hover,
+        .search-page .section-toggle:focus-visible {
+          transform: translateY(-1px);
+          border-color: rgba(230, 125, 153, 0.28);
+          outline: none;
+          box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+        }
+
+        .search-page .section-toggle.open {
+          border-color: rgba(230, 125, 153, 0.34);
+          background: rgba(230, 125, 153, 0.08);
+        }
+
+        .search-page .section-toggle span {
+          color: rgb(232, 226, 223);
+          font-size: 14px;
+          font-weight: 900;
+        }
+
+        .search-page .section-toggle small {
+          color: rgba(220, 210, 215, 0.44);
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .search-page .section-content {
+          padding: 14px;
+          border: 1px solid rgba(230, 125, 153, 0.24);
+          border-top: 0;
+          border-radius: 0 0 8px 8px;
+          background: rgb(46, 43, 43);
+          animation: drawerIn 0.24s ease both;
+        }
+
+        .search-page .empty,
+        .search-page .loader,
+        .search-page .people-empty {
+          color: rgba(220, 210, 215, 0.42);
+          text-align: center;
+          font-size: 13px;
+        }
+
+        .search-page .loader {
+          padding: 76px 20px;
+        }
+
+        .search-page .spinner {
+          display: inline-block;
+          width: 34px;
+          height: 34px;
+          margin-bottom: 12px;
+          border-radius: 50%;
+          border: 3px solid rgba(230, 125, 153, 0.2);
+          border-top-color: rgb(230, 125, 153);
+          animation: spin 0.8s linear infinite;
+        }
+
+        .search-page .people-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 18px;
+        }
+
+        .search-page .person-card {
+          display: grid;
+          gap: 10px;
+          padding: 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: rgb(48, 45, 45);
+          color: rgb(220, 210, 215);
+          text-decoration: none;
+          min-width: 0;
+          transform: translateY(0);
+          transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .search-page .person-card img,
+        .search-page .person-placeholder {
+          width: 100%;
+          aspect-ratio: 2 / 3;
+          object-fit: cover;
+          border-radius: 8px;
+          background: rgb(58, 55, 55);
+          transition: transform 0.24s ease, filter 0.24s ease;
+        }
+
+        .search-page .person-placeholder {
+          display: grid;
+          place-items: center;
+          color: rgba(220, 210, 215, 0.45);
+          font-weight: 900;
+        }
+
+        .search-page .person-card h3 {
+          margin: 0;
+          font-size: 14px;
+          line-height: 1.25;
+        }
+
+        .search-page .person-card p {
+          margin: 0;
+          color: rgba(220, 210, 215, 0.5);
+          font-size: 12px;
+          font-weight: 700;
+          transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .search-page .person-card:hover,
+        .search-page .person-card:focus-visible {
+          transform: translateY(-3px);
+          border-color: rgba(230, 125, 153, 0.32);
+          background: rgb(52, 48, 48);
+          box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+          outline: none;
+        }
+
+        .search-page .person-card:hover img,
+        .search-page .person-card:focus-visible img {
+          transform: scale(1.035);
+          filter: saturate(1.08);
+        }
+
+        @media (max-width: 640px) {
+          .search-page {
+            padding: 22px 14px 64px;
+          }
+
+          .search-page .search-row {
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .search-page .search-button,
+          .search-page .clear-button {
+            width: 100%;
+          }
+
+          .search-page .media-grid {
+            grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+            gap: 12px;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .search-page *,
+          .search-page *::before,
+          .search-page *::after {
+            animation: none !important;
+            transition: none !important;
+          }
+        }
       `}</style>
 
-      {/* ── Toggle TV / Movies ─────────────────────────────────────────────── */}
-      <div style={{
-        display: 'flex', gap: '4px', marginBottom: '28px',
-        background: 'rgb(50,47,47)', borderRadius: '10px', padding: '4px',
-        width: 'fit-content', border: '1px solid rgba(255,255,255,0.05)',
-      }}>
-        {(['tv', 'movie'] as const).map(type => (
-          <button
-            key={type}
-            onClick={() => {
-              setMediaType(type); setResults([]); setQuery('');
-              setSelectedGenre(''); setSelectedYear('');
-              setSelectedFormat(''); setSelectedStatus('');
-              setIsFilterActive(false); setScrollPage(1); setHasMore(true);
-              setActiveSections({ trending: true, popularNow: true, allTime: true });
-            }}
-            style={{
-              background: mediaType === type ? 'linear-gradient(135deg, rgb(230,125,153), rgb(200,90,120))' : 'transparent',
-              border: 'none',
-              color: mediaType === type ? 'white' : 'rgba(220,210,215,0.5)',
-              fontWeight: '700', fontSize: '14px', cursor: 'pointer',
-              padding: '8px 22px', borderRadius: '7px',
-              transition: 'all 0.2s ease',
-              boxShadow: mediaType === type ? '0 2px 12px rgba(230,125,153,0.35)' : 'none',
-              letterSpacing: '0.3px',
-            }}
-          >
-            {type === 'tv' ? '📺 TV Shows' : '🎬 Movies'}
+      <div className="search-type-tabs" role="tablist" aria-label="Search type">
+        {[
+          { key: 'tv' as const, label: 'TV Shows', icon: Tv },
+          { key: 'movie' as const, label: 'Movies', icon: Film },
+          { key: 'people' as const, label: 'People', icon: Users },
+        ].map(({ key, label, icon: Icon }) => (
+          <button key={key} type="button" className={mediaType === key ? 'active' : ''} onClick={() => resetForType(key)}>
+            <Icon size={16} />
+            {label}
           </button>
         ))}
       </div>
 
-      {/* ── Barra de filtros ─────────────────────────────────────────────────── */}
-      <div style={{
-        background: 'rgb(48,45,45)',
-        borderRadius: '14px', padding: '22px 22px 18px',
-        marginBottom: '36px',
-        border: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-      }}>
-        {/* Search row */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-          <div style={{ flex: 1, position: 'relative' }}>
-            <span style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', fontSize: '15px', pointerEvents: 'none', opacity: 0.4 }}>🔍</span>
+      <div className="toolbar">
+        <div className="search-row">
+          <div className="input-wrap">
+            <Search size={16} />
             <input
               type="text"
               value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleTextSearch()}
-              placeholder={mediaType === 'tv' ? 'Search series, seasons...' : 'Search movies...'}
-              style={{
-                width: '100%', padding: '11px 14px 11px 38px',
-                borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)',
-                background: 'rgb(58,55,55)', color: 'rgb(220,210,215)',
-                fontSize: '14px', outline: 'none', fontFamily: 'Overpass, sans-serif',
-                transition: 'border-color 0.2s',
-                boxSizing: 'border-box',
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') handleTextSearch();
               }}
-              onFocus={e => (e.target.style.borderColor = 'rgba(230,125,153,0.5)')}
-              onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+              placeholder={
+                mediaType === 'people'
+                  ? 'Search actors, directors, writers...'
+                  : mediaType === 'tv'
+                    ? 'Search series, seasons...'
+                    : 'Search movies...'
+              }
             />
           </div>
-          <button
-            onClick={handleTextSearch}
-            style={{
-              padding: '11px 24px',
-              background: 'linear-gradient(135deg, rgb(230,125,153), rgb(200,90,120))',
-              border: 'none', borderRadius: '8px', color: 'white',
-              fontWeight: '700', cursor: 'pointer', fontSize: '14px',
-              boxShadow: '0 4px 14px rgba(230,125,153,0.35)',
-              transition: 'all 0.2s ease', letterSpacing: '0.3px',
-              fontFamily: 'Overpass, sans-serif',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-1px)')}
-            onMouseLeave={e => (e.currentTarget.style.transform = 'none')}
-          >
+          <button type="button" className="search-button" onClick={handleTextSearch}>
+            <Search size={15} />
             Search
           </button>
-          {(query || selectedGenre || selectedYear || selectedFormat || selectedStatus) && (
-            <button
-              onClick={() => {
-                setQuery(''); setSelectedGenre(''); setSelectedYear('');
-                setSelectedFormat(''); setSelectedStatus('');
-                setResults([]); setIsFilterActive(false);
-              }}
-              style={{
-                padding: '11px 16px', background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px',
-                color: 'rgba(220,210,215,0.5)', cursor: 'pointer', fontSize: '13px',
-                transition: 'all 0.2s',
-                fontFamily: 'Overpass, sans-serif',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(230,125,153,0.4)'; (e.currentTarget as HTMLElement).style.color = 'rgb(230,125,153)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.color = 'rgba(220,210,215,0.5)'; }}
-            >
-              Clear
+          {(query || hasFilters || peopleResults.length > 0 || results.length > 0) && (
+            <button type="button" className="clear-button" onClick={clearSearch} title="Clear">
+              <X size={16} />
             </button>
           )}
         </div>
 
-        {/* Filter chips row */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', color: 'rgba(220,210,215,0.3)', fontWeight: '700', letterSpacing: '1px', textTransform: 'uppercase' }}>Filters:</span>
+        {mediaType !== 'people' && (
+          <details className="filter-drawer" open={hasFilters || undefined}>
+            <summary>
+              <span>Filters</span>
+              <small>{activeFilterCount ? `${activeFilterCount} active` : 'Genre, year and advanced controls'}</small>
+            </summary>
+            <div className="filter-body">
+              <div className="basic-filters">
+                <span>Core</span>
+                <select value={selectedGenre} onChange={(event) => setSelectedGenre(event.target.value)}>
+                  <option value="">Genre</option>
+                  {genres.map((genre) => (
+                    <option key={genre.id} value={genre.id}>
+                      {genre.name}
+                    </option>
+                  ))}
+                </select>
+                <select value={selectedYear} onChange={(event) => setSelectedYear(event.target.value)}>
+                  <option value="">Year</option>
+                  {years.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          {/* Genre */}
-          <div style={{ position: 'relative' }}>
-            <select
-              value={selectedGenre}
-              onChange={e => { setSelectedGenre(e.target.value); setScrollPage(1); setHasMore(true); }}
-              style={{ padding: '7px 28px 7px 12px', borderRadius: '20px', background: selectedGenre ? 'rgba(230,125,153,0.15)' : 'rgb(58,55,55)', color: selectedGenre ? 'rgb(230,125,153)' : 'rgba(220,210,215,0.6)', border: selectedGenre ? '1px solid rgba(230,125,153,0.4)' : '1px solid rgba(255,255,255,0.07)', fontSize: '12px', fontWeight: '600', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', fontFamily: 'Overpass, sans-serif' }}
-            >
-              <option value="">Genre</option>
-              {genres.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-            <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '9px', pointerEvents: 'none', color: 'rgba(220,210,215,0.4)' }}>▼</span>
-          </div>
-
-          {/* Year */}
-          <div style={{ position: 'relative' }}>
-            <select
-              value={selectedYear}
-              onChange={e => { setSelectedYear(e.target.value); setScrollPage(1); setHasMore(true); }}
-              style={{ padding: '7px 28px 7px 12px', borderRadius: '20px', background: selectedYear ? 'rgba(230,125,153,0.15)' : 'rgb(58,55,55)', color: selectedYear ? 'rgb(230,125,153)' : 'rgba(220,210,215,0.6)', border: selectedYear ? '1px solid rgba(230,125,153,0.4)' : '1px solid rgba(255,255,255,0.07)', fontSize: '12px', fontWeight: '600', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', fontFamily: 'Overpass, sans-serif' }}
-            >
-              <option value="">Year</option>
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '9px', pointerEvents: 'none', color: 'rgba(220,210,215,0.4)' }}>▼</span>
-          </div>
-
-          {/* Format */}
-          <div style={{ position: 'relative' }}>
-            <select
-              value={selectedFormat}
-              onChange={e => { setSelectedFormat(e.target.value); setScrollPage(1); setHasMore(true); }}
-              style={{ padding: '7px 28px 7px 12px', borderRadius: '20px', background: selectedFormat ? 'rgba(230,125,153,0.15)' : 'rgb(58,55,55)', color: selectedFormat ? 'rgb(230,125,153)' : 'rgba(220,210,215,0.6)', border: selectedFormat ? '1px solid rgba(230,125,153,0.4)' : '1px solid rgba(255,255,255,0.07)', fontSize: '12px', fontWeight: '600', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', fontFamily: 'Overpass, sans-serif' }}
-            >
-              {formatOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '9px', pointerEvents: 'none', color: 'rgba(220,210,215,0.4)' }}>▼</span>
-          </div>
-
-          {/* Status (TV only) */}
-          {mediaType === 'tv' && (
-            <div style={{ position: 'relative' }}>
-              <select
-                value={selectedStatus}
-                onChange={e => { setSelectedStatus(e.target.value); setScrollPage(1); setHasMore(true); }}
-                style={{ padding: '7px 28px 7px 12px', borderRadius: '20px', background: selectedStatus ? 'rgba(230,125,153,0.15)' : 'rgb(58,55,55)', color: selectedStatus ? 'rgb(230,125,153)' : 'rgba(220,210,215,0.6)', border: selectedStatus ? '1px solid rgba(230,125,153,0.4)' : '1px solid rgba(255,255,255,0.07)', fontSize: '12px', fontWeight: '600', outline: 'none', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', fontFamily: 'Overpass, sans-serif' }}
-              >
-                <option value="">Status</option>
-                <option value="airing">Airing</option>
-                <option value="finished">Finished</option>
-                <option value="not_yet_aired">Not Yet Aired</option>
-              </select>
-              <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '9px', pointerEvents: 'none', color: 'rgba(220,210,215,0.4)' }}>▼</span>
+              <GenreGrid genres={genres} selectedGenre={selectedGenre} onGenreSelect={setSelectedGenre} />
+              <AdvancedFilterChips
+                mediaType={mediaType}
+                selectedFormat={selectedFormat}
+                selectedStatus={selectedStatus}
+                filters={advancedFilters}
+                onFormatChange={setSelectedFormat}
+                onStatusChange={setSelectedStatus}
+                onFiltersChange={setAdvancedFilters}
+              />
             </div>
-          )}
-        </div>
+          </details>
+        )}
       </div>
 
-      {/* ── Conteúdo ────────────────────────────────────────────────────────── */}
       {searching ? (
-        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
-          <div style={{ display: 'inline-block', width: '36px', height: '36px', border: '3px solid rgba(230,125,153,0.2)', borderTopColor: 'rgb(230,125,153)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '14px' }} />
-          <div style={{ color: 'rgba(220,210,215,0.4)', fontSize: '13px' }}>Searching...</div>
+        <div className="loader">
+          <div className="spinner" />
+          <div>Searching...</div>
+        </div>
+      ) : mediaType === 'people' ? (
+        <div className="content">
+          {peopleResults.length > 0 ? (
+            <>
+              <div className="result-head">
+                <h2>People</h2>
+                <span>{peopleResults.length}</span>
+              </div>
+              <div className="people-grid">
+                {peopleResults.map((person) => {
+                  const profile = person.profile_path ? `https://image.tmdb.org/t/p/w300${person.profile_path}` : '';
+                  return (
+                    <Link key={person.id} href={`/staff/${person.id}`} className="person-card">
+                      {profile ? <img src={profile} alt={person.name} loading="lazy" /> : <div className="person-placeholder">No Photo</div>}
+                      <div>
+                        <h3>{person.name}</h3>
+                        <p>{person.known_for_department ?? 'Known for'} · {person.popularity.toFixed(1)}</p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="people-empty">Search for a person to open their filmography.</div>
+          )}
         </div>
       ) : results.length > 0 ? (
-        // ── RESULTADOS DE BUSCA / FILTROS ───────────────────────────────────
-        <div style={{ animation: 'fadeUp 0.3s ease' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-            <div style={{ width: '3px', height: '20px', background: 'linear-gradient(to bottom, rgb(230,125,153), rgba(230,125,153,0.3))', borderRadius: '4px' }} />
-            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: 'rgb(230,125,153)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-              Results
-            </h3>
-            <span style={{ fontSize: '11px', color: 'rgba(220,210,215,0.3)', fontWeight: '600' }}>({results.length})</span>
-            <div style={{ flex: 1, height: '1px', background: 'linear-gradient(to right, rgba(230,125,153,0.25), transparent)' }} />
+        <div className="content">
+          <div className="result-head">
+            <h2>Results</h2>
+            <span>{results.length}</span>
           </div>
-          <div
-            className="search-results-grid"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '18px' }}
-          >
-            {results.map((item, idx) => <MediaCardComponent key={`${item.tmdbId}-${idx}`} item={item} />)}
-          </div>
+          {renderGrid(results, true)}
           {loadingMore && (
-            <div style={{ textAlign: 'center', marginTop: '32px' }}>
-              <div style={{ display: 'inline-block', width: '28px', height: '28px', border: '2px solid rgba(230,125,153,0.2)', borderTopColor: 'rgb(230,125,153)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <div className="loader">
+              <div className="spinner" />
             </div>
           )}
-          <div ref={loadMoreRef} style={{ height: '1px' }} />
+          <div ref={loadMoreRef} style={{ height: 1 }} />
         </div>
       ) : loadingSections ? (
-        // ── SKELETON SEÇÕES ─────────────────────────────────────────────────
-        <div>
-          {[...Array(3)].map((_, i) => (
-            <div key={i} style={{ marginBottom: '12px', background: 'rgb(50,47,47)', borderRadius: '10px', padding: '16px 18px', display: 'flex', alignItems: 'center', gap: '14px', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ width: '24px', height: '24px', background: 'rgb(62,58,58)', borderRadius: '4px' }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ width: '130px', height: '14px', background: 'rgb(62,58,58)', borderRadius: '4px', marginBottom: '6px' }} />
-                <div style={{ width: '80px', height: '10px', background: 'rgb(58,55,55)', borderRadius: '4px' }} />
-              </div>
-              <div style={{ width: '16px', height: '16px', background: 'rgb(58,55,55)', borderRadius: '3px' }} />
-            </div>
-          ))}
+        <div className="loader">
+          <div className="spinner" />
+          <div>Loading discoveries...</div>
         </div>
       ) : (
-        // ── SEÇÕES ACORDEÃO (CORREÇÃO 1) ────────────────────────────────────
-        <div style={{ animation: 'fadeUp 0.35s ease' }}>
+        <div className="content">
+          <SectionBlock sectionKey="suggestions" />
           <SectionBlock sectionKey="trending" />
           <SectionBlock sectionKey="popularNow" />
           <SectionBlock sectionKey="allTime" />
+          <OscarSection />
         </div>
       )}
 
-            {/* ── Modal ListEditor (versão unificada) ──────────────────────────── */}
-            {editorOpen && (
-              <ListEditor
-                entry={{
-  id: '', // temporário, será criado novo
-  tmdbId: editorData.tmdbId,
-  parentTmdbId: editorData.parentTmdbId ?? undefined,
-  seasonNumber: editorData.seasonNumber ?? undefined,
-  title: editorData.title,
-  type: editorData.type,
-  status: 'PLANNING',
-  score: 0,
-  progress: 0,
-  totalEpisodes: editorData.totalEpisodes ?? null,
-  imagePath: editorData.poster_path ?? null,
-  isFavorite: false,
-  startDate: null,
-  finishDate: null,
-  rewatchCount: 0,
-  notes: null,
-  hidden: false,
-  updatedAt: new Date().toISOString(),
-}}
-                onClose={() => setEditorOpen(false)}
-                onSave={(updatedEntry) => {
-  setResults(prev => prev.map(card =>
-    card.tmdbId === updatedEntry.tmdbId
-      ? { ...card, status: updatedEntry.status, score: updatedEntry.score, progress: updatedEntry.progress }
-      : card
-  ));
-  setEditorOpen(false);
-}}
-              />
-            )}
-          </div>
-        );
-      }
+      {editorData && (
+        <ListEditor
+          entry={editorData}
+          onClose={() => setEditorData(null)}
+          onSave={(updatedEntry) => {
+            setStatusMap((prev) => ({
+              ...prev,
+              [updatedEntry.tmdbId]: {
+                id: updatedEntry.id,
+                tmdbId: updatedEntry.tmdbId,
+                status: updatedEntry.status,
+                score: updatedEntry.score,
+                progress: updatedEntry.progress,
+                totalEpisodes: updatedEntry.totalEpisodes,
+                slug:
+                  updatedEntry.type === 'MOVIE'
+                    ? `movie-${updatedEntry.tmdbId}`
+                    : `tv-${updatedEntry.parentTmdbId}-s${updatedEntry.seasonNumber}`,
+              },
+            }));
+            setEditorData(null);
+          }}
+          onDelete={() => {
+            setStatusMap((prev) => {
+              const next = { ...prev };
+              delete next[editorData.tmdbId];
+              return next;
+            });
+            setEditorData(null);
+          }}
+        />
+      )}
+    </main>
+  );
+}

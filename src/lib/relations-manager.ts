@@ -17,6 +17,9 @@ export interface SavedRelation {
   targetSeasonNumber?: number;
   targetType?: string;
   order?: number;
+  isAutomatic?: boolean;
+  sequenceOrder?: number | null;
+  spinoffMetadata?: Record<string, unknown> | null;
   targetEntry?: {
     id: string;
     tmdbId: number;
@@ -193,6 +196,7 @@ export function isValidRelation(rel: any): rel is SavedRelation {
     typeof rel.title === 'string' &&
     typeof rel.kind === 'string' &&
     (rel.kind === 'movie' || rel.kind === 'tv') &&
-    typeof rel.targetTmdbId === 'number'
+    typeof rel.targetTmdbId === 'number' &&
+    (rel.isAutomatic === undefined || typeof rel.isAutomatic === 'boolean')
   );
 }

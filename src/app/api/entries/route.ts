@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     const type = searchParams.get('type');
     const production = searchParams.get('productionStatus');
     const refresh = searchParams.get('refresh');
+    const tmdbId = Number(searchParams.get('tmdbId'));
     const statuses = production
       ?.split(',')
       .map((item) => item.trim())
@@ -17,6 +18,18 @@ export async function GET(request: Request) {
 
     if (refresh === 'tmdb') {
       await syncAllEntriesWithTmdb();
+    }
+
+    if (Number.isInteger(tmdbId) && tmdbId > 0) {
+      const entry = await prisma.entry.findUnique({ where: { tmdbId } });
+      if (!entry) return NextResponse.json(null);
+      return NextResponse.json({
+        ...entry,
+        startDate: entry.startDate?.toISOString().split('T')[0] ?? null,
+        finishDate: entry.finishDate?.toISOString().split('T')[0] ?? null,
+        createdAt: entry.createdAt.toISOString(),
+        updatedAt: entry.updatedAt.toISOString(),
+      });
     }
 
     const entries = await prisma.entry.findMany({

@@ -100,6 +100,20 @@ const REL_LABEL: Record<string,string> = {
   ALTERNATIVE:'ALTERNATIVE', SUMMARY:'SUMMARY', OTHER:'OTHER',
 };
 
+const RELATION_TYPE_DETAILS=[
+  {type:'SEQUEL',label:'Sequel',desc:'Continues the story after this title'},
+  {type:'PREQUEL',label:'Prequel',desc:'Happens before this title'},
+  {type:'SPIN_OFF',label:'Spin-off',desc:'Shares character, world, or franchise'},
+  {type:'SIDE_STORY',label:'Side story',desc:'Parallel story in the same continuity'},
+  {type:'ADAPTATION',label:'Adaptation',desc:'Another version or medium'},
+  {type:'ALTERNATIVE',label:'Alternative',desc:'Alternative continuity or retelling'},
+  {type:'SUMMARY',label:'Summary',desc:'Recap, compilation, or digest'},
+  {type:'OTHER',label:'Other',desc:'Related in another way'},
+];
+
+const relationPoster=(path:string|null|undefined,size='w200')=>
+  path?`https://image.tmdb.org/t/p/${size}${path}`:'https://placehold.co/120x180/2a2727/92a0ad?text=?';
+
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 interface CastMember {
   id:number; name:string; character:string;
@@ -123,6 +137,46 @@ interface RelationItem {
   slug:string; relationType:string; title:string;
   poster_path:string|null; kind:'movie'|'tv';
   year?:string; seasonNumber?:number;
+  targetTmdbId?:number;
+  targetParentTmdbId?:number;
+  targetSeasonNumber?:number;
+  isAutomatic?:boolean;
+  sequenceOrder?:number|null;
+  spinoffMetadata?:Record<string, unknown>|null;
+}
+
+interface RelationSearchResult {
+  id:number;
+  kind:'movie'|'tv';
+  title:string;
+  poster_path:string|null;
+  year?:string;
+  seasonNumber?:number;
+  seasonTmdbId?:number;
+  showName?:string;
+  seasons?:TmdbSeasonStub[];
+}
+
+interface SavedRelationLike {
+  relationType?:string;
+  title?:string;
+  poster_path?:string|null;
+  kind?:'movie'|'tv';
+  year?:string|null;
+  seasonNumber?:number|null;
+  order?:number|null;
+  isAutomatic?:boolean;
+  sequenceOrder?:number|null;
+  spinoffMetadata?:Record<string, unknown>|null;
+  targetTmdbId?:number;
+  targetParentTmdbId?:number|null;
+  targetSeasonNumber?:number|null;
+  targetEntry?:{
+    tmdbId?:number|null;
+    parentTmdbId?:number|null;
+    seasonNumber?:number|null;
+    type?:string|null;
+  }|null;
 }
 
 interface TmdbSeasonStub {
@@ -468,13 +522,14 @@ function modalErrorMessage(error:unknown, fallback:string){
   return error instanceof Error ? error.message : fallback;
 }
 
-function CoverGalleryModal({mediaType,tmdbId,seasonNumber,title,current,officialPosterPath,onSaved,onClose}:{
+function CoverGalleryModal({mediaType,tmdbId,seasonNumber,title,current,officialPosterPath,entryId,onSaved,onClose}:{
   mediaType:'MOVIE'|'TV_SEASON';
   tmdbId:number;
   seasonNumber?:number|null;
   title:string;
   current:string|null;
   officialPosterPath:string|null;
+  entryId?:string|null;
   onSaved:(p:string|null)=>void;
   onClose:()=>void;
 }){
@@ -483,8 +538,10 @@ function CoverGalleryModal({mediaType,tmdbId,seasonNumber,title,current,official
   const[official,setOfficial]=useState<string|null>(officialPosterPath);
   const[loading,setLoading]=useState(true);
   const[saving,setSaving]=useState(false);
+  const[customSaving,setCustomSaving]=useState(false);
   const[error,setError]=useState('');
   const[inactiveChoice,setInactiveChoice]=useState(false);
+  const fileInputRef=useRef<HTMLInputElement|null>(null);
 
   useEffect(()=>{
     const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
@@ -561,6 +618,36 @@ function CoverGalleryModal({mediaType,tmdbId,seasonNumber,title,current,official
     }
   }
 
+  async function saveCustomFile(file:File|null|undefined){
+    if(!file)return;
+    if(!entryId){
+      setError('Adicione o titulo a lista antes de enviar uma capa customizada.');
+      return;
+    }
+    if(!file.type.startsWith('image/')){
+      setError('Escolha um arquivo de imagem.');
+      return;
+    }
+    setCustomSaving(true);
+    setError('');
+    try{
+      const dataUrl=await new Promise<string>((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>resolve(String(reader.result));
+        reader.onerror=()=>reject(new Error('Erro ao ler imagem'));
+        reader.readAsDataURL(file);
+      });
+      const ok=await saveCustomImage(entryId,dataUrl);
+      if(!ok)throw new Error('Erro ao salvar capa customizada');
+      onSaved(dataUrl);
+      onClose();
+    }catch(e){
+      setError(modalErrorMessage(e,'Erro ao salvar capa customizada'));
+    }finally{
+      setCustomSaving(false);
+    }
+  }
+
   const selectedPreview=coverImageUrl(selected,'w500');
 
   return(
@@ -584,6 +671,15 @@ function CoverGalleryModal({mediaType,tmdbId,seasonNumber,title,current,official
             <button onClick={restoreOfficial} disabled={saving||!official} style={{marginTop:12,width:'100%',padding:10,borderRadius:4,border:'1px solid rgba(255,255,255,.1)',background:'#1e1c1c',color:TEXT,cursor:saving?'wait':'pointer',fontWeight:700,fontSize:12}}>
               Usar capa oficial
             </button>
+            <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={e=>saveCustomFile(e.target.files?.[0])}/>
+            <div
+              onDragOver={e=>{e.preventDefault();}}
+              onDrop={e=>{e.preventDefault();void saveCustomFile(e.dataTransfer.files?.[0]);}}
+              onClick={()=>fileInputRef.current?.click()}
+              style={{marginTop:12,padding:12,borderRadius:6,border:'1px dashed rgba(230,125,153,.38)',background:'rgba(230,125,153,.08)',color:entryId?TEXT:MUTED,cursor:entryId?'pointer':'not-allowed',fontSize:11,lineHeight:1.45,textAlign:'center',fontWeight:800,transition:'border-color .18s ease, background .18s ease'}}
+            >
+              {customSaving?'Enviando capa...':'Arraste uma capa customizada ou clique para enviar'}
+            </div>
             {inactiveChoice&&(
               <div style={{marginTop:12,fontSize:11,lineHeight:1.45,color:'#f1c40f',background:'rgba(241,196,15,.08)',border:'1px solid rgba(241,196,15,.2)',borderRadius:4,padding:10}}>
                 A capa oficial mudou no TMDB. A escolha antiga foi deixada em segundo plano.
@@ -854,6 +950,215 @@ function AddRelModal({onAdd,onClose}:{
 }
 
 // ─── Modal: List Editor ────────────────────────────────────────────────────────
+function RelationEditorModal({onAdd,onClose}:{
+  onAdd:(r:RelationItem)=>void; onClose:()=>void;
+}){
+  const[step,setStep]=useState<'search'|'type'|'confirm'>('search');
+  const[query,setQuery]=useState('');
+  const[results,setResults]=useState<RelationSearchResult[]>([]);
+  const[selected,setSelected]=useState<RelationSearchResult|null>(null);
+  const[selectedSeason,setSelectedSeason]=useState<number>(1);
+  const[relType,setRelType]=useState('SEQUEL');
+  const[loading,setLoading]=useState(false);
+  const[err,setErr]=useState('');
+
+  useEffect(()=>{
+    const h=(e:KeyboardEvent)=>{if(e.key==='Escape')onClose();};
+    document.addEventListener('keydown',h);
+    document.body.style.overflow='hidden';
+    return()=>{document.removeEventListener('keydown',h);document.body.style.overflow='';};
+  },[onClose]);
+
+  function chooseResult(result:RelationSearchResult){
+    const firstSeason=result.seasons?.find(s=>s.season_number===result.seasonNumber) ?? result.seasons?.[0];
+    setSelected(result);
+    setSelectedSeason(firstSeason?.season_number ?? result.seasonNumber ?? 1);
+    setRelType('SEQUEL');
+    setStep('type');
+  }
+
+  function currentSeason(){
+    return selected?.seasons?.find(s=>s.season_number===selectedSeason) ?? null;
+  }
+
+  function relationSeasonTitle(showTitle:string, season:number){
+    return `${showTitle} ${getOrdinal(season)} Season`;
+  }
+
+  function selectedTitle(){
+    if(!selected)return '';
+    if(selected.kind==='movie')return selected.title;
+    return relationSeasonTitle(selected.showName??selected.title,selectedSeason);
+  }
+
+  function selectedPoster(){
+    const season=currentSeason();
+    return season?.poster_path ?? selected?.poster_path ?? null;
+  }
+
+  function selectedYear(){
+    const season=currentSeason();
+    return getYear(season?.air_date) || selected?.year;
+  }
+
+  async function hydrateTvResult(show:{id:number;name?:string;poster_path?:string|null;first_air_date?:string|null}):Promise<RelationSearchResult>{
+    const detailRes=await fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`);
+    const detail=detailRes.ok?await detailRes.json():show;
+    const seasons=((detail.seasons??[]) as TmdbSeasonStub[])
+      .filter(s=>s.season_number>0)
+      .sort((a,b)=>a.season_number-b.season_number);
+    const first=seasons[0];
+    return {
+      id:show.id,
+      kind:'tv',
+      title:detail.name??show.name??'Series',
+      showName:detail.name??show.name??'Series',
+      poster_path:detail.poster_path??show.poster_path??null,
+      year:getYear(detail.first_air_date??show.first_air_date),
+      seasonNumber:first?.season_number??1,
+      seasonTmdbId:first?.id,
+      seasons,
+    };
+  }
+
+  async function search(){
+    const q=query.trim();
+    if(!q){setErr('Digite um titulo ou TMDB ID.');return;}
+    setLoading(true);setErr('');setResults([]);setSelected(null);
+    try{
+      if(/^\d+$/.test(q)){
+        const id=Number(q);
+        const [movieRes,tvRes]=await Promise.all([
+          fetch(`${TMDB}/movie/${id}?api_key=${API_KEY}&language=en-US`),
+          fetch(`${TMDB}/tv/${id}?api_key=${API_KEY}&language=en-US`),
+        ]);
+        const direct:RelationSearchResult[]=[];
+        if(movieRes.ok){
+          const movieData=await movieRes.json();
+          if(!movieData.status_code)direct.push({id,kind:'movie',title:movieData.title??movieData.original_title??'Movie',poster_path:movieData.poster_path??null,year:getYear(movieData.release_date)});
+        }
+        if(tvRes.ok){
+          const tvData=await tvRes.json();
+          if(!tvData.status_code)direct.push(await hydrateTvResult(tvData));
+        }
+        setResults(direct);
+        if(!direct.length)setErr('Nenhum titulo encontrado para esse TMDB ID.');
+        return;
+      }
+      const [movieRes,tvRes]=await Promise.all([
+        fetch(`${TMDB}/search/movie?api_key=${API_KEY}&language=en-US&query=${encodeURIComponent(q)}`),
+        fetch(`${TMDB}/search/tv?api_key=${API_KEY}&language=en-US&query=${encodeURIComponent(q)}`),
+      ]);
+      const movieData=movieRes.ok?await movieRes.json():{results:[]};
+      const tvData=tvRes.ok?await tvRes.json():{results:[]};
+      const movies=((movieData.results??[]) as Array<{id:number;title?:string;poster_path?:string|null;release_date?:string|null}>).slice(0,5).map(movie=>({
+        id:movie.id,
+        kind:'movie' as const,
+        title:movie.title??'Movie',
+        poster_path:movie.poster_path??null,
+        year:getYear(movie.release_date),
+      }));
+      const tv=await Promise.all(((tvData.results??[]) as Array<{id:number;name?:string;poster_path?:string|null;first_air_date?:string|null}>).slice(0,5).map(hydrateTvResult));
+      const merged=[...movies,...tv].sort((a,b)=>(Number(b.year)||0)-(Number(a.year)||0)).slice(0,10);
+      setResults(merged);
+      if(!merged.length)setErr('Nenhum titulo encontrado.');
+    }catch(e){
+      console.error('[RelationEditorModal] Search error:',e);
+      setErr('Busca falhou. Tente novamente.');
+    }finally{
+      setLoading(false);
+    }
+  }
+
+  function confirm(){
+    if(!selected)return;
+    const season=currentSeason();
+    const sn=selected.kind==='tv' ? selectedSeason : undefined;
+    onAdd(selected.kind==='movie'
+      ?{slug:`movie-${selected.id}`,relationType:relType,title:selected.title,poster_path:selected.poster_path,kind:'movie',year:selected.year,targetTmdbId:selected.id,isAutomatic:false}
+      :{slug:`tv-${selected.id}-s${sn}`,relationType:relType,title:selectedTitle(),poster_path:selectedPoster(),kind:'tv',year:selectedYear(),seasonNumber:sn,targetTmdbId:season?.id,targetParentTmdbId:selected.id,targetSeasonNumber:sn,isAutomatic:false,sequenceOrder:sn});
+    onClose();
+  }
+
+  const inputStyle:React.CSSProperties={width:'100%',minHeight:40,padding:'10px 12px',background:'#1e1c1c',border:'1px solid rgba(255,255,255,.08)',borderRadius:6,color:TEXT,fontSize:13,boxSizing:'border-box',fontFamily:'Overpass,sans-serif'};
+  const buttonBase:React.CSSProperties={border:'1px solid rgba(255,255,255,.09)',borderRadius:6,background:'#1e1c1c',color:TEXT,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'Overpass,sans-serif',transition:'transform .16s ease, border-color .16s ease, background .16s ease'};
+  const stepIndex=(['search','type','confirm'] as const).indexOf(step);
+  const selectedMedia=selected?.kind==='movie'?'Movie':'TV Season';
+
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:CARD,borderRadius:8,width:'min(780px,96vw)',maxHeight:'90vh',overflow:'hidden',boxShadow:'0 22px 70px rgba(0,0,0,.7)',animation:'scaleIn .24s ease',display:'grid',gridTemplateRows:'auto 1fr auto'}}>
+        <div style={{padding:'18px 22px',borderBottom:'1px solid rgba(255,255,255,.07)'}}>
+          <div style={{fontSize:16,fontWeight:900,color:TEXT}}>Adicionar relation</div>
+          <div style={{display:'flex',gap:8,marginTop:12}}>
+            {(['search','type','confirm'] as const).map((s,i)=><div key={s} style={{flex:1,height:4,borderRadius:10,background:i<=stepIndex?ACCENT:'rgba(255,255,255,.08)',transition:'background .18s ease'}}/>)}
+          </div>
+        </div>
+        <div style={{padding:22,overflow:'auto'}}>
+          {step==='search'&&<div style={{display:'grid',gap:14}}>
+            <div style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) auto',gap:10}}>
+              <input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&search()} placeholder="Buscar filme, serie ou colar TMDB ID" style={inputStyle}/>
+              <button onClick={search} disabled={loading} style={{...buttonBase,padding:'0 16px',background:loading?'#333':ACCENT,color:'white',border:'none'}}>{loading?'Buscando...':'Buscar'}</button>
+            </div>
+            {err&&<div style={{fontSize:12,color:'#ffb4b4',background:'rgba(231,76,60,.12)',border:'1px solid rgba(231,76,60,.25)',borderRadius:6,padding:10}}>{err}</div>}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:10}}>
+              {results.map(result=>(
+                <button key={`${result.kind}-${result.id}`} onClick={()=>chooseResult(result)} style={{...buttonBase,display:'grid',gridTemplateColumns:'52px minmax(0,1fr)',alignItems:'center',gap:12,padding:10,textAlign:'left',minWidth:0}}>
+                  <img src={relationPoster(result.poster_path,'w154')} alt="" style={{width:52,height:78,objectFit:'cover',borderRadius:4}}/>
+                  <span style={{minWidth:0}}>
+                    <strong style={{display:'block',fontSize:13,color:TEXT,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{result.title}</strong>
+                    <small style={{display:'block',marginTop:4,color:MUTED,fontSize:11}}>{result.kind==='movie'?'Movie':`${result.seasons?.length??0} temporadas`} {result.year?`- ${result.year}`:''}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>}
+          {step==='type'&&selected&&<div style={{display:'grid',gap:14}}>
+            <div style={{display:'flex',gap:12,alignItems:'center',background:'#1e1c1c',border:'1px solid rgba(255,255,255,.07)',borderRadius:8,padding:12,minWidth:0}}>
+              <img src={relationPoster(selectedPoster(),'w154')} alt="" style={{width:52,height:78,objectFit:'cover',borderRadius:4,flexShrink:0}}/>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontSize:14,fontWeight:900,color:TEXT,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{selectedTitle()}</div>
+                <div style={{fontSize:12,color:MUTED,marginTop:4}}>{selectedMedia} {selectedYear()?`- ${selectedYear()}`:''}</div>
+              </div>
+            </div>
+            {selected.kind==='tv'&&<div>
+              <label style={{display:'block',fontSize:11,fontWeight:900,color:MUTED,textTransform:'uppercase',letterSpacing:'.5px',marginBottom:7}}>Temporada da serie</label>
+              <select value={selectedSeason} onChange={e=>setSelectedSeason(Number(e.target.value))} style={inputStyle}>
+                {(selected.seasons?.length?selected.seasons:[{id:selected.seasonTmdbId??0,name:'Season 1',season_number:1,poster_path:selected.poster_path,air_date:'',episode_count:0}]).map(season=>(
+                  <option key={season.season_number} value={season.season_number}>{relationSeasonTitle(selected.showName??selected.title,season.season_number)}{season.air_date?` - ${getYear(season.air_date)}`:''}</option>
+                ))}
+              </select>
+            </div>}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(158px,1fr))',gap:10}}>
+              {RELATION_TYPE_DETAILS.map(item=>(
+                <button key={item.type} onClick={()=>setRelType(item.type)} style={{...buttonBase,padding:12,textAlign:'left',borderColor:relType===item.type?ACCENT:'rgba(255,255,255,.09)',background:relType===item.type?'rgba(230,125,153,.14)':'#1e1c1c',minHeight:78}}>
+                  <strong style={{display:'block',fontSize:12,color:relType===item.type?ACCENT:TEXT}}>{item.label}</strong>
+                  <span style={{display:'block',fontSize:11,color:MUTED,marginTop:5,lineHeight:1.35}}>{item.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>}
+          {step==='confirm'&&selected&&<div style={{display:'grid',gap:14}}>
+            <div style={{fontSize:13,color:MUTED}}>Confirmar relation</div>
+            <div style={{display:'grid',gridTemplateColumns:'62px minmax(0,1fr)',gap:14,alignItems:'center',background:'#1e1c1c',border:'1px solid rgba(255,255,255,.07)',borderRadius:8,padding:14}}>
+              <img src={relationPoster(selectedPoster(),'w154')} alt="" style={{width:62,height:93,objectFit:'cover',borderRadius:4}}/>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:15,fontWeight:900,color:TEXT,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{selectedTitle()}</div>
+                <div style={{fontSize:12,color:ACCENT,fontWeight:900,marginTop:6}}>{REL_LABEL[relType]??relType}</div>
+                <div style={{fontSize:12,color:MUTED,marginTop:6}}>{selectedMedia} {selectedYear()?`- ${selectedYear()}`:''}</div>
+              </div>
+            </div>
+          </div>}
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',gap:10,padding:'16px 22px',borderTop:'1px solid rgba(255,255,255,.07)',background:'#242121'}}>
+          <button onClick={step==='search'?onClose:()=>setStep(step==='confirm'?'type':'search')} style={{...buttonBase,padding:'10px 14px',color:MUTED}}>{step==='search'?'Cancelar':'Voltar'}</button>
+          {step==='type'&&<button onClick={()=>setStep('confirm')} style={{...buttonBase,padding:'10px 16px',background:ACCENT,border:'none',color:'white'}}>Continuar</button>}
+          {step==='confirm'&&<button onClick={confirm} style={{...buttonBase,padding:'10px 16px',background:ACCENT,border:'none',color:'white'}}>Salvar relation</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
 function ListEditorModal({entry,isTV,showId,seasonNumber,displayTitle,posterPath,episodeCount,tmdbId,onClose,onSaved}:{
   entry:EntryData|null; isTV:boolean; showId:number|null;
   seasonNumber:number|null; displayTitle:string;
@@ -1164,6 +1469,9 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
           poster_path: p.poster_path,
           kind: 'movie',
           year: getYear(p.release_date),
+          targetTmdbId: p.id,
+          isAutomatic: true,
+          sequenceOrder: myIdx - 1,
         });
       }
       if (myIdx < sorted.length - 1) {
@@ -1175,6 +1483,9 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
           poster_path: p.poster_path,
           kind: 'movie',
           year: getYear(p.release_date),
+          targetTmdbId: p.id,
+          isAutomatic: true,
+          sequenceOrder: myIdx + 1,
         });
       }
       return auto;
@@ -1200,6 +1511,11 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
         kind: 'tv',
         year: getYear(prevSeason.air_date),
         seasonNumber: prevSeason.season_number,
+        targetTmdbId: prevSeason.id,
+        targetParentTmdbId: show.id,
+        targetSeasonNumber: prevSeason.season_number,
+        isAutomatic: true,
+        sequenceOrder: prevSeason.season_number,
       });
     }
     if (nextSeason) {
@@ -1211,6 +1527,11 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
         kind: 'tv',
         year: getYear(nextSeason.air_date),
         seasonNumber: nextSeason.season_number,
+        targetTmdbId: nextSeason.id,
+        targetParentTmdbId: show.id,
+        targetSeasonNumber: nextSeason.season_number,
+        isAutomatic: true,
+        sequenceOrder: nextSeason.season_number,
       });
     }
     return auto;
@@ -1219,24 +1540,67 @@ export default function TitlePage({params}:{params:Promise<{id:string}>}){
   /**
    * Mescla relações automáticas e manuais, evitando duplicatas por slug
    */
+  function relationIdentity(rel: RelationItem) {
+    if (rel.kind === 'movie') return `movie:${rel.targetTmdbId ?? rel.slug}`;
+    const parentId = rel.targetParentTmdbId ?? rel.slug.match(/^tv-(\d+)-s\d+$/)?.[1] ?? rel.targetTmdbId;
+    const season = rel.targetSeasonNumber ?? rel.seasonNumber ?? rel.slug.match(/^tv-\d+-s(\d+)$/)?.[1] ?? 1;
+    return `tv:${parentId}:s${season}`;
+  }
+
+  function savedRelationToItem(r: SavedRelationLike): RelationItem | null {
+    const target = r.targetEntry;
+    const isMovie = r.kind === 'movie' || target?.type === 'MOVIE';
+    const parentId = r.targetParentTmdbId ?? target?.parentTmdbId ?? (isMovie ? null : r.targetTmdbId);
+    const seasonNo = r.targetSeasonNumber ?? r.seasonNumber ?? target?.seasonNumber ?? 1;
+    const slug = isMovie
+      ? `movie-${target?.tmdbId ?? r.targetTmdbId}`
+      : `tv-${parentId ?? target?.tmdbId ?? r.targetTmdbId}-s${seasonNo}`;
+
+    if (!slug || !r.title || !r.relationType) {
+      console.warn('[Relations] Relação sem dados suficientes, ignorando:', r);
+      return null;
+    }
+
+    return {
+      slug,
+      relationType: r.relationType,
+      title: r.title,
+      poster_path: r.poster_path ?? null,
+      kind: isMovie ? 'movie' : 'tv',
+      year: r.year ?? undefined,
+      seasonNumber: r.seasonNumber ?? seasonNo ?? undefined,
+      targetTmdbId: target?.tmdbId ?? r.targetTmdbId,
+      targetParentTmdbId: parentId ?? undefined,
+      targetSeasonNumber: seasonNo ?? undefined,
+      isAutomatic: Boolean(r.isAutomatic),
+      sequenceOrder: r.sequenceOrder ?? r.order ?? null,
+      spinoffMetadata: r.spinoffMetadata ?? null,
+    };
+  }
+
 function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationItem[] {
-  const slugs = new Set<string>();
+  const seen = new Set<string>();
   const merged: RelationItem[] = [];
   // Manuais primeiro: têm prioridade sobre as automáticas
   for (const rel of manual) {
-    if (!slugs.has(rel.slug)) {
-      slugs.add(rel.slug);
+    const key = relationIdentity(rel);
+    if (!seen.has(key)) {
+      seen.add(key);
       merged.push(rel);
     }
   }
   // Automáticas depois: só entram se não há manual com o mesmo slug
   for (const rel of auto) {
-    if (!slugs.has(rel.slug)) {
-      slugs.add(rel.slug);
+    const key = relationIdentity(rel);
+    if (!seen.has(key)) {
+      seen.add(key);
       merged.push(rel);
     }
   }
-  return merged;
+  return merged.sort((a,b)=>
+    (a.sequenceOrder??a.seasonNumber??Number(a.year)??0)-
+    (b.sequenceOrder??b.seasonNumber??Number(b.year)??0)
+  );
 }
 
   /**
@@ -1250,24 +1614,8 @@ function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationI
     try {
       const savedRels = await fetchSavedRelations(entry.id);
       manualRels = savedRels
-        .map(rel => {
-          let slug = '';
-          if (rel.kind === 'movie') {
-            slug = `movie-${rel.targetTmdbId}`;
-          } else {
-            slug = `tv-${rel.targetParentTmdbId || rel.targetTmdbId}-s${rel.targetSeasonNumber || 1}`;
-          }
-          return {
-            slug,
-            relationType: rel.relationType,
-            title: rel.title,
-            poster_path: rel.poster_path,
-            kind: rel.kind as 'movie' | 'tv',
-            year: rel.year || undefined,
-            seasonNumber: rel.seasonNumber || undefined,
-          } as RelationItem;
-        })
-        .filter(r => r !== null);
+        .map(savedRelationToItem)
+        .filter((r): r is RelationItem => Boolean(r));
     } catch (e) {
       console.warn('[loadAllRelations] Erro ao buscar manuais:', e);
     }
@@ -1309,8 +1657,14 @@ function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationI
     let targetType: 'MOVIE' | 'TV_SEASON' | null = null;
 
     try {
+      if (newRel.targetTmdbId) {
+        targetTmdbId = newRel.targetTmdbId;
+        targetParentTmdbId = newRel.targetParentTmdbId ?? null;
+        targetSeasonNumber = newRel.targetSeasonNumber ?? newRel.seasonNumber ?? null;
+        targetType = newRel.kind === 'movie' ? 'MOVIE' : 'TV_SEASON';
+      }
       // Parse do slug para extrair IDs
-      if (newRel.slug.startsWith('movie-')) {
+      else if (newRel.slug.startsWith('movie-')) {
         targetTmdbId = parseInt(newRel.slug.split('-')[1]);
         targetType = 'MOVIE';
       } else if (newRel.slug.startsWith('tv-')) {
@@ -1355,6 +1709,9 @@ function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationI
         targetParentTmdbId: targetParentTmdbId ?? undefined,
         targetSeasonNumber: targetSeasonNumber ?? undefined,
         targetType: targetType ?? undefined,
+        isAutomatic: false,
+        sequenceOrder: newRel.sequenceOrder ?? relations.length,
+        spinoffMetadata: newRel.spinoffMetadata ?? undefined,
         order: relations.length, // Adiciona no final
       });
 
@@ -1376,12 +1733,19 @@ function mergeRelations(auto: RelationItem[], manual: RelationItem[]): RelationI
    */
   async function removeRelation(relToRemove: RelationItem) {
     if (!entry?.id) return;
+    if (relToRemove.isAutomatic) {
+      alert('RelaÃ§Ãµes automÃ¡ticas nÃ£o podem ser removidas aqui.');
+      return;
+    }
 
     let targetTmdbId: number | null = null;
 
     try {
+      if (relToRemove.targetTmdbId) {
+        targetTmdbId = relToRemove.targetTmdbId;
+      }
       // Extrai targetTmdbId do slug
-      if (relToRemove.slug.startsWith('movie-')) {
+      else if (relToRemove.slug.startsWith('movie-')) {
         targetTmdbId = parseInt(relToRemove.slug.split('-')[1]);
       } else if (relToRemove.slug.startsWith('tv-')) {
         const match = relToRemove.slug.match(/^tv-(\d+)-s(\d+)$/);
@@ -1504,35 +1868,9 @@ md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
             if (relRes.ok) {
               const saved = await relRes.json();
               console.log(`[Relations] Carregadas ${saved.length} relações do banco para entryId ${entryId}`);
-manualRels = saved.map((r: any) => {
-  let slug = '';
-  // Usa targetEntry se disponível; senão constrói o slug a partir dos campos diretos da relação
-  if (r.targetEntry) {
-    const target = r.targetEntry;
-    if (target.type === 'MOVIE') {
-      slug = `movie-${target.tmdbId}`;
-    } else {
-      slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
-    }
-  } else if (r.kind === 'movie') {
-    slug = `movie-${r.targetTmdbId}`;
-  } else {
-    slug = `tv-${r.targetParentTmdbId ?? r.targetTmdbId}-s${r.targetSeasonNumber ?? r.seasonNumber ?? 1}`;
-  }
-  if (!slug) {
-    console.warn('[Relations] Relação sem slug válido, ignorando:', r);
-    return null;
-  }
-  return {
-    slug,
-    relationType: r.relationType,
-    title: r.title,
-    poster_path: r.poster_path,
-    kind: r.kind,
-    year: r.year ?? undefined,
-    seasonNumber: r.seasonNumber ?? undefined,
-  };
-}).filter(Boolean);
+manualRels = saved
+  .map(savedRelationToItem)
+  .filter((r: RelationItem | null): r is RelationItem => Boolean(r));
             }
           } catch (e) {
             console.warn('[Relations] Falha ao carregar do banco', e);
@@ -1642,34 +1980,9 @@ sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
             const relRes = await fetch(`/api/relations?sourceId=${entryId}`);
             if (relRes.ok) {
               const saved = await relRes.json();
-manualRels = saved.map((r: any) => {
-  let slug = '';
-  if (r.targetEntry) {
-    const target = r.targetEntry;
-    if (target.type === 'MOVIE') {
-      slug = `movie-${target.tmdbId}`;
-    } else {
-      slug = `tv-${target.parentTmdbId ?? target.tmdbId}-s${target.seasonNumber ?? 1}`;
-    }
-  } else if (r.kind === 'movie') {
-    slug = `movie-${r.targetTmdbId}`;
-  } else {
-    slug = `tv-${r.targetParentTmdbId ?? r.targetTmdbId}-s${r.targetSeasonNumber ?? r.seasonNumber ?? 1}`;
-  }
-  if (!slug) {
-    console.warn('[Relations] Relação sem slug válido, ignorando:', r);
-    return null;
-  }
-  return {
-    slug,
-    relationType: r.relationType,
-    title: r.title,
-    poster_path: r.poster_path,
-    kind: r.kind,
-    year: r.year ?? undefined,
-    seasonNumber: r.seasonNumber ?? undefined,
-  };
-}).filter(Boolean);
+manualRels = saved
+  .map(savedRelationToItem)
+  .filter((r: RelationItem | null): r is RelationItem => Boolean(r));
             }
           } catch (e) {
             console.warn('[Relations] Falha ao carregar do banco', e);
@@ -1897,24 +2210,69 @@ manualRels = saved.map((r: any) => {
   }
 
   function RelCard({rel, onRemove}:{rel:RelationItem; onRemove:(rel:RelationItem)=>void}){
+    const mediaLabel=rel.kind==='movie'?'Movie':rel.seasonNumber?`${getOrdinal(rel.seasonNumber)} Season`:'TV';
     return(
-      <div className="tp-rel-card" style={{background:CARD,borderRadius:4,overflow:'hidden',display:'flex',height:90,position:'relative'}}>
-        <img src={rel.poster_path?`https://image.tmdb.org/t/p/w200${rel.poster_path}`:'https://placehold.co/60x90/2a2727/92a0ad?text=?'} style={{width:60,objectFit:'cover',flexShrink:0}} alt={rel.title}/>
-        <a href={`/titles/${rel.slug}`} style={{textDecoration:'none',display:'flex',flex:1,minWidth:0}}>
-          <div style={{padding:'10px 12px',flex:1,minWidth:0}}>
-            <div style={{color:ACCENT,fontSize:10,fontWeight:800,letterSpacing:'.8px',marginBottom:4}}>{REL_LABEL[rel.relationType]??rel.relationType.toUpperCase()}</div>
-            <div className="tp-rel-title" style={{fontSize:13,fontWeight:700,color:TEXT,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',transition:'color .15s'}}>{rel.title}</div>
-            {rel.year&&<div style={{fontSize:11,color:MUTED,marginTop:4}}>{rel.kind==='movie'?'Film':rel.seasonNumber?`${getOrdinal(rel.seasonNumber)} Season`:'TV'} · {rel.year}</div>}
+      <div className="tp-rel-card" style={{background:CARD,borderRadius:6,overflow:'hidden',display:'grid',gridTemplateColumns:'72px minmax(0,1fr)',minHeight:108,position:'relative',border:'1px solid rgba(255,255,255,.06)'}}>
+        <a href={`/titles/${rel.slug}`} style={{textDecoration:'none',display:'contents',color:'inherit'}}>
+          <img src={relationPoster(rel.poster_path,'w200')} style={{width:72,height:'100%',minHeight:108,objectFit:'cover',display:'block'}} alt={rel.title}/>
+          <div style={{padding:'12px 38px 12px 13px',minWidth:0,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+            <div style={{color:ACCENT,fontSize:10,fontWeight:900,letterSpacing:'.8px',marginBottom:6,textTransform:'uppercase'}}>{REL_LABEL[rel.relationType]??rel.relationType.toUpperCase()}</div>
+            <div className="tp-rel-title" style={{fontSize:14,fontWeight:800,color:TEXT,lineHeight:1.25,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',transition:'color .15s'}}>{rel.title}</div>
+            <div style={{marginTop:8,display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',minWidth:0}}>
+              <span style={{display:'inline-flex',padding:'2px 7px',borderRadius:999,background:rel.isAutomatic?'rgba(146,160,173,.12)':'rgba(46,204,113,.12)',color:rel.isAutomatic?MUTED:'#2ecc71',fontSize:9,fontWeight:900,textTransform:'uppercase'}}>
+                {rel.isAutomatic?'Auto':'Manual'}
+              </span>
+              <span style={{fontSize:11,color:MUTED,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{mediaLabel}{rel.year?` - ${rel.year}`:''}</span>
+            </div>
           </div>
         </a>
-        {editingRel&&(
-          <button onClick={()=>onRemove(rel)}
-            style={{position:'absolute',top:6,right:6,background:'#e53e3e',color:'white',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>×</button>
+        {editingRel&&!rel.isAutomatic&&(
+          <button onClick={()=>onRemove(rel)} aria-label="Remover relation"
+            style={{position:'absolute',top:8,right:8,background:'#e53e3e',color:'white',border:'none',borderRadius:4,width:24,height:24,cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>x</button>
         )}
       </div>
     );
   }
 
+  function RelationsStats({items}:{items:RelationItem[]}){
+    const groups=items.reduce<Record<string,number>>((acc,rel)=>{
+      acc[rel.relationType]=(acc[rel.relationType]??0)+1;
+      return acc;
+    },{});
+    return(
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:8,marginBottom:14}}>
+        <div style={{background:'rgba(255,255,255,.035)',border:'1px solid rgba(255,255,255,.06)',borderRadius:6,padding:'12px 13px',minWidth:0}}>
+          <div style={{fontSize:20,fontWeight:900,color:TEXT,lineHeight:1}}>{items.length}</div>
+          <div style={{fontSize:10,color:MUTED,textTransform:'uppercase',fontWeight:900,marginTop:8,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>Total</div>
+        </div>
+        {Object.entries(groups).map(([type,count])=>(
+          <div key={type} style={{background:'rgba(255,255,255,.035)',border:'1px solid rgba(255,255,255,.06)',borderRadius:6,padding:'12px 13px',minWidth:0}}>
+            <div style={{fontSize:20,fontWeight:900,color:ACCENT,lineHeight:1}}>{count}</div>
+            <div style={{fontSize:10,color:MUTED,textTransform:'uppercase',fontWeight:900,marginTop:8,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{REL_LABEL[type]??type}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function RelationsTimeline({items}:{items:RelationItem[]}){
+    const ordered=[...items].sort((a,b)=>(a.sequenceOrder??a.seasonNumber??Number(a.year)??0)-(b.sequenceOrder??b.seasonNumber??Number(b.year)??0));
+    if(ordered.length<2)return null;
+    return(
+      <div style={{display:'flex',gap:10,overflowX:'auto',padding:'4px 0 14px',marginBottom:14}}>
+        {ordered.map((rel,index)=>(
+          <a key={`${rel.slug}-timeline`} href={`/titles/${rel.slug}`} style={{display:'grid',gridTemplateColumns:'42px minmax(0,118px)',gap:8,alignItems:'center',textDecoration:'none',color:'inherit',minWidth:178,position:'relative',background:'rgba(255,255,255,.025)',border:'1px solid rgba(255,255,255,.05)',borderRadius:6,padding:7}}>
+            {index<ordered.length-1&&<span style={{position:'absolute',left:'calc(100% - 2px)',width:14,top:'50%',height:1,background:'rgba(230,125,153,.28)'}}/>}
+            <img src={relationPoster(rel.poster_path,'w92')} alt="" style={{width:42,height:63,objectFit:'cover',borderRadius:4,position:'relative',zIndex:1,border:'1px solid rgba(255,255,255,.08)'}}/>
+            <span style={{minWidth:0,position:'relative',zIndex:1}}>
+              <strong style={{fontSize:11,color:TEXT,lineHeight:1.25,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{rel.title}</strong>
+              <small style={{display:'block',fontSize:10,color:MUTED,marginTop:5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{REL_LABEL[rel.relationType]??rel.relationType}</small>
+            </span>
+          </a>
+        ))}
+      </div>
+    );
+  }
   function RecCard({rec}:{rec:TmdbRec}){
     const t=rec.title||rec.name||'';
     const slug=rec.media_type==='movie'?`movie-${rec.id}`:`tv-${rec.id}-s1`;
@@ -1940,6 +2298,7 @@ manualRels = saved.map((r: any) => {
 
   // ─── Aba Overview ────────────────────────────────────────────────────────────
   const sectionTitle:React.CSSProperties={fontSize:14,fontWeight:700,color:ACCENT,marginBottom:12,display:'flex',alignItems:'center',gap:8};
+  const relationsGrid:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:10,marginBottom:30};
   const grid2:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:10,marginBottom:30};
   const grid3:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:30};
   const grid4:React.CSSProperties={display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:30};
@@ -1980,7 +2339,9 @@ onClick={async () => {
         </button>
       )}
     </div>
-    <div style={grid2}>{relations.map(r => <RelCard key={r.slug} rel={r} onRemove={removeRelation} />)}</div>
+    {relations.length>0&&<RelationsStats items={relations}/>}
+    {relations.length>0&&<RelationsTimeline items={relations}/>}
+    <div style={relationsGrid}>{relations.map(r => <RelCard key={r.slug} rel={r} onRemove={removeRelation} />)}</div>
   </div>
 )}
 
@@ -2076,7 +2437,7 @@ onClick={async () => {
               }
               {/* Overlay de editar capa (visível no hover via CSS .tp-poster-overlay) */}
               <div className="tp-poster-overlay"
-                onClick={()=>setShowCoverEdit(true)}
+                onClick={async()=>{if(await createEntryIfNeeded())setShowCoverEdit(true);}}
                 style={{position:'absolute',inset:0,background:'rgba(0,0,0,.68)',borderRadius:4,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',opacity:0,transition:'opacity .22s ease',gap:6}}>
                 <div style={{fontSize:24}}>🖼</div>
                 <div style={{fontSize:13,fontWeight:700,color:'white'}}>Alterar Capa</div>
@@ -2194,6 +2555,7 @@ onClick={async () => {
           title={displayTitle}
           current={rawPosterPath}
           officialPosterPath={liveTmdbPoster}
+          entryId={entry?.id??null}
           onSaved={(p) => {
             setCustomPoster(p);
             setShowCoverEdit(false);
@@ -2203,7 +2565,7 @@ onClick={async () => {
         />
       )}
       {showAddRel&&(
-        <AddRelModal
+        <RelationEditorModal
           onAdd={addRelation}
           onClose={() => setShowAddRel(false)}
         />

@@ -160,6 +160,28 @@ Substituir os dropdowns atuais (Genre ▼, Year ▼, Any Format ▼, Status ▼)
 
 ---
 
+### 2.8 Sessão de OSCAR inteligente
+- Ao entrar em `app/search/page.tsx` e selecionar um ano, exibe todos os filmes que concorreram ao Oscar daquele ano.
+- Deve ser um sistema **extremamente inteligente e robusto**: sincroniza TMDB com um dataset próprio de indicações e categorias, garantindo resultados precisos mesmo quando TMDB não declara explicitamente a premiação.
+- Requisitos principais:
+  - seleção de ano única ou intervalo de anos
+  - filtros por categoria de Oscar (Melhor Filme, Direção, Ator, Atriz, Roteiro, Documentário, Animação, etc.)
+  - destaque visual de vencedores e indicados
+  - blend entre filmes do Oscar e watchlist/status do usuário
+  - descoberta de curiosidades como "primeiro Oscar de um diretor brasileiro", "filmes indicados mas não exibidos no Brasil" e "vencedores com baixa popularidade TMDB"
+- Implementação sugerida:
+  - manter um dataset interno de premiações com `year`, `movieId`, `categories`, `result` e `tmdbId`
+  - criar endpoint `app/api/oscar/route.ts` que retorna títulos por `year`, `category`, `winner` e `country`
+  - criar componente `OscarSection` ou `OscarPanel` em `app/search/page.tsx` para renderizar cards com medalhas, trailers, notas e links rápidos
+  - usar cache periódico ou job de sincronização para atualizar dados de Oscar e associar filmes ao TMDB mesmo quando o título mudar de nome ou tiver múltiplas versões
+  - aplicar o sistema de capas global para que a imagem exibida venha sempre da fonte única de verdade do título
+- Experiência ideal:
+  - ao selecionar um ano, o usuário vê uma grade com os filmes indicados, ordenados por número de indicações, nota e status de watchlist
+  - a seção permite alternar entre `Todos`, `Vencedores`, `Indicados`, `Por categoria` e `Favoritos da watchlist`
+  - cards mostram: categoria, status (vencedor/indicado), ano do Oscar, sinopse, e ações rápidas de `Adicionar à lista` ou `Ver detalhes`.
+
+---
+
 ## 3. Title — `app/title/[id]`
 
 ### 3.1 Sistema de Relations — mais inteligente e robusto
@@ -232,6 +254,7 @@ Substituir os dropdowns atuais (Genre ▼, Year ▼, Any Format ▼, Status ▼)
 | Search | Filtros como chips (avançados) | 🔧 Melhorar | Medium-High |
 | Search | Seções abertas por padrão | 🔧 Melhorar | Low |
 | Search | Scroll paginado + fix hover bug | 🐛 Corrigir | Medium |
+| Search | Sessão de OSCAR inteligente | 🆕 Novo | Medium-High |
 | Title /[id] | Relations inteligentes (spin-off, side story, other) | 🔧 Melhorar | High |
 | Title /[id] | Relations editáveis em qualquer título | 🔧 Melhorar | Medium-High |
 | Global | Capas unificadas (fonte de verdade) | 🐛 Corrigir | High |

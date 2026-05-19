@@ -111,12 +111,15 @@ model Relation {
 
   relationType String
 
-  title        String
-  poster_path  String?
-  kind         String
-  year         String?
-  seasonNumber Int?
-  order        Int?
+  title           String
+  poster_path     String?
+  kind            String
+  year            String?
+  seasonNumber    Int?
+  order           Int?
+  isAutomatic     Boolean @default(false)
+  sequenceOrder   Int?
+  spinoffMetadata Json?
 
   targetTmdbId       Int
   targetParentTmdbId Int?
@@ -132,6 +135,7 @@ model Relation {
   @@unique([sourceEntryId, targetTmdbId])
   @@index([sourceEntryId])
   @@index([targetEntryId])
+  @@index([relationType])
 }
 
 model Profile {
