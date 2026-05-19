@@ -1,3 +1,5 @@
+export const revalidate = 3600; // Bug #25: Cache file level revalidation
+
 import { prisma } from '@/lib/prisma';
 import { Suspense } from 'react';
 import Link from 'next/link';
@@ -100,6 +102,10 @@ type HomePosterItem = {
 };
 
 async function applyHomePosterChoices(popular: HomePosterItem[], newlyAdded: HomePosterItem[]) {
+  // Bug #17: Validação de input para os arrays
+  if (!Array.isArray(popular)) popular = [];
+  if (!Array.isArray(newlyAdded)) newlyAdded = [];
+
   const keyFor = (item: HomePosterItem) => {
     if (item.type === 'movie') return posterChoiceKey({ mediaType: 'MOVIE', tmdbId: Number(item.tmdbId ?? item.id) });
     return posterChoiceKey({ mediaType: 'TV_SEASON', tmdbId: Number(item.showId ?? item.tmdbId), seasonNumber: item.seasonNumber ?? 1 });
@@ -129,30 +135,40 @@ async function getHomeData() {
   const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
   // 1. Busca dados do usuário, next-up e gamificação
-  const [weeklyStats, gamificationStats, nextUpItems] = await Promise.all([
+  // Bug #22: Promise.allSettled evita que uma falha derrube os outros
+  const initialDataResults = await Promise.allSettled([
     getWeeklyStats('main'),
     getGamificationStats('main'),
     getNextUpItems(2),
   ]);
+  const [weeklyStats, gamificationStats, nextUpItems] = initialDataResults.map(
+    (r) => (r.status === 'fulfilled' ? r.value : null)
+  ) as [any, any, any];
 
   // 2. Títulos sendo assistidos (WATCHING)
-  const myWatching = await prisma.entry.findMany({
-    where: { status: 'WATCHING', type: 'TV_SEASON' },
-    include: {
-      seasons: {
-        select: {
-          status: true,
-          airDate: true,
-          seasonNumber: true,
-          episodes: {
-            select: { airDate: true, episodeNumber: true, title: true, stillPath: true },
-            orderBy: { episodeNumber: 'asc' },
+  // Bug #8: Try-catch nas queries Prisma do getHomeData
+  let myWatching: any[] = [];
+  try {
+    myWatching = await prisma.entry.findMany({
+      where: { status: 'WATCHING', type: 'TV_SEASON' },
+      include: {
+        seasons: {
+          select: {
+            status: true,
+            airDate: true,
+            seasonNumber: true,
+            episodes: {
+              select: { airDate: true, episodeNumber: true, title: true, stillPath: true },
+              orderBy: { episodeNumber: 'asc' },
+            },
           },
+          orderBy: { seasonNumber: 'asc' },
         },
-        orderBy: { seasonNumber: 'asc' },
       },
-    },
-  });
+    });
+  } catch (error) {
+    console.error('[getHomeData] Erro ao buscar myWatching:', error);
+  }
 
   // Prepara calendário de lançamentos baseados nos títulos WATCHING
   const calendarEpisodes: CalendarEpisode[] = [];
@@ -186,47 +202,82 @@ async function getHomeData() {
 
   // Limitar os airings para exibir apenas 5
   const airingPromises = myWatching.slice(0, 5).map(async (entry) => {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/tv/${entry.parentTmdbId}?api_key=${apiKey}`,
-      { next: { revalidate: 3600 } }
-    );
-    const data = await res.json();
-    return {
-      ...entry,
-      seasonStatus: entryStatusToBubbleStatus(entry),
-      nextEpisode: data?.next_episode_to_air ?? null,
-      inProduction: data?.in_production ?? false,
-      backdrop: data?.backdrop_path ?? null,
-    };
+    // Bug #14: Timeout em fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/tv/${entry.parentTmdbId}?api_key=${apiKey}`,
+        { next: { revalidate: 3600 }, signal: controller.signal }
+      );
+      // Bug #10: Validação da resposta
+      if (!res.ok) {
+        console.warn(`[airing] HTTP ${res.status} para TV ${entry.parentTmdbId}`);
+        return null;
+      }
+      const data = await res.json();
+      return {
+        ...entry,
+        seasonStatus: entryStatusToBubbleStatus(entry),
+        nextEpisode: data?.next_episode_to_air ?? null,
+        inProduction: data?.in_production ?? false,
+        backdrop: data?.backdrop_path ?? null,
+      };
+    } catch (err) {
+      console.warn(`[airing] Erro ao buscar tv ${entry.parentTmdbId}:`, err);
+      return null;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   });
   let airingResults = await Promise.all(airingPromises);
-  airingResults = airingResults.filter(e => e.nextEpisode !== null);
+  airingResults = airingResults.filter(e => e !== null && e.nextEpisode !== null);
 
   // Trending & Popular
-  const trendingRes = await fetch(
-    `https://api.themoviedb.org/3/trending/tv/week?api_key=${apiKey}`,
-    { next: { revalidate: 3600 } }
-  );
-  const trendingData = await trendingRes.json();
-  const popularPromises = trendingData.results.slice(0, 6).map(async (item: any) => {
-    const detailRes = await fetch(
-      `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}`,
-      { cache: 'no-store' }
+  const trendingController = new AbortController();
+  const trendingTimeoutId = setTimeout(() => trendingController.abort(), 8000);
+  let trendingData: any = { results: [] };
+  try {
+    const trendingRes = await fetch(
+      `https://api.themoviedb.org/3/trending/tv/week?api_key=${apiKey}`,
+      { next: { revalidate: 3600 }, signal: trendingController.signal }
     );
-    const detail = await detailRes.json();
-    const lastSeason = detail?.seasons?.[detail.seasons.length - 1] || null;
-    const seasonNumber = lastSeason?.season_number ?? 1;
-    const seasonDetail = await fetch(
-      `https://api.themoviedb.org/3/tv/${item.id}/season/${seasonNumber}?api_key=${apiKey}&language=en-US`,
-      { cache: 'no-store' }
-    ).then(r => r.ok ? r.json() : null).catch(() => null);
-    return {
-      id: item.id, showId: item.id,
-      name: `${item.name}${lastSeason && seasonNumber > 1 ? ' ' + getOrdinal(seasonNumber) + ' Temporada' : ''}`,
-      poster: lastSeason?.poster_path || item.poster_path,
-      seasonNumber, slug: buildSeasonSlug(item.id, seasonNumber),
-      bubbleStatus: titlePageSeasonStatus(seasonDetail?.episodes ?? null),
-    };
+    if (trendingRes.ok) {
+      trendingData = await trendingRes.json();
+    } else {
+      console.warn(`[trending] HTTP ${trendingRes.status}`);
+    }
+  } catch (err) {
+    console.warn('[trending] Erro ao buscar trending:', err);
+  } finally {
+    clearTimeout(trendingTimeoutId);
+  }
+
+  const popularPromises = (trendingData.results || []).slice(0, 6).map(async (item: any) => {
+    try {
+      const detailRes = await fetch(
+        `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}`,
+        { cache: 'no-store' }
+      );
+      if (!detailRes.ok) return null;
+      const detail = await detailRes.json();
+      const lastSeason = detail?.seasons?.[detail.seasons.length - 1] || null;
+      const seasonNumber = lastSeason?.season_number ?? 1;
+      const seasonDetail = await fetch(
+        `https://api.themoviedb.org/3/tv/${item.id}/season/${seasonNumber}?api_key=${apiKey}&language=en-US`,
+        { cache: 'no-store' }
+      ).then(r => r.ok ? r.json() : null).catch(() => null);
+      return {
+        id: item.id, showId: item.id,
+        name: `${item.name}${lastSeason && seasonNumber > 1 ? ' ' + getOrdinal(seasonNumber) + ' Temporada' : ''}`,
+        poster: lastSeason?.poster_path || item.poster_path,
+        seasonNumber, slug: buildSeasonSlug(item.id, seasonNumber),
+        bubbleStatus: titlePageSeasonStatus(seasonDetail?.episodes ?? null),
+      };
+    } catch (err) {
+      console.warn(`[popular] Erro ao detalhar TV ${item.id}:`, err);
+      return null;
+    }
   });
 
   // Notícias em PT-BR (Foco em séries, filmes, anúncios)
@@ -265,6 +316,11 @@ async function getHomeData() {
   const newsPromises = newsSources.map(async (source) => {
     try {
       const response = await fetch(source.url, { next: { revalidate: 3600 } });
+      // Bug #2: Adicionada verificação de response.ok e catch não-silencioso
+      if (!response.ok) {
+        console.warn(`[news] HTTP ${response.status} de ${source.name}`);
+        return [];
+      }
       const newsData = await response.json();
       return (newsData.items || [])
         .filter((item: any) => isRelevantCinemaNews(item.title, item.description || ''))
@@ -274,32 +330,57 @@ async function getHomeData() {
           thumbnail: item.thumbnail || item.enclosure?.link || '',
           source: source.sourceSite,
         }));
-    } catch { return []; }
+    } catch (err) {
+      console.warn(`[news] Erro ao buscar ${source.name}:`, err);
+      return [];
+    }
   });
 
   // Newly Added (Séries e Filmes) - Expandido para 6 títulos
-  const [movieChanges, tvChanges] = await Promise.all([
-    fetch(`https://api.themoviedb.org/3/movie/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.json()),
-    fetch(`https://api.themoviedb.org/3/tv/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.json()),
-  ]);
+  let movieChanges: any = { results: [] };
+  let tvChanges: any = { results: [] };
+  try {
+    const changesRes = await Promise.allSettled([
+      fetch(`https://api.themoviedb.org/3/movie/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.ok ? r.json() : { results: [] }),
+      fetch(`https://api.themoviedb.org/3/tv/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.ok ? r.json() : { results: [] }),
+    ]);
+    if (changesRes[0].status === 'fulfilled') movieChanges = changesRes[0].value || { results: [] };
+    if (changesRes[1].status === 'fulfilled') tvChanges = changesRes[1].value || { results: [] };
+  } catch (err) {
+    console.warn('[recently-added] Falha geral ao buscar mudanças', err);
+  }
+
+  // Bug #4 e Bug #11: Verifica null/undefined e garante presença do 'id'
+  if (!Array.isArray(movieChanges.results)) movieChanges.results = [];
+  if (!Array.isArray(tvChanges.results)) tvChanges.results = [];
+
   const recentlyAddedItems: any[] = [];
-  if (movieChanges.results?.length) {
-    for (const id of movieChanges.results.slice(0, 20).map((c: any) => c.id)) {
+  if (movieChanges.results.length) {
+    for (const id of movieChanges.results.slice(0, 20).filter((c: any) => c?.id).map((c: any) => c.id)) {
       try {
-        const d = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } }).then(r => r.json());
+        const res = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } });
+        if (!res.ok) continue;
+        const d = await res.json();
         if (d && !d.status_code && d.poster_path) recentlyAddedItems.push({ id: `movie-${d.id}`, tmdbId: d.id, name: d.title, type: 'movie', releaseDate: d.release_date, poster_path: d.poster_path, slug: buildMovieSlug(d.id), addedAt: new Date().toISOString(), bubbleStatus: productionStatusToDisplayStatus(d.status) });
-      } catch { }
+      // Bug #16: Catch não silencioso
+      } catch (err) {
+        console.warn(`[recently-added] Erro ao buscar movie ${id}:`, err);
+      }
     }
   }
-  if (tvChanges.results?.length) {
-    for (const id of tvChanges.results.slice(0, 20).map((c: any) => c.id)) {
+  if (tvChanges.results.length) {
+    for (const id of tvChanges.results.slice(0, 20).filter((c: any) => c?.id).map((c: any) => c.id)) {
       try {
-        const d = await fetch(`https://api.themoviedb.org/3/tv/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } }).then(r => r.json());
+        const res = await fetch(`https://api.themoviedb.org/3/tv/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } });
+        if (!res.ok) continue;
+        const d = await res.json();
         if (d && !d.status_code && d.poster_path && d.seasons) {
           const s1 = await fetch(`https://api.themoviedb.org/3/tv/${d.id}/season/1?api_key=${apiKey}&language=pt-BR`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
           recentlyAddedItems.push({ id: `tv-${d.id}`, tmdbId: d.id, name: `${d.name} 1ª Temp`, type: 'tv', releaseDate: d.first_air_date, poster_path: d.poster_path, seasonNumber: 1, slug: buildSeasonSlug(d.id, 1), addedAt: new Date().toISOString(), bubbleStatus: titlePageSeasonStatus(s1?.episodes ?? null) });
         }
-      } catch { }
+      } catch (err) {
+        console.warn(`[recently-added] Erro ao buscar tv ${id}:`, err);
+      }
     }
   }
 
@@ -374,21 +455,22 @@ export default async function HomePage() {
 }
 
 async function HomePageContent() {
-  const data = await getHomeData();
-  const {
-    weeklyStats,
-    gamificationStats,
-    nextUpItems,
-    calendarEpisodes,
-    airing,
-    popular,
-    news,
-    newlyAdded,
-    inProgress,
-    planningItems
-  } = data;
+  try {
+    const data = await getHomeData();
+    const {
+      weeklyStats,
+      gamificationStats,
+      nextUpItems,
+      calendarEpisodes,
+      airing,
+      popular,
+      news,
+      newlyAdded,
+      inProgress,
+      planningItems
+    } = data;
 
-  return (
+    return (
     <div style={{
       minHeight: '100vh',
       background: 'rgb(42,39,39)',
@@ -890,4 +972,14 @@ async function HomePageContent() {
       </div>
     </div>
   );
+  } catch (error) {
+    console.error('[HomePageContent] Erro crítico ao renderizar a Home Page:', error);
+    return (
+      <div style={{ padding: '60px 20px', textAlign: 'center', color: '#ff6b6b', fontFamily: 'sans-serif' }}>
+        <h1 style={{ fontSize: '24px', marginBottom: '10px' }}>Hades está indisponível no momento.</h1>
+        <p style={{ opacity: 0.8 }}>Tivemos um problema de conexão com os deuses antigos ou com o banco de dados.</p>
+        <p style={{ opacity: 0.8 }}>Tente recarregar a página em instantes.</p>
+      </div>
+    );
+  }
 }

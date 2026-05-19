@@ -374,57 +374,90 @@ export async function awardXP(input: AwardXPInput): Promise<AwardXPResult> {
 }
 
 // ── getGamificationStats ──────────────────────────────────────────────────────
+// Bug #20: fallback retornado quando usuário não existe ou banco está indisponível
+const DEFAULT_GAMIFICATION_STATS = {
+  userId: 'main' as string,
+  totalXP: 0,
+  level: 1,
+  levelName: 'Iniciante',
+  currentXP: 0,
+  xpToNext: 100,
+  xpPercent: 0,
+  xpRemaining: 100,
+  nextLevelAt: 100,
+  nextLevelName: null as string | null,
+  multiplier: 1,
+  reward: null as string | null | undefined,
+  streak: { current: 0, longest: 0, lastActivityDay: null as string | null },
+  badges: [] as string[],
+  achievements: [] as ReturnType<typeof ACHIEVEMENTS['filter']>,
+  recentActivity: [] as Array<{
+    id: string;
+    action: string;
+    label: string;
+    xpGained: number;
+    metadata: unknown;
+    createdAt: string;
+  }>,
+};
+
 export async function getGamificationStats(userId = DEFAULT_USER_ID) {
-  const [game, streak, recentActivity] = await Promise.all([
-    ensureUserGamification(userId),
-    prisma.streakData.upsert({
-      where: { userId },
-      update: {},
-      create: { userId, currentStreak: 0, longestStreak: 0 },
-    }),
-    prisma.gamificationActivityLog.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 12,
-    }),
-  ]);
+  try {
+    const [game, streak, recentActivity] = await Promise.all([
+      ensureUserGamification(userId),
+      prisma.streakData.upsert({
+        where: { userId },
+        update: {},
+        create: { userId, currentStreak: 0, longestStreak: 0 },
+      }),
+      prisma.gamificationActivityLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 12,
+      }),
+    ]);
 
-  const progress = getLevelProgress(game.totalXP);
+    const progress = getLevelProgress(game.totalXP);
 
-  // Monta objetos de achievement completos a partir dos IDs salvos nos badges
-  const unlockedIds: string[] = game.badges ?? [];
-  const unlockedAchievements = ACHIEVEMENTS.filter((a) => unlockedIds.includes(a.id));
+    // Monta objetos de achievement completos a partir dos IDs salvos nos badges
+    const unlockedIds: string[] = game.badges ?? [];
+    const unlockedAchievements = ACHIEVEMENTS.filter((a) => unlockedIds.includes(a.id));
 
-  return {
-    userId,
-    totalXP: game.totalXP,
-    level: progress.currentLevel.level,
-    levelName: progress.currentLevel.title,
-    currentXP: progress.currentXP,
-    xpToNext: progress.xpToNext,
-    xpPercent: progress.xpPercent,
-    xpRemaining: progress.xpRemaining,
-    nextLevelAt: progress.nextLevel?.xpRequired ?? null,
-    nextLevelName: progress.nextLevel?.title ?? null,
-    multiplier: progress.currentLevel.xpMultiplier,
-    reward: progress.currentLevel.reward,
-    streak: {
-      current: streak.currentStreak,
-      longest: streak.longestStreak,
-      lastActivityDay: streak.lastActivityDay?.toISOString() ?? null,
-    },
-    badges: unlockedIds,
-    achievements: unlockedAchievements,
-    recentActivity: recentActivity.map((activity) => ({
-      id: activity.id,
-      action: activity.action,
-      label: getActionLabel(activity.action as XPAction),
-      xpGained: activity.xpGained,
-      metadata: activity.metadata,
-      createdAt: activity.createdAt.toISOString(),
-    })),
-  };
+    return {
+      userId,
+      totalXP: game.totalXP,
+      level: progress.currentLevel.level,
+      levelName: progress.currentLevel.title,
+      currentXP: progress.currentXP,
+      xpToNext: progress.xpToNext,
+      xpPercent: progress.xpPercent,
+      xpRemaining: progress.xpRemaining,
+      nextLevelAt: progress.nextLevel?.xpRequired ?? null,
+      nextLevelName: progress.nextLevel?.title ?? null,
+      multiplier: progress.currentLevel.xpMultiplier,
+      reward: progress.currentLevel.reward,
+      streak: {
+        current: streak.currentStreak,
+        longest: streak.longestStreak,
+        lastActivityDay: streak.lastActivityDay?.toISOString() ?? null,
+      },
+      badges: unlockedIds,
+      achievements: unlockedAchievements,
+      recentActivity: recentActivity.map((activity) => ({
+        id: activity.id,
+        action: activity.action,
+        label: getActionLabel(activity.action as XPAction),
+        xpGained: activity.xpGained,
+        metadata: activity.metadata,
+        createdAt: activity.createdAt.toISOString(),
+      })),
+    };
+  } catch (error) {
+    console.error('[getGamificationStats] Erro ao buscar gamificação — retornando stats padrão:', error);
+    return { ...DEFAULT_GAMIFICATION_STATS, userId };
+  }
 }
+
 
 // ── bootstrapXPFromLibrary ────────────────────────────────────────────────────
 export interface BootstrapResult {
