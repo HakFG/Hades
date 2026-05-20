@@ -12,7 +12,7 @@ const TMDB = 'https://api.themoviedb.org/3';
 const originalFetch = globalThis.fetch;
 const fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as any).url || '');
-  if (urlStr.includes('api.themoviedb.org')) {
+  if (typeof window === 'undefined' && urlStr.includes('api.themoviedb.org')) {
     const headers = new Headers(init?.headers);
     if (!headers.has('Accept-Encoding')) {
       headers.set('Accept-Encoding', 'identity');
