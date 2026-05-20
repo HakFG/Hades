@@ -115,7 +115,7 @@ export default function AiringProgressCard({ entry, panelSide = 'right' }: Airin
           display: block;
           width: 100%;
           height: 100%;
-          border-radius: 4px;
+          border-radius: 12px;
           overflow: hidden;
           position: relative;
           z-index: 1;
@@ -262,10 +262,11 @@ export default function AiringProgressCard({ entry, panelSide = 'right' }: Airin
 
         /* ── Título ── */
         .apc-title {
-          font-size: 7px;
-          font-weight: 600;
+          font-size: 5.5px;
+          font-weight: 500;
+          letter-spacing: 0.02em;
           color: rgba(232,224,216,0.62);
-          line-height: 1.35;
+          line-height: 1.25;
           text-align: center;
           overflow: hidden;
           display: -webkit-box;

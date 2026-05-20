@@ -276,7 +276,7 @@ async function getHomeData() {
   const newsSources = [
     { name: 'Omelete', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.omelete.com.br/rss', sourceSite: 'Omelete' },
     { name: 'AdoroCinema', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://www.adorocinema.com/rss/noticias.xml', sourceSite: 'AdoroCinema' },
-    { name: 'CinePOP', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://cinepop.com.br/feed/', sourceSite: 'CinePOP' },
+    { name: 'TecMundo', url: 'https://api.rss2json.com/v1/api.json?rss_url=https://rss.tecmundo.com.br/feed', sourceSite: 'TecMundo' },
   ];
   // Notícias relevantes: anúncios, estreias, renovações, cancelamentos, trailers, datas
   const HIGH_RELEVANCE_KEYWORDS = [

@@ -60,7 +60,7 @@ function SearchMediaCard({ item, entry, priority = false, onEdit }: SearchMediaC
     <div className="card-wrap">
       <Link href={`/titles/${entry?.slug ?? item.linkSlug}`} className="card">
         <div className="poster">
-          <StatusBubble status={item.seasonStatus ?? null} size="sm" position="tl" />
+          <StatusBubble status={item.seasonStatus ?? item.productionStatus ?? null} size="sm" position="tl" />
           {entry && (
             <span className="list-badge" style={{ background: statusColor ?? undefined }}>
               <Check size={12} />
@@ -127,14 +127,33 @@ function SearchMediaCard({ item, entry, priority = false, onEdit }: SearchMediaC
           border: 1px solid rgba(255, 255, 255, 0.06);
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
           transform: translateZ(0);
-          transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+          transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+        }
+
+        .poster::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          z-index: 2;
+          background: linear-gradient(120deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0) 70%);
+          background-size: 200% 100%;
+          background-position: 100% 0;
+          opacity: 0;
+          transition: opacity 0.3s ease, background-position 0.6s ease;
+          pointer-events: none;
         }
 
         .card:hover .poster,
         .card:focus-visible .poster {
-          transform: translateY(-4px);
-          border-color: rgba(230, 125, 153, 0.5);
-          box-shadow: 0 12px 28px rgba(0, 0, 0, 0.44);
+          transform: translateY(-6px);
+          border-color: rgba(230, 125, 153, 0.6);
+          box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(230, 125, 153, 0.2);
+        }
+
+        .card:hover .poster::before,
+        .card:focus-visible .poster::before {
+          opacity: 1;
+          background-position: 0 0;
         }
 
         img,
@@ -143,12 +162,12 @@ function SearchMediaCard({ item, entry, priority = false, onEdit }: SearchMediaC
           width: 100%;
           height: 100%;
           object-fit: cover;
-          transition: transform 0.24s ease;
+          transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
         .card:hover img,
         .card:focus-visible img {
-          transform: scale(1.045);
+          transform: scale(1.08);
         }
 
         .placeholder {
