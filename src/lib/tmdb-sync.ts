@@ -11,6 +11,19 @@ import { resolveEntryPosterPath } from '@/lib/poster-system';
 
 const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+
+const originalFetch = globalThis.fetch;
+const fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as any).url || '');
+  if (urlStr.includes('api.themoviedb.org')) {
+    const headers = new Headers(init?.headers);
+    if (!headers.has('Accept-Encoding')) {
+      headers.set('Accept-Encoding', 'identity');
+    }
+    return originalFetch(input, { ...init, headers });
+  }
+  return originalFetch(input, init);
+};
 const queue = new PQueue({ concurrency: 5 });
 
 type SyncStatus = 'success' | 'partial' | 'failed';
