@@ -1826,19 +1826,37 @@ useEffect(() => {
         let entryId: string | null = null;
         let storedEntryImagePath: string | null | undefined;
         if (eRes.ok) {
-          const e: EntryData = await eRes.json();
-          setEntry(e);
-          entryId = e.id;
-          storedEntryImagePath = e.imagePath;
-          if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
+          try {
+            const e: EntryData = await eRes.json();
+            setEntry(e);
+            entryId = e.id;
+            storedEntryImagePath = e.imagePath;
+            if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
+          } catch (jsonErr) {
+            console.error('[load] Falha ao processar JSON da entry local:', jsonErr);
+          }
         }
         if (!tRes.ok) throw new Error('Filme não encontrado no TMDB');
-        const md: TmdbMovie = await tRes.json();
-const mdEn: TmdbMovie = tResEn.ok ? await tResEn.json() : md;
-md.title = mdEn.title || md.title;
-md.original_title = mdEn.original_title || md.original_title;
-md.poster_path = mdEn.poster_path || md.poster_path;
-md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
+        
+        let md: TmdbMovie;
+        try {
+          md = await tRes.json();
+        } catch (jsonErr) {
+          throw new Error('Falha ao decodificar dados do TMDB: ' + String(jsonErr));
+        }
+
+        let mdEn: TmdbMovie = md;
+        if (tResEn.ok) {
+          try {
+            mdEn = await tResEn.json();
+          } catch (jsonErr) {
+            console.warn('[load] Falha ao processar JSON do TMDB em inglês:', jsonErr);
+          }
+        }
+        md.title = mdEn.title || md.title;
+        md.original_title = mdEn.original_title || md.original_title;
+        md.poster_path = mdEn.poster_path || md.poster_path;
+        md.backdrop_path = mdEn.backdrop_path || md.backdrop_path;
 // ✅ sinopse (md.overview) NÃO é sobrescrita – permanece em pt-BR
         if (cancelled) return;
         const moviePosterChoice = await fetchActivePosterChoice({
@@ -1923,30 +1941,60 @@ manualRels = saved
         let entryId: string | null = null;
         let storedEntryImagePath: string | null | undefined;
         if (eRes.ok) {
-          const e: EntryData = await eRes.json();
-          setEntry(e);
-          entryId = e.id;
-          storedEntryImagePath = e.imagePath;
-          if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
+          try {
+            const e: EntryData = await eRes.json();
+            setEntry(e);
+            entryId = e.id;
+            storedEntryImagePath = e.imagePath;
+            if (e.imagePath && !e.imagePath.includes('image.tmdb.org')) setCustomPoster(e.imagePath);
+          } catch (jsonErr) {
+            console.error('[load] Falha ao processar JSON da entry local:', jsonErr);
+          }
         }
         if (!sRes.ok) throw new Error('Série não encontrada no TMDB');
-        const sd: TmdbShow = await sRes.json();
-const sdEn: TmdbShow = sResEn.ok ? await sResEn.json() : sd;
-sd.name = sdEn.name || sd.name;
-sd.original_name = sdEn.original_name || sd.original_name;
-sd.poster_path = sdEn.poster_path || sd.poster_path;
-sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
+        
+        let sd: TmdbShow;
+        try {
+          sd = await sRes.json();
+        } catch (jsonErr) {
+          throw new Error('Falha ao decodificar dados da série do TMDB: ' + String(jsonErr));
+        }
+
+        let sdEn: TmdbShow = sd;
+        if (sResEn.ok) {
+          try {
+            sdEn = await sResEn.json();
+          } catch (jsonErr) {
+            console.warn('[load] Falha ao processar JSON da série do TMDB em inglês:', jsonErr);
+          }
+        }
+        sd.name = sdEn.name || sd.name;
+        sd.original_name = sdEn.original_name || sd.original_name;
+        sd.poster_path = sdEn.poster_path || sd.poster_path;
+        sd.backdrop_path = sdEn.backdrop_path || sd.backdrop_path;
         if (cancelled) return;
         setShow(sd);
         
         // ✅ CORREÇÃO P1#1: Usar season em en-US para dados técnicos, mas sobrescrever overview com versão pt-BR
         let seasonData: TmdbSeasonDetail | null = null;
-        if (sdResEn.ok) seasonData = await sdResEn.json();
-        if (sdResPt.ok && seasonData) {
-          const seasonPt = await sdResPt.json();
-          seasonData.overview = seasonPt.overview; // 🔥 sinopse em português
-        } else if (sdResPt.ok && !seasonData) {
-          seasonData = await sdResPt.json();
+        if (sdResEn.ok) {
+          try {
+            seasonData = await sdResEn.json();
+          } catch (jsonErr) {
+            console.warn('[load] Falha ao processar JSON da temporada em inglês:', jsonErr);
+          }
+        }
+        if (sdResPt.ok) {
+          try {
+            const seasonPt = await sdResPt.json();
+            if (seasonData) {
+              seasonData.overview = seasonPt.overview; // 🔥 sinopse em português
+            } else {
+              seasonData = seasonPt;
+            }
+          } catch (jsonErr) {
+            console.warn('[load] Falha ao processar JSON da temporada em português:', jsonErr);
+          }
         }
         if (seasonData) setSeasonDetail(seasonData);
 
