@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-// Bug #9 / #19: activityLog → gamificationActivityLog (model correto no schema Prisma)
-// Bug #23: try-catch com logging específico
-
 // GET /api/activity — busca os logs mais recentes
 export async function GET() {
   try {
-    const logs = await prisma.gamificationActivityLog.findMany({
+    const logs = await prisma.activityLog.findMany({
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -22,7 +19,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const log = await prisma.gamificationActivityLog.create({ data: body });
+    const log = await prisma.activityLog.create({ data: body });
     return NextResponse.json(log);
   } catch (error) {
     console.error('[api/activity] POST — erro ao criar log:', error);
