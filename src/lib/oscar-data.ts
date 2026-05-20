@@ -1,7 +1,5 @@
 import oscars from '@/data/oscars.json';
-
-const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
-const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+import { fetchTmdbJson } from '@/lib/tmdb-json';
 
 export type OscarResult = 'winner' | 'nominated';
 
@@ -27,13 +25,7 @@ export interface OscarFilm extends Omit<OscarFilmSeed, 'tmdbId'> {
 type OscarData = Record<string, OscarFilmSeed[]>;
 
 async function tmdbJson(endpoint: string) {
-  if (!API_KEY) return null;
-  const glue = endpoint.includes('?') ? '&' : '?';
-  const response = await fetch(`${TMDB}${endpoint}${glue}api_key=${API_KEY}&language=en-US`, {
-    next: { revalidate: 60 * 60 * 24 },
-  });
-  if (!response.ok) return null;
-  return response.json();
+  return fetchTmdbJson<any>(endpoint, { revalidate: 60 * 60 * 24 });
 }
 
 async function hydrateFilm(seed: OscarFilmSeed, year: number): Promise<OscarFilm> {

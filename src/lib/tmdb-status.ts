@@ -1,8 +1,6 @@
 import { normalizeProductionStatus } from '@/lib/production-status';
 import { productionStatusToDisplayStatus, entryStatusToBubbleStatus, type EntryStatusSource } from '@/lib/series-status';
-
-const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
-const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+import { fetchTmdbJson as readTmdbJson, hasTmdbKey } from '@/lib/tmdb-json';
 
 type LiveStatusEntry = EntryStatusSource & {
   id?: string;
@@ -31,12 +29,7 @@ export function titlePageSeasonStatus(episodes?: TmdbEpisode[] | null): string |
 }
 
 async function fetchTmdbJson(endpoint: string) {
-  if (!API_KEY) return null;
-  const response = await fetch(`${TMDB}${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${API_KEY}&language=en-US`, {
-    cache: 'no-store',
-  });
-  if (!response.ok) return null;
-  return response.json();
+  return readTmdbJson<any>(endpoint, { cache: 'no-store' });
 }
 
 export type LiveBubbleStatusSnapshot = {
@@ -54,7 +47,7 @@ export type LiveBubbleStatusSnapshot = {
 };
 
 export async function getLiveBubbleStatusSnapshot(entry: LiveStatusEntry): Promise<LiveBubbleStatusSnapshot> {
-  if (!API_KEY) {
+  if (!hasTmdbKey()) {
     return { bubbleStatus: entryStatusToBubbleStatus(entry), productionStatus: entry.productionStatus };
   }
 
@@ -100,7 +93,7 @@ export async function getLiveBubbleStatusSnapshot(entry: LiveStatusEntry): Promi
 }
 
 export async function getLiveBubbleStatus(entry: LiveStatusEntry): Promise<string | null> {
-  if (!API_KEY) return entryStatusToBubbleStatus(entry);
+  if (!hasTmdbKey()) return entryStatusToBubbleStatus(entry);
 
   try {
     return (await getLiveBubbleStatusSnapshot(entry)).bubbleStatus;

@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { prisma } from '@/lib/prisma';
-
-const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
-const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+import { fetchTmdbJson, hasTmdbKey } from '@/lib/tmdb-json';
 
 export type SeasonStatus = 'Airing' | 'Finished' | 'Not Yet Aired' | 'Unknown';
 
@@ -35,20 +33,16 @@ export async function syncEntrySeasonEpisodes(entryId: string) {
     return { seasons: 0, episodes: 0 };
   }
 
-  if (!API_KEY) {
+  if (!hasTmdbKey()) {
     throw new Error('TMDB API key nao configurada');
   }
 
-  const [showRes, seasonRes] = await Promise.all([
-    fetch(`${TMDB}/tv/${entry.parentTmdbId}?api_key=${API_KEY}&language=en-US`),
-    fetch(`${TMDB}/tv/${entry.parentTmdbId}/season/${entry.seasonNumber}?api_key=${API_KEY}&language=en-US`),
+  const [show, season] = await Promise.all([
+    fetchTmdbJson<any>(`/tv/${entry.parentTmdbId}`, { cache: 'no-store' }),
+    fetchTmdbJson<any>(`/tv/${entry.parentTmdbId}/season/${entry.seasonNumber}`, { cache: 'no-store' }),
   ]);
 
-  if (!showRes.ok || !seasonRes.ok) {
-    throw new Error('Falha ao buscar temporada no TMDB');
-  }
-
-  const [show, season] = await Promise.all([showRes.json(), seasonRes.json()]);
+  if (!show || !season) throw new Error('Falha ao buscar temporada no TMDB');
   const allSeasons = Array.isArray(show.seasons) ? show.seasons : [];
   const latestAiredSeasonNumber = Math.max(
     0,

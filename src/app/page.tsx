@@ -11,6 +11,7 @@ import AiringProgressCard from '@/components/AiringProgressCard';
 import ChallengeWidget from '@/components/ChallengeWidget';
 import StatusBubble from '@/components/StatusBubble';
 import { choiceIsActive, normalizePosterPath, posterChoiceKey } from '@/lib/poster-system';
+import { fetchTmdbJson } from '@/lib/tmdb-json';
 
 // Novos componentes importados
 import TodaySession from '@/components/TodaySession';
@@ -22,6 +23,31 @@ import AchievementShowcase from '@/components/AchievementShowcase';
 import { getNextUpItems } from '@/lib/next-up';
 import { getGamificationStats } from '@/lib/gamification';
 import { getWeeklyStats } from '@/lib/weekly-stats';
+
+// ─── Helper para parsear JSON com tratamento de BOM e encoding ─────────────
+async function safeJsonResponse<T>(res: Response, context = 'API'): Promise<T | null> {
+  try {
+    if (!res.ok) {
+      console.warn(`[${context}] HTTP ${res.status}`);
+      return null;
+    }
+    
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      console.warn(`[${context}] Invalid Content-Type: ${contentType}`);
+      return null;
+    }
+    
+    const text = await res.text();
+    const cleaned = text.replace(/^\uFEFF/, ''); // Remove BOM
+    if (!cleaned) return null;
+    
+    return JSON.parse(cleaned) as T;
+  } catch (error) {
+    console.error(`[${context}] Parse error:`, error);
+    return null;
+  }
+}
 
 // ─── Skeleton ────────────────────────────────────────────────────────────────
 function HomePageSkeleton() {
@@ -132,8 +158,6 @@ async function applyHomePosterChoices(popular: HomePosterItem[], newlyAdded: Hom
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 async function getHomeData() {
-  const apiKey = process.env.NEXT_PUBLIC_TMDB_API_KEY;
-
   // 1. Busca dados do usuário, next-up e gamificação
   // Bug #22: Promise.allSettled evita que uma falha derrube os outros
   const initialDataResults = await Promise.allSettled([
@@ -202,20 +226,9 @@ async function getHomeData() {
 
   // Limitar os airings para exibir apenas 5
   const airingPromises = myWatching.slice(0, 5).map(async (entry) => {
-    // Bug #14: Timeout em fetch
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch(
-        `https://api.themoviedb.org/3/tv/${entry.parentTmdbId}?api_key=${apiKey}`,
-        { next: { revalidate: 3600 }, signal: controller.signal }
-      );
-      // Bug #10: Validação da resposta
-      if (!res.ok) {
-        console.warn(`[airing] HTTP ${res.status} para TV ${entry.parentTmdbId}`);
-        return null;
-      }
-      const data = await res.json();
+      const data = await fetchTmdbJson<any>(`/tv/${entry.parentTmdbId}`, { revalidate: 3600 });
+      if (!data) return null;
       return {
         ...entry,
         seasonStatus: entryStatusToBubbleStatus(entry),
@@ -226,47 +239,26 @@ async function getHomeData() {
     } catch (err) {
       console.warn(`[airing] Erro ao buscar tv ${entry.parentTmdbId}:`, err);
       return null;
-    } finally {
-      clearTimeout(timeoutId);
     }
   });
   let airingResults = await Promise.all(airingPromises);
   airingResults = airingResults.filter(e => e !== null && e.nextEpisode !== null);
 
   // Trending & Popular
-  const trendingController = new AbortController();
-  const trendingTimeoutId = setTimeout(() => trendingController.abort(), 8000);
   let trendingData: any = { results: [] };
   try {
-    const trendingRes = await fetch(
-      `https://api.themoviedb.org/3/trending/tv/week?api_key=${apiKey}`,
-      { next: { revalidate: 3600 }, signal: trendingController.signal }
-    );
-    if (trendingRes.ok) {
-      trendingData = await trendingRes.json();
-    } else {
-      console.warn(`[trending] HTTP ${trendingRes.status}`);
-    }
+    trendingData = (await fetchTmdbJson<any>('/trending/tv/week', { revalidate: 3600 })) ?? { results: [] };
   } catch (err) {
     console.warn('[trending] Erro ao buscar trending:', err);
-  } finally {
-    clearTimeout(trendingTimeoutId);
   }
 
   const popularPromises = (trendingData.results || []).slice(0, 6).map(async (item: any) => {
     try {
-      const detailRes = await fetch(
-        `https://api.themoviedb.org/3/tv/${item.id}?api_key=${apiKey}`,
-        { cache: 'no-store' }
-      );
-      if (!detailRes.ok) return null;
-      const detail = await detailRes.json();
+      const detail = await fetchTmdbJson<any>(`/tv/${item.id}`, { cache: 'no-store' });
+      if (!detail) return null;
       const lastSeason = detail?.seasons?.[detail.seasons.length - 1] || null;
       const seasonNumber = lastSeason?.season_number ?? 1;
-      const seasonDetail = await fetch(
-        `https://api.themoviedb.org/3/tv/${item.id}/season/${seasonNumber}?api_key=${apiKey}&language=en-US`,
-        { cache: 'no-store' }
-      ).then(r => r.ok ? r.json() : null).catch(() => null);
+      const seasonDetail = await fetchTmdbJson<any>(`/tv/${item.id}/season/${seasonNumber}`, { cache: 'no-store' });
       return {
         id: item.id, showId: item.id,
         name: `${item.name}${lastSeason && seasonNumber > 1 ? ' ' + getOrdinal(seasonNumber) + ' Temporada' : ''}`,
@@ -341,8 +333,8 @@ async function getHomeData() {
   let tvChanges: any = { results: [] };
   try {
     const changesRes = await Promise.allSettled([
-      fetch(`https://api.themoviedb.org/3/movie/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.ok ? r.json() : { results: [] }),
-      fetch(`https://api.themoviedb.org/3/tv/changes?api_key=${apiKey}&page=1`, { next: { revalidate: 1800 } }).then(r => r.ok ? r.json() : { results: [] }),
+      fetchTmdbJson<any>('/movie/changes?page=1', { revalidate: 1800 }),
+      fetchTmdbJson<any>('/tv/changes?page=1', { revalidate: 1800 }),
     ]);
     if (changesRes[0].status === 'fulfilled') movieChanges = changesRes[0].value || { results: [] };
     if (changesRes[1].status === 'fulfilled') tvChanges = changesRes[1].value || { results: [] };
@@ -358,9 +350,7 @@ async function getHomeData() {
   if (movieChanges.results.length) {
     for (const id of movieChanges.results.slice(0, 20).filter((c: any) => c?.id).map((c: any) => c.id)) {
       try {
-        const res = await fetch(`https://api.themoviedb.org/3/movie/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } });
-        if (!res.ok) continue;
-        const d = await res.json();
+        const d = await fetchTmdbJson<any>(`/movie/${id}`, { language: 'pt-BR', revalidate: 3600 });
         if (d && !d.status_code && d.poster_path) recentlyAddedItems.push({ id: `movie-${d.id}`, tmdbId: d.id, name: d.title, type: 'movie', releaseDate: d.release_date, poster_path: d.poster_path, slug: buildMovieSlug(d.id), addedAt: new Date().toISOString(), bubbleStatus: productionStatusToDisplayStatus(d.status) });
       // Bug #16: Catch não silencioso
       } catch (err) {
@@ -371,11 +361,9 @@ async function getHomeData() {
   if (tvChanges.results.length) {
     for (const id of tvChanges.results.slice(0, 20).filter((c: any) => c?.id).map((c: any) => c.id)) {
       try {
-        const res = await fetch(`https://api.themoviedb.org/3/tv/${id}?api_key=${apiKey}&language=pt-BR`, { next: { revalidate: 3600 } });
-        if (!res.ok) continue;
-        const d = await res.json();
+        const d = await fetchTmdbJson<any>(`/tv/${id}`, { language: 'pt-BR', revalidate: 3600 });
         if (d && !d.status_code && d.poster_path && d.seasons) {
-          const s1 = await fetch(`https://api.themoviedb.org/3/tv/${d.id}/season/1?api_key=${apiKey}&language=pt-BR`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+          const s1 = await fetchTmdbJson<any>(`/tv/${d.id}/season/1`, { language: 'pt-BR', cache: 'no-store' });
           recentlyAddedItems.push({ id: `tv-${d.id}`, tmdbId: d.id, name: `${d.name} 1ª Temp`, type: 'tv', releaseDate: d.first_air_date, poster_path: d.poster_path, seasonNumber: 1, slug: buildSeasonSlug(d.id, 1), addedAt: new Date().toISOString(), bubbleStatus: titlePageSeasonStatus(s1?.episodes ?? null) });
         }
       } catch (err) {
@@ -423,9 +411,11 @@ async function getHomeData() {
     slug: e.type === 'MOVIE' ? buildMovieSlug(e.tmdbId) : buildSeasonSlug(e.parentTmdbId ?? e.tmdbId, e.seasonNumber ?? 1)
   }));
 
-  const [popularResults, newsResults] = await Promise.all([
+  const [rawPopularResults, newsResults] = await Promise.all([
     Promise.all(popularPromises), Promise.all(newsPromises),
   ]);
+  const popularResults = rawPopularResults.filter(Boolean);
+
   const uniqueNews = Array.from(new Map(newsResults.flat().map(item => [item.title, item])).values())
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()).slice(0, 20);
 

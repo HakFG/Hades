@@ -2,9 +2,7 @@
 
 import { normalizeProductionStatus, type MediaKind, type ProductionStatus } from '@/lib/production-status';
 import { titlePageSeasonStatus } from '@/lib/tmdb-status';
-
-const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
-const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+import { fetchTmdbJson } from '@/lib/tmdb-json';
 
 export interface BrowserMediaItem {
   id: string;
@@ -43,11 +41,7 @@ function endpointFor(filter: string, mediaType: MediaKind) {
 }
 
 async function fetchTmdb(endpoint: string) {
-  if (!API_KEY) return { results: [] };
-  const glue = endpoint.includes('?') ? '&' : '?';
-  const response = await fetch(`${TMDB}${endpoint}${glue}api_key=${API_KEY}&language=en-US`);
-  if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
-  return response.json();
+  return (await fetchTmdbJson<any>(endpoint, { revalidate: 3600 })) ?? { results: [] };
 }
 
 async function hydrateMovie(movie: any): Promise<BrowserMediaItem> {
@@ -131,9 +125,10 @@ export async function getFilteredEntriesByBrowser(
   mediaType: MediaKind,
   filter: string,
   selectedFilters: string[] = ['All'],
+  limit = 30,
 ): Promise<BrowserMediaItem[]> {
   const data = await fetchTmdb(endpointFor(filter, mediaType));
-  const source = (data.results ?? []).slice(0, 30);
+  const source = (data.results ?? []).slice(0, limit);
   const hydrated = await Promise.all(
     source.map((item: any) => (mediaType === 'movie' ? hydrateMovie(item) : hydrateTv(item))),
   );
@@ -147,11 +142,11 @@ export async function getFilteredEntriesByBrowser(
 
 export async function getBrowserHomeSections() {
   const [trendingMovies, popularMovies, trendingTv, upcomingMovies, popularTv] = await Promise.all([
-    getFilteredEntriesByBrowser('movie', 'trending-movies'),
-    getFilteredEntriesByBrowser('movie', 'popular-movies'),
-    getFilteredEntriesByBrowser('tv', 'trending-tv'),
-    getFilteredEntriesByBrowser('movie', 'upcoming-movies'),
-    getFilteredEntriesByBrowser('tv', 'popular-tv'),
+    getFilteredEntriesByBrowser('movie', 'trending-movies', ['All'], 12),
+    getFilteredEntriesByBrowser('movie', 'popular-movies', ['All'], 12),
+    getFilteredEntriesByBrowser('tv', 'trending-tv', ['All'], 12),
+    getFilteredEntriesByBrowser('movie', 'upcoming-movies', ['All'], 12),
+    getFilteredEntriesByBrowser('tv', 'popular-tv', ['All'], 12),
   ]);
 
   return { trendingMovies, popularMovies, trendingTv, upcomingMovies, popularTv };

@@ -1,3 +1,5 @@
+import { fetchTmdbJson } from '@/lib/tmdb-json';
+
 const BASE_URL = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 
@@ -53,21 +55,16 @@ async function fetchTmdbWithLanguage(
   endpoint: string,
   language: 'en-US' | 'pt-BR' = 'pt-BR',
 ): Promise<any> {
-  const url = `${BASE_URL}${endpoint}?api_key=${API_KEY}&language=${language}`;
-  
   try {
-    const res = await fetchWithRetry(url);
-    if (!res.ok) {
-      // Se falhou com language específica, tenta sem language
-      if (language !== 'en-US') {
-        const fallbackUrl = `${BASE_URL}${endpoint}?api_key=${API_KEY}`;
-        const fallbackRes = await fetchWithRetry(fallbackUrl);
-        if (!fallbackRes.ok) throw new Error(`HTTP ${fallbackRes.status}`);
-        return fallbackRes.json();
-      }
-      throw new Error(`HTTP ${res.status}`);
+    const data = await fetchTmdbJson<any>(endpoint, { language });
+    if (data) return data;
+
+    if (language !== 'en-US') {
+      const fallback = await fetchTmdbJson<any>(endpoint, { language: null });
+      if (fallback) return fallback;
     }
-    return res.json();
+
+    throw new Error(`TMDB empty response for ${endpoint}`);
   } catch (error) {
     console.error(`[TMDB] Erro ao buscar ${endpoint} (language=${language}):`, error);
     throw error;
@@ -100,10 +97,11 @@ export async function getDetailedMedia(
     
     // Fallback: tenta sem language
     try {
-      const fallbackUrl = `${BASE_URL}/${type}/${tmdbId}?api_key=${API_KEY}&append_to_response=${append}`;
-      const res = await fetchWithRetry(fallbackUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      const fallback = await fetchTmdbJson<any>(`/${type}/${tmdbId}?append_to_response=${append}`, {
+        language: null,
+      });
+      if (!fallback) throw new Error('TMDB empty response');
+      return fallback;
     } catch {
       console.error(`[TMDB] Falha completa ao buscar ${type}/${tmdbId}`);
       throw error;

@@ -3,9 +3,9 @@ import { prisma } from '@/lib/prisma';
 import { buildSeasonTitle } from '@/lib/utils';
 import { normalizeProductionStatus } from '@/lib/production-status';
 import { titlePageSeasonStatus } from '@/lib/tmdb-status';
+import { fetchTmdbJson } from '@/lib/tmdb-json';
 
-const TMDB = process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
-const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+export const runtime = 'nodejs';
 
 type MediaType = 'movie' | 'tv';
 
@@ -23,14 +23,8 @@ interface TmdbItem {
   vote_average?: number;
 }
 
-async function tmdbJson(endpoint: string) {
-  if (!API_KEY) return { results: [] };
-  const glue = endpoint.includes('?') ? '&' : '?';
-  const response = await fetch(`${TMDB}${endpoint}${glue}api_key=${API_KEY}&language=en-US`, {
-    next: { revalidate: 60 * 60 },
-  });
-  if (!response.ok) return { results: [] };
-  return response.json();
+async function tmdbJson(endpoint: string): Promise<any> {
+  return (await fetchTmdbJson(endpoint, { revalidate: 60 * 60 })) ?? { results: [] };
 }
 
 function splitGenres(value: string | null): string[] {

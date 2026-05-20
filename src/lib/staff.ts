@@ -4,10 +4,7 @@
  */
 
 import { buildSeasonTitle } from './utils';
-
-const BASE =
-  process.env.NEXT_PUBLIC_TMDB_BASE_URL ?? 'https://api.themoviedb.org/3';
-const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+import { fetchTmdbJson as readTmdbJson, hasTmdbKey } from './tmdb-json';
 
 export const TMDB_IMG = 'https://image.tmdb.org/t/p';
 
@@ -76,7 +73,7 @@ export interface StaffPersonPayload {
 }
 
 function assertKey() {
-  if (!API_KEY) throw new Error('NEXT_PUBLIC_TMDB_API_KEY ausente');
+  if (!hasTmdbKey()) throw new Error('NEXT_PUBLIC_TMDB_API_KEY ausente');
 }
 
 export async function fetchTmdbJson(
@@ -84,16 +81,9 @@ export async function fetchTmdbJson(
   language?: string,
 ): Promise<any> {
   assertKey();
-  const sep = endpoint.includes('?') ? '&' : '?';
-  let url = `${BASE}${endpoint}${sep}api_key=${API_KEY}`;
-  if (language) url += `&language=${encodeURIComponent(language)}`;
-  const res = await fetch(url, { next: { revalidate: 3600 } });
-  if (!res.ok) {
-    const err = new Error(`TMDB ${res.status}`);
-    (err as any).status = res.status;
-    throw err;
-  }
-  return res.json();
+  const data = await readTmdbJson(endpoint, { language, revalidate: 3600 });
+  if (!data) throw new Error(`TMDB empty response for ${endpoint}`);
+  return data;
 }
 
 export function personProfileUrl(path: string | null | undefined, size = 'h632'): string | null {

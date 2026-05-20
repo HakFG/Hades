@@ -14,27 +14,8 @@ import SearchMediaCard, {
   type SearchMediaItem,
 } from '@/components/SearchMediaCard';
 import { emitXPNotification } from '@/hooks/useXPNotification';
-import { normalizeProductionStatus } from '@/lib/production-status';
-import { buildSeasonTitle } from '@/lib/utils';
-import { titlePageSeasonStatus } from '@/lib/tmdb-status';
-
-const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
-const TMDB = 'https://api.themoviedb.org/3';
 
 type MediaType = 'tv' | 'movie' | 'people';
-
-interface RawTitle {
-  id: number;
-  name?: string;
-  title?: string;
-  poster_path: string | null;
-  backdrop_path?: string | null;
-  overview?: string | null;
-  vote_average?: number;
-  first_air_date?: string;
-  release_date?: string;
-  popularity?: number;
-}
 
 interface PersonResult {
   id: number;
@@ -77,107 +58,36 @@ const EMPTY_ADVANCED: AdvancedFilters = {
   hiddenGems: false,
 };
 
-function movieToCard(movie: RawTitle): SearchMediaItem {
-  return {
-    tmdbId: movie.id,
-    title: movie.title ?? movie.name ?? 'Untitled',
-    poster_path: movie.poster_path,
-    backdrop_path: movie.backdrop_path ?? null,
-    type: 'MOVIE',
-    linkSlug: `movie-${movie.id}`,
-    popularity: movie.popularity,
-    airYear: movie.release_date ? movie.release_date.split('-')[0] : undefined,
-    airDate: movie.release_date ?? null,
-    productionStatus: 'Released',
-    overview: movie.overview ?? null,
-    voteAverage: movie.vote_average ?? null,
-  };
-}
-
-function resolveSeasonStatus(
-  season: { air_date?: string | null; season_number: number },
-  allSeasons: Array<{ air_date?: string | null; season_number: number }>,
-  seriesStatus: string,
-  inProduction: boolean,
-) {
-  const today = new Date().toISOString().split('T')[0];
-  const airDate = season.air_date ?? undefined;
-  if (!airDate || airDate > today) return 'Not Yet Aired';
-  if (!inProduction && seriesStatus !== 'Returning Series') return 'Finished';
-
-  const airedNumbers = allSeasons
-    .filter((item) => item.season_number > 0 && item.air_date && item.air_date <= today)
-    .map((item) => item.season_number);
-  const maxSeasonNumber = airedNumbers.length ? Math.max(...airedNumbers) : season.season_number;
-
-  return season.season_number === maxSeasonNumber ? 'Airing' : 'Finished';
-}
-
-async function expandShow(show: RawTitle, includeSpecials = false): Promise<SearchMediaItem[]> {
-  try {
-    const response = await fetch(`${TMDB}/tv/${show.id}?api_key=${API_KEY}&language=en-US`);
-    if (!response.ok) return [];
-    const detail = await response.json();
-    const showName = detail.name ?? show.name ?? 'Untitled';
-    const seasons = (detail.seasons ?? []) as Array<{
-      id: number;
-      season_number: number;
-      episode_count?: number | null;
-      poster_path?: string | null;
-      air_date?: string | null;
-      overview?: string | null;
-    }>;
-    const visibleSeasons = seasons.filter((season) => includeSpecials || season.season_number > 0);
-    const productionStatus = normalizeProductionStatus(detail.status, 'tv', detail.in_production);
-
-    return Promise.all(
-      visibleSeasons.map(async (season) => {
-        const seasonDetail = await fetch(
-          `${TMDB}/tv/${show.id}/season/${season.season_number}?api_key=${API_KEY}&language=en-US`,
-          { cache: 'no-store' },
-        )
-          .then((res) => (res.ok ? res.json() : null))
-          .catch(() => null);
-        const seasonStatus =
-          titlePageSeasonStatus(seasonDetail?.episodes ?? null) ??
-          resolveSeasonStatus(season, seasons, detail.status ?? '', Boolean(detail.in_production));
-
-        return {
-          tmdbId: season.id,
-          parentTmdbId: show.id,
-          title: buildSeasonTitle(showName, season.season_number),
-          poster_path: season.poster_path ?? show.poster_path,
-          backdrop_path: detail.backdrop_path ?? show.backdrop_path ?? null,
-          type: 'TV_SEASON' as const,
-          episode_count: season.episode_count ?? null,
-          season_number: season.season_number,
-          linkSlug: `tv-${show.id}-s${season.season_number}`,
-          popularity: show.popularity,
-          airYear: season.air_date ? season.air_date.split('-')[0] : undefined,
-          airDate: season.air_date ?? null,
-          seriesStatus: detail.status ?? '',
-          productionStatus,
-          seasonStatus,
-          overview: season.overview || detail.overview || show.overview || null,
-          voteAverage: detail.vote_average ?? show.vote_average ?? null,
-        };
-      }),
-    );
-  } catch {
-    return [];
-  }
-}
-
 function isAdvancedActive(filters: AdvancedFilters) {
   return Boolean(filters.minRating || filters.maxRuntime || filters.network || filters.hiddenGems);
 }
 
-function applyClientFilters(items: SearchMediaItem[], selectedYear: string, filters: AdvancedFilters) {
-  return items.filter((item) => {
-    if (selectedYear && item.airYear !== selectedYear) return false;
-    if (filters.minRating && (item.voteAverage ?? 0) < filters.minRating) return false;
-    return true;
-  });
+function searchMediaUrl(
+  mode: 'genres' | 'sections' | 'discover' | 'text',
+  mediaType: Exclude<MediaType, 'people'>,
+  options: {
+    page?: number;
+    query?: string;
+    selectedGenre?: string;
+    selectedYear?: string;
+    selectedFormat?: string;
+    selectedStatus?: string;
+    advancedFilters?: AdvancedFilters;
+  } = {},
+) {
+  const params = new URLSearchParams({ mode, type: mediaType });
+  if (options.page) params.set('page', String(options.page));
+  if (options.query) params.set('q', options.query);
+  if (options.selectedGenre) params.set('genre', options.selectedGenre);
+  if (options.selectedYear) params.set('year', options.selectedYear);
+  if (options.selectedFormat) params.set('format', options.selectedFormat);
+  if (options.selectedStatus) params.set('status', options.selectedStatus);
+  const filters = options.advancedFilters;
+  if (filters?.minRating) params.set('rating', String(filters.minRating));
+  if (filters?.maxRuntime) params.set('runtime', String(filters.maxRuntime));
+  if (filters?.network) params.set('network', filters.network);
+  if (filters?.hiddenGems) params.set('hidden', '1');
+  return `/api/search/media?${params.toString()}`;
 }
 
 function normalizeEditorEntry(entry: Partial<EditorEntry>, item: SearchMediaItem): EditorEntry {
@@ -297,7 +207,8 @@ export default function SearchPage() {
       return;
     }
     try {
-      const response = await fetch(`${TMDB}/genre/${mediaType}/list?api_key=${API_KEY}&language=en-US`);
+      const response = await fetch(searchMediaUrl('genres', mediaType));
+      if (!response.ok) return;
       const data = await response.json();
       setGenres(data.genres ?? []);
     } catch (error) {
@@ -313,50 +224,17 @@ export default function SearchPage() {
 
     setLoadingSections(true);
     try {
-      const sortByPop = (a: SearchMediaItem, b: SearchMediaItem) => (b.popularity ?? 0) - (a.popularity ?? 0);
-
-      if (mediaType === 'tv') {
-        const [trendRes, onAirRes, allTimeRes] = await Promise.all([
-          fetch(`${TMDB}/trending/tv/week?api_key=${API_KEY}&language=en-US`),
-          fetch(`${TMDB}/tv/on_the_air?api_key=${API_KEY}&language=en-US`),
-          fetch(`${TMDB}/discover/tv?api_key=${API_KEY}&language=en-US&sort_by=vote_count.desc&vote_count.gte=5000&page=1`),
-        ]);
-        const [trendData, onAirData, allTimeData] = await Promise.all([
-          trendRes.json(),
-          onAirRes.json(),
-          allTimeRes.json(),
-        ]);
-        const expandLatest = async (shows: RawTitle[]) => {
-          const collected: SearchMediaItem[] = [];
-          for (const show of shows.slice(0, 18)) {
-            if (collected.length >= 8) break;
-            const seasons = await expandShow(show);
-            const latest = seasons.sort((a, b) => (b.season_number ?? 0) - (a.season_number ?? 0))[0];
-            if (latest) collected.push({ ...latest, popularity: show.popularity });
-          }
-          return collected;
-        };
-
-        setTrending((await expandLatest(trendData.results ?? [])).sort(sortByPop));
-        setPopularNow((await expandLatest(onAirData.results ?? [])).sort(sortByPop));
-        setAllTimePopular((await expandLatest(allTimeData.results ?? [])).sort(sortByPop));
-      } else {
-        const [trendRes, nowPlayingRes, allTimeRes] = await Promise.all([
-          fetch(`${TMDB}/trending/movie/week?api_key=${API_KEY}&language=en-US`),
-          fetch(`${TMDB}/movie/now_playing?api_key=${API_KEY}&language=en-US`),
-          fetch(`${TMDB}/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=vote_count.desc&vote_count.gte=10000&page=1`),
-        ]);
-        const [trendData, nowPlayingData, allTimeData] = await Promise.all([
-          trendRes.json(),
-          nowPlayingRes.json(),
-          allTimeRes.json(),
-        ]);
-        setTrending((trendData.results?.slice(0, 8) ?? []).map(movieToCard).sort(sortByPop));
-        setPopularNow((nowPlayingData.results?.slice(0, 8) ?? []).map(movieToCard).sort(sortByPop));
-        setAllTimePopular((allTimeData.results?.slice(0, 8) ?? []).map(movieToCard).sort(sortByPop));
-      }
+      const response = await fetch(searchMediaUrl('sections', mediaType));
+      if (!response.ok) throw new Error(`Search sections HTTP ${response.status}`);
+      const data = await response.json();
+      setTrending(data.trending ?? []);
+      setPopularNow(data.popularNow ?? []);
+      setAllTimePopular(data.allTimePopular ?? []);
     } catch (error) {
       console.error('Failed to load search sections:', error);
+      setTrending([]);
+      setPopularNow([]);
+      setAllTimePopular([]);
     } finally {
       setLoadingSections(false);
     }
@@ -387,52 +265,27 @@ export default function SearchPage() {
     async (page: number, resetResults = true) => {
       if (mediaType === 'people') return;
 
-      if (mediaType === 'movie') {
-        let url = `${TMDB}/discover/movie?api_key=${API_KEY}&language=en-US&sort_by=${
-          advancedFilters.hiddenGems ? 'vote_average.desc' : 'popularity.desc'
-        }&page=${page}`;
-        if (selectedGenre) url += `&with_genres=${selectedGenre}`;
-        if (selectedYear) url += `&primary_release_year=${selectedYear}`;
-        if (selectedFormat === 'short') url += '&with_runtime.lte=40';
-        if (advancedFilters.maxRuntime) url += `&with_runtime.lte=${advancedFilters.maxRuntime}`;
-        if (advancedFilters.minRating) url += `&vote_average.gte=${advancedFilters.minRating}`;
-        if (advancedFilters.hiddenGems) url += '&vote_count.gte=120&vote_count.lte=5000';
-
-        const response = await fetch(url);
+      try {
+        const response = await fetch(
+          searchMediaUrl('discover', mediaType, {
+            page,
+            selectedGenre,
+            selectedYear,
+            selectedFormat,
+            selectedStatus,
+            advancedFilters,
+          }),
+        );
+        if (!response.ok) throw new Error(`Search discover HTTP ${response.status}`);
         const data = await response.json();
-        const cards = applyClientFilters((data.results ?? []).map(movieToCard), selectedYear, advancedFilters);
+        const cards = data.items ?? [];
         setResults((prev) => (resetResults ? cards : [...prev, ...cards]));
-        setHasMore(data.page < data.total_pages);
-        return;
+        setHasMore(Boolean(data.hasMore));
+      } catch (error) {
+        console.error(error);
+        if (resetResults) setResults([]);
+        setHasMore(false);
       }
-
-      let url = `${TMDB}/discover/tv?api_key=${API_KEY}&language=en-US&sort_by=${
-        advancedFilters.hiddenGems ? 'vote_average.desc' : 'popularity.desc'
-      }&page=${page}`;
-      if (selectedGenre) url += `&with_genres=${selectedGenre}`;
-      if (selectedFormat === 'scripted') url += '&with_type=4';
-      if (selectedFormat === 'miniseries') url += '&with_type=2';
-      if (selectedFormat === 'special') url += '&with_type=6';
-      if (selectedFormat === 'reality') url += '&with_type=3';
-      if (selectedFormat === 'documentary') url += '&with_type=0';
-      if (selectedStatus === 'airing') url += '&with_status=returning';
-      if (selectedStatus === 'finished') url += '&with_status=ended';
-      if (selectedStatus === 'not_yet_aired') url += '&with_status=planned';
-      if (advancedFilters.network) url += `&with_networks=${advancedFilters.network}`;
-      if (advancedFilters.maxRuntime) url += `&with_runtime.lte=${advancedFilters.maxRuntime}`;
-      if (advancedFilters.minRating) url += `&vote_average.gte=${advancedFilters.minRating}`;
-      if (advancedFilters.hiddenGems) url += '&vote_count.gte=80&vote_count.lte=3000';
-
-      const response = await fetch(url);
-      const data = await response.json();
-      const shows = (data.results ?? []) as RawTitle[];
-      let cards = (await Promise.all(shows.map((show) => expandShow(show, selectedFormat === 'special')))).flat();
-      cards = applyClientFilters(cards, selectedYear, advancedFilters);
-      if (selectedStatus === 'airing') cards = cards.filter((item) => item.seasonStatus === 'Airing');
-      if (selectedStatus === 'finished') cards = cards.filter((item) => item.seasonStatus === 'Finished');
-      if (selectedStatus === 'not_yet_aired') cards = cards.filter((item) => item.seasonStatus === 'Not Yet Aired');
-      setResults((prev) => (resetResults ? cards : [...prev, ...cards]));
-      setHasMore(data.page < data.total_pages);
     },
     [advancedFilters, mediaType, selectedFormat, selectedGenre, selectedStatus, selectedYear],
   );
@@ -465,16 +318,16 @@ export default function SearchPage() {
       }
 
       const response = await fetch(
-        `${TMDB}/search/${mediaType}?api_key=${API_KEY}&language=en-US&query=${encodeURIComponent(trimmed)}`,
+        searchMediaUrl('text', mediaType, {
+          query: trimmed,
+          selectedYear,
+          advancedFilters,
+        }),
       );
+      if (!response.ok) throw new Error(`Search text HTTP ${response.status}`);
       const data = await response.json();
-      if (mediaType === 'tv') {
-        const expanded = await Promise.all((data.results ?? []).map((show: RawTitle) => expandShow(show)));
-        setResults(applyClientFilters(expanded.flat(), selectedYear, advancedFilters));
-      } else {
-        setResults(applyClientFilters((data.results ?? []).map(movieToCard), selectedYear, advancedFilters));
-      }
-      setHasMore(false);
+      setResults(data.items ?? []);
+      setHasMore(Boolean(data.hasMore));
     } catch (error) {
       console.error(error);
     } finally {
@@ -632,7 +485,11 @@ export default function SearchPage() {
         </button>
         {isOpen && (
           <div className="section-content">
-            {data.length ? renderGrid(data, sectionKey === 'suggestions') : <div className="empty">Loading...</div>}
+            {data.length ? (
+              renderGrid(data, sectionKey === 'suggestions')
+            ) : (
+              <div className="empty">{loadingSections ? 'Loading...' : 'No titles found.'}</div>
+            )}
           </div>
         )}
       </section>
